@@ -1,0 +1,1330 @@
+# MY CHATTING PRO
+## COMPLETE PRODUCTION-READY NATIVE ANDROID APPLICATION
+
+আপনি একজন Senior Native Android Kotlin Developer, Cloudflare Backend Architect, UI/UX Designer এবং Production Software Engineer হিসেবে কাজ করবেন।
+
+আমার জন্য **MY CHATTING PRO** নামে একটি সম্পূর্ণ Native Android Messaging Application তৈরি করুন।
+
+**App Name:** MY CHATTING PRO  
+**Developer / Owner:** TAWHID SHAKH
+
+প্রধান লক্ষ্য হলো একটি আধুনিক, দ্রুত, সুন্দর, নিরাপদ এবং multilingual private messaging application তৈরি করা, যা বাস্তবে ব্যবহার, পরীক্ষা এবং Google Play Store-এর জন্য প্রস্তুত করা যাবে।
+
+---
+
+# 1. CORE DEVELOPMENT RULES
+
+প্রকল্পটি অবশ্যই Native Android Technology দিয়ে তৈরি করতে হবে।
+
+**Android Technology:**
+- Android Studio
+- Kotlin
+- Jetpack Compose
+- Material 3
+- MVVM Architecture
+- Clean Architecture
+- Kotlin Coroutines
+- StateFlow / Flow
+- Navigation Compose
+- Retrofit / OkHttp
+- Kotlin Serialization
+- Room Database
+- DataStore
+- Coil
+- Android Media APIs
+- Android Notification APIs
+- WebRTC
+- WebSocket
+
+**Backend Technology:**
+- Cloudflare Workers
+- TypeScript
+- Cloudflare D1
+- Cloudflare Durable Objects
+- Cloudflare R2
+- Cloudflare WebSocket
+
+পুরোনো Flutter, Dart, Node.js, Fastify, PostgreSQL, Redis, অথবা Amazon S3 architecture ব্যবহার করা যাবে না।
+
+Firebase-এর কোনো Service, SDK বা Configuration ব্যবহার করা যাবে না।
+
+কোনো Ads SDK বা Advertisement System যুক্ত করা যাবে না।
+
+শুধু UI তৈরি করে কোনো Feature সম্পন্ন হয়েছে বলে দাবি করা যাবে না। প্রতিটি Feature-এর বাস্তব Android ও Backend implementation থাকতে হবে।
+
+প্রকল্পের Architecture হতে হবে:
+- Secure
+- Fast
+- Scalable
+- Maintainable
+- Reliable
+- Production-oriented
+
+APK এবং AAB Build করার উপযোগী সম্পূর্ণ Android Studio Project তৈরি করতে হবে।
+
+# 2. ANDROID PROJECT ARCHITECTURE
+
+Android App-এ MVVM এবং Clean Architecture অনুসরণ করতে হবে।
+
+প্রয়োজনীয় Layer:
+- Presentation Layer
+- Domain Layer
+- Data Layer
+- Core Layer
+
+প্রস্তাবিত Project Structure:
+
+```text
+app/
+  src/main/
+    java/com/mychattingpro/
+      core/
+        network/
+        database/
+        datastore/
+        security/
+        common/
+        localization/
+        theme/
+        navigation/
+      data/
+        remote/
+        local/
+        repository/
+        models/
+      domain/
+        models/
+        repository/
+        usecase/
+      features/
+        auth/
+        profile/
+        chats/
+        messages/
+        media/
+        calls/
+        groups/
+        settings/
+        privacy/
+        notifications/
+      MainActivity.kt
+```
+
+Room Database শুধু প্রয়োজনীয় Local Data এবং Cache-এর জন্য ব্যবহার করতে হবে।
+
+DataStore দিয়ে প্রয়োজনীয় App Settings সংরক্ষণ করতে হবে।
+
+# 3. CLOUDFLARE — MANDATORY BACKEND PLATFORM AND ARCHITECTURE
+
+MY CHATTING PRO-এর সম্পূর্ণ Backend System অবশ্যই Cloudflare Platform ব্যবহার করে তৈরি করতে হবে।
+
+Cloudflare কোনো Optional Technology নয়। এটি এই Project-এর নির্ধারিত এবং বাধ্যতামূলক Backend Infrastructure। Android App-এর সব Backend Request Cloudflare Workers API-এর মাধ্যমে পরিচালিত হবে।
+
+## 3.1 Required Cloudflare Services
+
+**1. Cloudflare Workers — Main Backend**
+- সম্পূর্ণ Backend REST API
+- Authentication এবং Authorization
+- User Management এবং Profile Management
+- Conversation এবং Message Processing
+- Message Status এবং Read Receipts
+- Media Upload / Download Authorization
+- Account Management এবং Account Deletion
+- User Search, Blocking এবং Reporting
+- Rate Limiting, Validation এবং Backend Business Logic
+
+**2. Cloudflare D1 — Relational Database**
+- User Accounts
+- User Profiles
+- Devices এবং Sessions
+- Conversations এবং Conversation Members
+- Messages এবং Message Receipts
+- Media Object Metadata
+- Call Records এবং Call Participants
+- Blocked Users
+- Reports
+- Notification Endpoints (শুধু বাস্তবে সমর্থিত Non-Firebase Transport থাকলে)
+- প্রয়োজনীয় অন্যান্য relational records
+
+**3. Cloudflare Durable Objects — Realtime Coordination**
+- Authenticated Realtime WebSocket Connections
+- Realtime Messaging Events
+- Online / Offline Presence
+- Message Event Coordination
+- Delivery / Read Event Coordination
+- Audio / Video Call Signaling
+- Connection এবং Reconnection Management
+- প্রয়োজনীয় Per-Conversation বা Per-User Realtime Coordination
+
+**4. Cloudflare R2 — Private Object Storage**
+- Profile Photos
+- Chat Images
+- Videos
+- Voice Messages
+- Audio Files
+- PDF
+- ZIP
+- APK
+- DOC / DOCX
+- অন্যান্য অনুমোদিত Media এবং Documents
+
+R2 Bucket অবশ্যই Private রাখতে হবে। Public unrestricted object access দেওয়া যাবে না।
+
+## 3.2 Required Backend Architecture
+
+```text
+Android Kotlin App
+        |
+        | HTTPS REST API / Authenticated WebSocket
+        v
+Cloudflare Workers
+        |
+        +---- Cloudflare D1
+        |
+        +---- Cloudflare Durable Objects
+        |
+        +---- Cloudflare R2
+```
+
+Final Backend Architecture:
+
+**Android Kotlin App → Cloudflare Workers → Cloudflare D1 + Durable Objects + R2**
+
+Cloudflare হবে MY CHATTING PRO-এর একমাত্র মূল Backend Platform।
+
+## 3.3 Cloudflare Development Requirements
+
+- Cloudflare Account ব্যবহার করে প্রয়োজনীয় Services তৈরি ও Configure করতে হবে।
+- Backend TypeScript দিয়ে তৈরি করতে হবে।
+- Cloudflare Wrangler CLI দিয়ে Local Development, Testing এবং Deployment করতে হবে।
+- Workers Configuration এবং প্রয়োজনীয় Bindings সঠিকভাবে সেট করতে হবে।
+- D1 Database Schema এবং Versioned Migration তৈরি করতে হবে।
+- Durable Objects Class, Binding এবং প্রয়োজনীয় Migration Configuration তৈরি করতে হবে।
+- Authenticated WebSocket Connection এবং Reconnection Logic Implement করতে হবে।
+- R2 Private Bucket এবং Secure Object Access Configure করতে হবে।
+- প্রয়োজনীয় Environment Variables এবং Secrets Configure করতে হবে।
+- Development এবং Production Environment আলাদা রাখতে হবে।
+- Android App-কে Cloudflare Workers API-এর সঙ্গে Secure HTTPS Connection দিয়ে যুক্ত করতে হবে।
+- API Validation, Authentication, Authorization এবং Rate Limiting Backend-এ Enforce করতে হবে।
+- Network Failure, API Error, Database Failure, Storage Failure এবং WebSocket Failure Handle করতে হবে।
+- প্রয়োজনীয় Cloudflare Configuration, Bindings, Migrations এবং Deployment Instructions README.md-তে দিতে হবে।
+
+## 3.4 Security and Storage Requirements
+
+- কোনো Secret, API Token, Private Credential বা Database Secret Android Source Code কিংবা APK-তে রাখা যাবে না।
+- R2 Object Access-এর আগে Authentication, Authorization, Conversation Membership এবং Object Ownership যাচাই করতে হবে।
+- Upload এবং Download-এর জন্য প্রয়োজন অনুযায়ী Short-lived Signed URL বা Worker-mediated access ব্যবহার করতে হবে।
+- File Size, MIME Type এবং অনুমোদিত File Type Server-side Validate করতে হবে।
+- D1 Query Parameterized হতে হবে।
+- WebSocket Connection-এ Authentication এবং প্রতিটি Event-এর Authorization যাচাই করতে হবে।
+- Rate Limiting, Abuse Protection এবং Privacy-safe Logging থাকতে হবে।
+- Cloudflare Secret শুধু Server-side Environment Variables / Secrets-এ রাখতে হবে।
+
+## 3.5 Strict Backend Restrictions
+
+নিচের কোনো Backend Platform বা বিকল্প Backend Architecture ব্যবহার করা যাবে না:
+
+- Firebase — কোনো Firebase Service, SDK বা Configuration নয়
+- Supabase
+- Appwrite
+- Node.js / Fastify Backend
+- PostgreSQL
+- Redis
+- Amazon S3
+- অন্য কোনো অতিরিক্ত Backend Provider
+
+Cloudflare Workers, D1, Durable Objects এবং R2-ই এই Project-এর নির্ধারিত মূল Backend Services।
+
+Android App-এর Local Database বা Cache হিসেবে Room ব্যবহার করা যাবে; এটি Cloudflare Backend-এর বিকল্প নয়।
+
+WebRTC Audio / Video Calling-এর জন্য প্রয়োজনীয় STUN / TURN Connectivity আলাদাভাবে Configure করতে হবে। Cloudflare Workers বা Durable Objects-কে TURN Server হিসেবে ধরে নেওয়া যাবে না। TURN Provider প্রয়োজন হলে সেটি শুধু Calling Connectivity-এর জন্য ব্যবহার করতে হবে; মূল Backend Cloudflare-ই থাকবে। Provider, configuration, credential handling এবং সম্ভাব্য খরচ স্পষ্টভাবে Document করতে হবে।
+
+Background Push Notification-এর জন্য কোনো Non-Firebase Transport বাস্তবে Android-এ কাজ করে কি না যাচাই করতে হবে। FCM-এর উপর নির্ভরশীল কোনো Service-কে Firebase-free বলা যাবে না। প্রয়োজনীয় External Transport না থাকলে সীমাবদ্ধতা স্পষ্টভাবে জানাতে হবে; Fake Notification তৈরি করা যাবে না।
+
+## 3.6 Cloudflare Cost and Deployment Requirements
+
+- Cloudflare Free এবং Paid Plan-এর বর্তমান Usage Limits বিবেচনা করতে হবে।
+- Workers Requests, D1 Reads/Writes/Storage, Durable Objects Usage, R2 Storage এবং Egress/Operations-এর সম্ভাব্য খরচ যাচাই করতে হবে।
+- কোনো Service বিনামূল্যে বা Unlimited বলে দাবি করা যাবে না।
+- Production Deployment-এর আগে প্রয়োজনীয় Billing, Limits এবং Usage Monitoring ব্যাখ্যা করতে হবে।
+- প্রয়োজনীয় কোনো Cloudflare Service বাস্তবে Configure করা সম্ভব না হলে সেটি স্পষ্টভাবে জানাতে হবে।
+- Fake Configuration, Placeholder Integration বা Fake Functionality-কে Working বলে দাবি করা যাবে না।
+
+## 3.7 Required Backend Project Structure
+
+```text
+backend/
+  src/
+    index.ts
+    config/
+    middleware/
+    modules/
+      auth/
+      users/
+      profiles/
+      conversations/
+      messages/
+      groups/
+      media/
+      calls/
+      notifications/
+      reports/
+      privacy/
+    websocket/
+    durable-objects/
+    storage/
+    database/
+    security/
+  migrations/
+  tests/
+  wrangler.toml
+  package.json
+  tsconfig.json
+  .dev.vars.example
+  README.md
+```
+
+D1 Database Migration ব্যবহার করতে হবে এবং Schema Version Control-এ রাখতে হবে।
+
+কোনো Secret, API Token, Private Credential বা Database Secret Android Source Code কিংবা APK-তে রাখা যাবে না।
+# 4. APPLICATION FLOW
+
+প্রথমবার App চালু হলে:
+
+Splash Screen → Welcome Screen → Login Screen
+
+Welcome Screen-এ দেখাতে হবে:
+
+**MY CHATTING PRO**
+
+দুটি প্রধান Option থাকবে:
+- Login
+- Create Account
+
+Welcome Screen হবে Premium, Modern, Clean, Professional এবং Original Design-এর।
+
+# 5. LOGIN AND ACCOUNT CREATION
+
+Login Screen-এ থাকবে:
+- Country Selector
+- Phone Number
+- 5-digit PIN
+- Login Button
+
+Create Account Flow:
+
+Phone Number → Create 5-digit PIN → Confirm PIN → Create Account
+
+কোনো OTP, SMS Verification Code, Email Verification Code অথবা OTP Screen থাকবে না।
+
+Authentication Cloudflare Workers API-এর মাধ্যমে পরিচালিত হবে।
+
+Phone Number E.164 Format-এ Normalize করে Unique Account Identifier হিসেবে ব্যবহার করতে হবে।
+
+গুরুত্বপূর্ণ Security Requirements:
+
+- Phone Number-এর মালিকানা Verified বলে দাবি করা যাবে না।
+- PIN কখনো Plain Text হিসেবে D1-এ রাখা যাবে না।
+- Argon2id বা সমমানের শক্তিশালী Password Hashing ব্যবহার করতে হবে।
+- Per-user Salt থাকতে হবে।
+- Strict Rate Limiting এবং Progressive Delay থাকতে হবে।
+- Temporary Lockout এবং Suspicious Login Detection থাকতে হবে।
+- Access Token এবং Refresh Token নিরাপদভাবে পরিচালনা করতে হবে।
+- HTTPS বাধ্যতামূলক।
+- PIN, Password বা Authentication Secret Log করা যাবে না।
+- OTP ছাড়া Account Recovery-এর বাস্তব সীমাবদ্ধতা স্পষ্টভাবে Document করতে হবে।
+- পরিচয় যাচাই সম্ভব না হলে নিরাপদ Recovery-এর সীমাবদ্ধতা গোপন করা যাবে না।
+
+Fake Login অথবা Fake Account Creation তৈরি করা যাবে না।
+
+# 6. GLOBAL COUNTRY SELECTOR
+
+সম্পূর্ণ International Country Selector তৈরি করতে হবে।
+
+প্রতিটি Country-এর জন্য:
+- Flag
+- Country Name
+- Calling Code
+- Search
+- Country List
+- Popular / Recent Country
+
+উদাহরণ:
+- Bangladesh +880
+- United States +1
+- United Kingdom +44
+
+শুধু Bangladesh Hardcode করা যাবে না। International Country Code Dataset বা Package ব্যবহার করতে হবে।
+
+# 7. USER PROFILE
+
+User Profile-এ থাকবে:
+- Display Name
+- Profile Photo
+- Phone Number
+- About / Status
+
+Profile Photo Cloudflare R2 Private Storage-এ রাখতে হবে।
+
+Phone Number সাধারণভাবে Edit করা যাবে না।
+
+Main Chat Screen-এর উপরে:
+- বাম পাশে Profile Avatar / Profile Icon
+- ডান পাশে Three-dot Menu
+
+# 8. MAIN CHAT SCREEN
+
+Login সফল হলে প্রধান Screen হবে **CHATS**।
+
+প্রতিটি Chat Item-এ থাকবে:
+- Profile Photo
+- User Name
+- Latest Message
+- Latest Message Time
+- Unread Count
+- Online Status
+- Message Status যেখানে প্রয়োজন
+
+নতুন Message এলে manual refresh ছাড়াই Chat List Update হতে হবে।
+
+Cloudflare Workers API এবং Durable Objects WebSocket Event ব্যবহার করতে হবে।
+
+অপ্রয়োজনীয় Realtime Subscription চালু রাখা যাবে না।
+
+# 9. BOTTOM NAVIGATION
+
+Bottom Navigation-এ শুধুমাত্র তিনটি Option থাকবে:
+
+1. Chats
+2. Add Chat
+3. Settings
+
+নিচের Feature-গুলো তৈরি করা যাবে না:
+- Stories
+- Channels
+- Public Feed
+- Reels
+- অপ্রয়োজনীয় Social Media Feed
+
+অ্যাপের মূল উদ্দেশ্য হবে Private Messaging।
+
+# 10. ADD CHAT
+
+Add Chat Screen-এ থাকবে:
+- Country Code
+- Name (Optional Search Filter)
+- Phone Number
+- Search User
+
+Search User চাপলে Cloudflare Workers API-এর মাধ্যমে Registered User খুঁজতে হবে।
+
+সম্পূর্ণ User Database Device-এ Download করা যাবে না।
+
+User পাওয়া গেলে দেখাবে:
+- Profile Photo
+- Name
+- About
+- প্রয়োজনীয় Public Account Information
+- Start Chat
+
+User না পাওয়া গেলে দেখাবে:
+
+"No My Chatting Pro account found."
+
+Search Endpoint-এ Authentication, Authorization, Rate Limiting এবং Privacy Protection থাকতে হবে।
+
+অন্য User-এর Private Information প্রকাশ করা যাবে না।
+
+# 11. ONE-TO-ONE REALTIME CHAT
+
+সম্পূর্ণ কার্যকর One-to-One Messaging System তৈরি করতে হবে।
+
+Supported Message Types:
+
+- Text
+- Long Text
+- Emoji
+- Image
+- Video
+- Voice Message
+- Audio
+- PDF
+- ZIP
+- APK
+- DOC / DOCX
+- অন্যান্য সাধারণ Files
+
+Message Status:
+- Sending
+- Sent
+- Delivered
+- Seen / Read
+- Failed
+- Retry
+
+প্রতিটি Message-এর Unique ID এবং Reliable Server-side Timestamp থাকতে হবে।
+
+Realtime Messaging-এর জন্য Authenticated WebSocket এবং Cloudflare Durable Objects ব্যবহার করতে হবে।
+
+সম্পূর্ণ Conversation History একসঙ্গে Load করা যাবে না। Pagination এবং Lazy Loading ব্যবহার করতে হবে।
+
+# 12. MESSAGE DATE AND TIME
+
+Cloudflare Backend Server-side Timestamp তৈরি করবে।
+
+D1 Database-এ UTC Timestamp Canonical Timestamp হিসেবে রাখতে হবে।
+
+Client Device Clock-কে Canonical Source হিসেবে ব্যবহার করা যাবে না।
+
+প্রতিটি Message-এর Date এবং Time দেখাতে হবে।
+
+উদাহরণ:
+
+- আজ: 10:42 PM
+- গতকাল: 8:15 PM
+- পুরোনো: 28 Sep 2026, 7:30 PM
+
+User-এর Local Timezone অনুযায়ী Date এবং Time Display করতে হবে।
+
+# 13. DATE SEPARATOR
+
+Conversation-এর মধ্যে Date অনুযায়ী Message Group করতে হবে।
+
+উদাহরণ:
+
+আজ
+
+10:42 PM  
+Hello
+
+10:43 PM  
+How are you?
+
+গতকাল
+
+8:15 PM  
+Hello
+
+28 সেপ্টেম্বর ২০২৬
+
+7:30 PM  
+Previous message
+
+বাংলা, English এবং Arabic Locale অনুযায়ী Date Label পরিবর্তন হবে।
+
+Arabic-এর জন্য Proper RTL Support থাকতে হবে।
+
+# 14. MESSAGE DETAILS
+
+Message Long Press করলে অথবা Message Details খুললে দেখাবে:
+
+- Message
+- Sent Date
+- Sent Time
+- Delivered Date / Time (যেখানে Available)
+- Read Date / Time (যেখানে Available)
+
+Failed Message হলে:
+- Failed
+- Retry
+
+Retry করলে Original Message-এর Canonical Timestamp অকারণে পরিবর্তন করা যাবে না।
+
+# 15. MESSAGE ORDER AND PAGINATION
+
+Message Order Server-side Canonical Timestamp অনুযায়ী হবে।
+
+Newest Message নিচে থাকবে।
+
+Older Message Cursor Pagination-এর মাধ্যমে Load হবে।
+
+Realtime Update এবং Pagination Merge করার সময়:
+- Duplicate Message তৈরি করা যাবে না।
+- Chronological Order নষ্ট করা যাবে না।
+- Scroll Position অপ্রয়োজনে Jump করা যাবে না।
+- Stable Message ID ব্যবহার করতে হবে।
+
+# 16. TIMEZONE AND CHAT LIST TIME
+
+প্রতিটি User নিজের Local Timezone অনুযায়ী Date এবং Time দেখবে।
+
+Bangladesh Time Hardcode করা যাবে না।
+
+Chat List-এ Latest Message-এর Time দেখাতে হবে।
+
+উদাহরণ:
+- আজ: 10:42 PM
+- গতকাল: Yesterday
+- পুরোনো: 28 Sep
+
+Selected Language এবং Locale অনুযায়ী Format পরিবর্তন হবে।
+
+# 17. IMAGE MESSAGING
+
+বাস্তব Image Messaging System তৈরি করতে হবে।
+
+Features:
+- Image Picker
+- Preview
+- Compression
+- Upload Progress
+- Cancel
+- Retry
+- Full-screen Viewer
+
+Image Cloudflare R2 Private Storage-এ Upload করতে হবে।
+
+Cloudflare Workers Authenticated Upload Authorization অথবা Short-lived Upload URL তৈরি করবে।
+
+Upload শেষে Backend Ownership এবং Conversation Membership যাচাই করে D1-এ Media Record সংরক্ষণ করবে।
+
+Public Unrestricted Bucket অথবা Permanent Public URL ব্যবহার করা যাবে না।
+
+# 18. VIDEO MESSAGING
+
+বাস্তব Video Messaging System তৈরি করতে হবে।
+
+Features:
+- Video Picker
+- Preview
+- Compression যেখানে প্রয়োজন
+- Upload Progress
+- Cancel
+- Retry
+- Video Player
+- Error Handling
+
+Video Cloudflare R2 Private Storage-এ রাখতে হবে।
+
+# 19. FILE MESSAGING
+
+Supported Files:
+- PDF
+- ZIP
+- APK
+- DOC / DOCX
+- অন্যান্য সাধারণ Documents / Files
+
+File Message-এ দেখাতে হবে:
+- File Name
+- File Type
+- File Size
+- Upload Progress
+- Download / Open
+- Retry
+
+Cloudflare R2 Private Object Storage ব্যবহার করতে হবে।
+
+Upload এবং Download-এর আগে Authentication, Conversation Membership, Ownership, File Size এবং MIME Type যাচাই করতে হবে।
+
+Short-lived Signed URL ব্যবহার করতে হবে।
+
+Dangerous File Type-এর জন্য Warning এবং Download Confirmation দেখাতে হবে।
+
+# 20. VOICE MESSAGE
+
+বাস্তব Voice Message System তৈরি করতে হবে।
+
+Features:
+- Microphone Permission
+- Record
+- Stop
+- Cancel
+- Playback
+- Upload
+- Upload Progress
+- Duration
+- Error Handling
+
+Microphone Permission শুধু Recording-এর প্রয়োজন হলে চাইতে হবে।
+
+Voice Message Cloudflare R2 Private Storage-এ রাখতে হবে।
+
+# 21. AUDIO CALL
+
+বাস্তব One-to-One Audio Calling System তৈরি করতে হবে।
+
+WebRTC ব্যবহার করতে হবে।
+
+Cloudflare Durable Objects এবং WebSocket দিয়ে Call Signaling পরিচালনা করতে হবে।
+
+Features:
+- Incoming Call
+- Outgoing Call
+- Accept
+- Reject
+- End
+- Mute
+- Speaker
+- Call Duration
+- Calling State
+- Reconnecting State
+- Permission Handling
+
+শুধু Fake Call UI তৈরি করা যাবে না।
+
+Production Calling-এর জন্য প্রয়োজনীয় STUN / TURN Connectivity সঠিকভাবে Configure করতে হবে।
+
+Cloudflare Workers বা Durable Objects-কে TURN Server হিসেবে ধরে নেওয়া যাবে না।
+
+# 22. VIDEO CALL
+
+বাস্তব One-to-One Video Calling System তৈরি করতে হবে।
+
+WebRTC ব্যবহার করতে হবে।
+
+Features:
+- Incoming Video Call
+- Outgoing Video Call
+- Accept
+- Reject
+- End
+- Front Camera
+- Back Camera
+- Microphone On / Off
+- Camera On / Off
+- Speaker
+- Call Duration
+- Reconnection
+
+Camera এবং Microphone Permission সঠিকভাবে Handle করতে হবে।
+
+Call Signaling Cloudflare Durable Objects এবং WebSocket দিয়ে পরিচালনা করতে হবে।
+
+শুধু Fake Video Call Screen তৈরি করা যাবে না।
+
+# 23. PUSH NOTIFICATION
+
+Notification Support:
+- New Message
+- Incoming Call
+- Missed Call
+
+FCM, Firebase SDK অথবা Firebase Service ব্যবহার করা যাবে না।
+
+Foreground অবস্থায় Authenticated WebSocket দিয়ে Realtime Event পরিচালনা করতে হবে।
+
+Background এবং Terminated অবস্থায় Notification Delivery-এর জন্য বাস্তবে যাচাই করা Non-Firebase Android Push Provider / Transport নির্বাচন করতে হবে।
+
+যে Provider Android-এ FCM-এর উপর নির্ভর করে তাকে Firebase-free Solution বলা যাবে না।
+
+Firebase ছাড়া নির্ভরযোগ্য Background Push সম্ভব না হলে সীমাবদ্ধতা পরিষ্কারভাবে Document করতে হবে।
+
+Fake Incoming Call Notification দেখানো যাবে না।
+
+Android Notification Channel, Permission এবং Call Notification সঠিকভাবে Implement করতে হবে।
+
+Notification-এ অপ্রয়োজনীয় Private Message Content দেখানো যাবে না।
+
+# 24. TOP RIGHT THREE-DOT MENU
+
+Three-dot Menu-তে শুধুমাত্র দুটি Option থাকবে:
+
+1. Clear Cache
+2. Website
+
+এর বাইরে কোনো Option যোগ করা যাবে না।
+
+Website:
+
+https://sites.google.com/view/you-pr/%E0%A6%B9%E0%A6%AE
+
+Click করলে External Browser-এ খুলবে।
+
+# 25. CLEAR CACHE
+
+Clear Cache কখনোই Delete করবে না:
+- Messages
+- Photos
+- Videos
+- Files
+- Account
+- Chat History
+
+শুধু Safe Temporary Cache পরিষ্কার করবে।
+
+যেমন:
+- Temporary Thumbnails
+- Temporary Media Cache
+- Temporary Downloaded Resources
+
+Confirmation:
+
+"Temporary cache পরিষ্কার করবেন?"
+
+সফল হলে:
+
+"Temporary cache cleared."
+
+Clear Cache-কে Virus Remover হিসেবে দাবি করা যাবে না।
+
+# 26. SETTINGS
+
+Settings Screen Premium, Clean এবং সুন্দরভাবে সাজানো হবে।
+
+Owner Section-এ দেখাতে হবে:
+
+**TAWHID SHAKH**
+
+Owner Name User Edit করতে পারবে না।
+
+Premium Style-এ Display করা যেতে পারে।
+
+# 27. APPLICATION LANGUAGE
+
+Application Support করবে:
+
+- বাংলা
+- English
+- العربية
+
+Language Selector Settings-এর মধ্যে থাকবে।
+
+Language Change করলে সম্পূর্ণ Application-এর User-facing Text পরিবর্তন হবে।
+
+Arabic-এর জন্য:
+- Proper RTL
+- Proper Alignment
+- Proper Text Direction
+
+Localization Resource ব্যবহার করতে হবে।
+
+# 28. YOUTUBE
+
+Settings-এ YouTube Option থাকবে।
+
+Label:
+
+সাবস্ক্রাইব করুন
+
+Link:
+
+https://www.youtube.com/channel/UClRY5eaWzQbXG2y2E5xcYdg
+
+Click করলে External Browser-এ খুলবে।
+
+# 29. FACEBOOK
+
+Settings-এ Facebook Profile Option থাকবে।
+
+Link:
+
+https://www.facebook.com/profile.php?id=61584997594783
+
+Click করলে External Browser-এ খুলবে।
+
+# 30. FEEDBACK EMAIL
+
+Settings-এ Feedback Option থাকবে।
+
+Email:
+
+hafeztawhid15@gmail.com
+
+Click করলে Device-এর Mail Application Open করার চেষ্টা করবে।
+
+# 31. PRIVACY POLICY
+
+Settings-এ Privacy Policy Option থাকবে।
+
+Link:
+
+https://sites.google.com/view/sindha/%E0%A6%B9%E0%A6%AE
+
+Click করলে External Browser-এ খুলবে।
+
+# 32. VERSION AND VERSION CODE
+
+Settings Screen-এ একটি Version Option থাকবে।
+
+Click করলে Popup / Dialog খুলবে।
+
+সেখানে Dynamically দেখাবে:
+- Version
+- Version Code
+
+Android Application Metadata থেকে Value নিতে হবে।
+
+কোনো Version Value Hardcode করা যাবে না।
+
+# 33. ACCOUNT DELETION
+
+Settings-এ Delete Account Option থাকবে।
+
+Delete করার আগে Clear Confirmation Dialog দেখাতে হবে।
+
+Confirmation-এর পরে:
+- Cloudflare Workers Account Deletion Endpoint Call
+- Active Sessions / Refresh Tokens Revoke
+- User-associated Profile এবং Backend Data Retention Policy অনুযায়ী Delete
+- User-associated Private Media এবং R2 Files Safely Remove
+- Conversations এবং Messages-এর Deletion / Anonymization Policy অনুসরণ
+- Applicable Legal Retention থাকলে User-কে জানানো
+
+শুধু Account Disable করে Deletion সম্পন্ন হয়েছে বলা যাবে না।
+
+Deletion Request-এর ফলাফল Server থেকে Verify না করে Success দেখানো যাবে না।
+
+# 34. USER SAFETY
+
+Messaging Application হওয়ায় থাকতে হবে:
+- Block User
+- Report User
+- Report Message
+- Delete Own Message যেখানে Appropriate
+- Basic Abuse Report Workflow
+
+User অন্য User-কে Block করতে পারবে।
+
+Public Social Feed তৈরি করা যাবে না।
+
+# 35. PERFORMANCE
+
+Application দ্রুত এবং Responsive হতে হবে।
+
+ব্যবহার করতে হবে:
+- Backend Pagination
+- Lazy Loading
+- Image Compression
+- Thumbnail Generation
+- Upload Progress
+- Retry Logic
+- Cached Profile Images
+- Cached Thumbnails
+- Debounced Search
+- Efficient State Management
+- Efficient WebSocket Subscription Lifecycle
+- Unnecessary Recomposition কমানো
+- Large Media একসঙ্গে Memory-তে Load না করা
+- Controller Dispose
+- Stream Cancel
+- Subscription Cancel
+- Network Loss Handling
+- D1 Query Optimization এবং Indexing
+- Efficient Durable Objects Coordination
+
+সম্পূর্ণ Conversation History একসঙ্গে Memory-তে Load করা যাবে না।
+
+# 36. OFFLINE AND NETWORK HANDLING
+
+নিচের পরিস্থিতিগুলো Handle করতে হবে:
+
+- No Internet
+- Slow Internet
+- Upload Failure
+- Download Failure
+- Backend API Failure
+- D1 Database Failure
+- R2 Storage Failure
+- WebSocket Disconnect
+- Call Connection Failure
+
+Network না থাকলেও App Crash করা যাবে না।
+
+প্রয়োজনে Offline / Network Status Indicator দেখাতে হবে।
+
+Pending Message Local Queue-তে রাখতে হলে Pending State স্পষ্টভাবে দেখাতে হবে।
+
+Server Acknowledgement ছাড়া Sent বা Delivered দেখানো যাবে না।
+
+# 37. SECURITY
+
+Production-oriented Security Implement করতে হবে।
+
+- Anonymous Unrestricted Access দেওয়া যাবে না।
+- HTTPS বাধ্যতামূলক।
+- Authentication এবং Authorization Backend-এ যাচাই করতে হবে।
+- Access Token এবং Refresh Token নিরাপদভাবে পরিচালনা করতে হবে।
+- User শুধু নিজের অনুমোদিত Data Access করতে পারবে।
+- Conversation Member ছাড়া অন্য কেউ Conversation Access করতে পারবে না।
+- File Upload Ownership Validate করতে হবে।
+- Private Media Unauthorized Access করা যাবে না।
+- Rate Limiting এবং Abuse Protection থাকতে হবে।
+- Audit Logging থাকতে হবে, তবে Sensitive Data Log করা যাবে না।
+- SQL Injection, IDOR, Replay, Brute Force এবং Session Theft প্রতিরোধ করতে হবে।
+- Database Query Parameterized হতে হবে।
+- R2 Bucket Private রাখতে হবে।
+- WebSocket Connection-এ Authentication এবং Authorization যাচাই করতে হবে।
+- End-to-End Encryption দাবি করলে বাস্তবে পরীক্ষিত Protocol দিয়ে Implement করতে হবে।
+- শুধু HTTPS-কে End-to-End Encryption বলা যাবে না।
+
+# 38. DATABASE ARCHITECTURE
+
+Cloudflare D1 Relational Database ব্যবহার করতে হবে।
+
+প্রস্তাবিত Tables:
+
+- users
+- user_profiles
+- devices
+- sessions
+- conversations
+- conversation_members
+- messages
+- message_receipts
+- media_objects
+- calls
+- call_participants
+- reports
+- blocked_users
+- notification_endpoints (শুধু সমর্থিত Non-Firebase Transport থাকলে)
+
+প্রয়োজন অনুযায়ী Schema Optimize করতে হবে।
+
+Foreign Key, Unique Constraint, Indexes, Supported Transactions এবং Retention Policy ব্যবহার করতে হবে।
+
+Database Migration Version Control-এ রাখতে হবে।
+
+Final Database Architecture Documentation-এ ব্যাখ্যা করতে হবে।
+
+# 39. PRIVATE OBJECT STORAGE
+
+Cloudflare R2 Private Storage Structure:
+
+```text
+users/{userId}/profile/
+conversations/{conversationId}/images/
+conversations/{conversationId}/videos/
+conversations/{conversationId}/audio/
+conversations/{conversationId}/files/
+```
+
+R2 Bucket Private রাখতে হবে।
+
+Authenticated Cloudflare Workers Authorization এবং Short-lived Signed URL ব্যবহার করতে হবে।
+
+Conversation Membership এবং Object Ownership যাচাই ছাড়া Upload / Download অনুমোদন করা যাবে না।
+
+Public Unrestricted Media Access দেওয়া যাবে না।
+
+# 40. ANDROID PERMISSIONS
+
+Permission শুধু প্রয়োজনের সময় চাইতে হবে।
+
+সম্ভাব্য Permission:
+- Camera
+- Microphone
+- Notifications
+- Photos / Media
+- প্রয়োজনীয় File Access
+
+First Launch-এই সব Permission একসঙ্গে চাওয়া যাবে না।
+
+প্রতিটি Permission কেন প্রয়োজন, তা User-friendly ভাষায় বোঝাতে হবে।
+
+# 41. PREMIUM UI / UX DESIGN
+
+Application Design হবে:
+- Premium
+- Modern
+- Clean
+- Professional
+- Original
+- Fast
+- Smooth
+- Accessible
+- Material 3
+
+WhatsApp, IMO, Telegram অথবা অন্য কোনো App-এর Exact UI বা Branding Copy করা যাবে না।
+
+MY CHATTING PRO-এর নিজস্ব Visual Identity থাকতে হবে।
+
+# 42. LIGHT AND DARK MODE
+
+Application-এ উভয় Mode থাকতে হবে:
+
+- Light Mode
+- Dark Mode
+
+সব Screen দুই Mode-এ সঠিকভাবে কাজ করতে হবে।
+
+Text Contrast এবং Accessibility বজায় রাখতে হবে।
+
+# 43. ERROR HANDLING
+
+নিচের Error-গুলো Handle করতে হবে:
+
+- Invalid Phone Number
+- Wrong PIN
+- Account Not Found
+- Duplicate Account
+- Login Rate Limit / Temporary Lock
+- Network Failure
+- Backend API Failure
+- D1 Database Failure
+- R2 Storage Failure
+- Message Send Failure
+- Call Failure
+- Permission Denied
+- Notification Failure
+
+User-friendly এবং Localized Error Message দেখাতে হবে।
+
+Raw Stack Trace User-কে দেখানো যাবে না।
+
+Empty Catch Block ব্যবহার করা যাবে না।
+
+কোনো OTP-related Error বা Screen থাকবে না।
+
+# 44. LOGGING
+
+Development-এর সময় Structured Logging ব্যবহার করতে হবে।
+
+Production-এ Sensitive Logging বন্ধ রাখতে হবে।
+
+কখনো Log করা যাবে না:
+- OTP
+- PIN
+- Password
+- Private Message Content
+- Private File URL
+- Sensitive User Information
+- Access Token
+- Refresh Token
+- Cloudflare Secret
+
+# 45. ERROR REPORTING
+
+Firebase Crashlytics বা অন্য কোনো Firebase Crash Service ব্যবহার করা যাবে না।
+
+Cloudflare Backend Structured Logs এবং Privacy-safe Error Reporting Mechanism ব্যবহার করতে হবে।
+
+Sensitive Data Log করা যাবে না।
+
+Expected Error Properly Handle করতে হবে।
+
+Global Crash Suppression ব্যবহার করা যাবে না।
+
+Crash লুকিয়ে না রেখে মূল Programming Problem ঠিক করতে হবে।
+
+# 46. ACCOUNT PRIVACY
+
+User Privacy গুরুত্ব সহকারে Implement করতে হবে।
+
+- Private Message অন্য User দেখতে পারবে না।
+- Private Media Unauthorized Access করা যাবে না।
+- Phone Number প্রয়োজনের বাইরে Public করা যাবে না।
+- Notification-এ Sensitive Private Message Content Avoid করতে হবে।
+
+# 47. USER SEARCH
+
+Add Chat-এর User Search System Efficient হতে হবে।
+
+Debounced Search ব্যবহার করতে হবে।
+
+প্রয়োজন ছাড়া সম্পূর্ণ Users Collection Download করা যাবে না।
+
+Search Architecture Scalable হতে হবে।
+
+# 48. MESSAGE RETRY
+
+Message Send Failure হলে:
+- Failed
+- Retry
+
+দেখাতে হবে।
+
+Retry করলে Duplicate Message তৈরি করা যাবে না।
+
+নতুন Message তৈরি করার প্রয়োজন না হলে Original Message-এর Canonical Timestamp অকারণে পরিবর্তন করা যাবে না।
+
+# 49. MESSAGE PAGINATION
+
+Conversation-এর Older Messages Backend Cursor Pagination-এর মাধ্যমে Load হবে।
+
+প্রথমে Latest Messages Load করতে হবে।
+
+User উপরের দিকে Scroll করলে Older Messages Load হবে।
+
+Realtime WebSocket Event এবং Pagination Merge করার সময়:
+- Duplicate হবে না।
+- Ordering নষ্ট হবে না।
+- Scroll Position যতটা সম্ভব Preserve করতে হবে।
+- Stable Message ID এবং Canonical Server Timestamp ব্যবহার করতে হবে।
+
+# 50. REALTIME CHAT LIST
+
+নতুন Message এলে:
+- Latest Message Update
+- Latest Time Update
+- Unread Count Update
+- Conversation Position Update
+
+সবকিছু Authenticated Cloudflare Durable Objects WebSocket Event এবং Backend API-এর মাধ্যমে Realtime হবে।
+
+Reconnect হলে Last Acknowledged Event / Cursor থেকে Sync করতে হবে।
+
+Duplicate Event এলে Idempotently Handle করতে হবে।
+
+# 51. INTERNATIONALIZATION
+
+সব User-facing Text Localization System-এর মাধ্যমে পরিচালনা করতে হবে।
+
+Supported Languages:
+- বাংলা
+- English
+- العربية
+
+Arabic-এর জন্য:
+- RTL
+- Correct Alignment
+- Correct Layout Direction
+
+Date / Time-ও Selected Locale অনুযায়ী Format করতে হবে।
+
+# 52. GOOGLE PLAY STORE READINESS
+
+Project-এ থাকতে হবে:
+
+- Proper Application ID
+- Version
+- Version Code
+- Release Configuration
+- Privacy Policy
+- Account Deletion
+- Data Safety Consideration
+- Permission Declaration
+- User-generated Content Safety
+- Backend Security Checklist
+- Data Retention এবং Account Deletion Policy
+- Audio / Video Call Permission Disclosure
+
+কোনো Ads SDK অথবা Ads Declaration Implement করা হবে না।
+
+Google Play Store Approval-এর 100% Guarantee দেওয়া যাবে না।
+
+Play Store Preparation Checklist তৈরি করতে হবে।
+
+# 53. COMPLETE PROJECT FILES
+
+**Android Project:**
+- Complete Kotlin Source Code
+- Jetpack Compose UI
+- Gradle Configuration
+- Android Manifest
+- Navigation Configuration
+- Localization Resources
+- APK Build Instructions
+- AAB Build Instructions
+- Release Configuration
+
+**Cloudflare Backend:**
+- Cloudflare Workers Source Code
+- TypeScript Backend
+- D1 Database Schema
+- D1 Migrations
+- Durable Objects
+- WebSocket Event Documentation
+- R2 Storage Setup
+- REST API Documentation
+- Environment Variable Template
+- wrangler.toml
+- Backend Deployment Instructions
+- Rate Limit এবং Security Configuration
+
+**Documentation:**
+- README.md
+- APK Build Instructions
+- AAB Build Instructions
+- Play Store Checklist
+- Required Manual Configuration
+- Testing Instructions
+
+কোনো Firebase Configuration File, google-services.json, Firebase Rules বা Firebase Setup Step তৈরি করা যাবে না।
+
+কোনো AdMob Configuration, Ad Unit ID, Ads SDK অথবা Ads Setup Step থাকবে না।
+
+Real Credentials Repository বা APK-তে রাখা যাবে না।
+
+# 54. SECRET AND CREDENTIAL SECURITY
+
+Sensitive Secret Source Code-এ Hardcode করা যাবে না।
+
+Private Credentials Public Repository-তে রাখা যাবে না।
+
+Cloudflare Backend-এর Secret Environment Variables / Secret Manager ব্যবহার করতে হবে।
+
+D1 Credentials, R2 Secret, JWT Signing Secret, TURN Credentials এবং অন্যান্য Private Secret শুধু Server-side থাকবে।
+
+APK-তে শুধু Public API Base URL-এর মতো Non-secret Configuration থাকতে পারে।
+
+# 55. NO FAKE FUNCTIONALITY
+
+কোনো Fake Functionality তৈরি করা যাবে না।
+
+- Fake Login নয়।
+- Fake Account Creation নয়।
+- Fake Message নয়।
+- Fake Delivery Status নয়।
+- Fake Read Status নয়।
+- Fake Audio Call নয়।
+- Fake Video Call নয়।
+- Fake Notification নয়।
+- Fake Upload নয়।
+- Fake Download নয়।
+- Fake Online Status নয়।
+
+প্রতিটি Feature বাস্তব Backend এবং Android Functionality-এর সঙ্গে যুক্ত থাকতে হবে।
+
+যে Feature-এর জন্য Backend Configuration, External Connectivity বা Manual Setup প্রয়োজন, তা সম্পন্ন না হওয়া পর্যন্ত Working বলে দাবি করা যাবে না।
+
+# 56. DEVELOPMENT AND TESTING PROCESS
+
+Development ধাপে ধাপে সম্পন্ন করতে হবে।
+
+1. সম্পূর্ণ Architecture এবং Project Structure তৈরি করুন।
+2. Native Android Kotlin Project তৈরি করুন।
+3. Cloudflare Workers Backend তৈরি করুন।
+4. D1 Database Schema এবং Migrations তৈরি করুন।
+5. Durable Objects এবং WebSocket Realtime Messaging Implement করুন।
+6. R2 Private Storage Configure করুন।
+7. Android App-এর সঙ্গে Backend API Connect করুন।
+8. Authentication এবং Authorization পরীক্ষা করুন।
+9. Chat এবং Message Functionality পরীক্ষা করুন।
+10. Image, Video, File এবং Voice Message পরীক্ষা করুন।
+11. Audio এবং Video Calling পরীক্ষা করুন।
+12. Notification Delivery এবং তার সীমাবদ্ধতা পরীক্ষা করুন।
+13. Error Handling এবং Security পরীক্ষা করুন।
+14. Offline এবং Reconnection পরীক্ষা করুন।
+15. APK এবং AAB Build করে পরীক্ষা করুন।
+
+কোনো Incomplete Feature-কে Completed বলা যাবে না।
+
+# 57. FINAL PROJECT REQUIREMENTS
+
+আমার জন্য সম্পূর্ণ **MY CHATTING PRO Native Android Studio Kotlin Project** তৈরি করুন।
+
+Final Technology:
+
+**Android:** Kotlin + Jetpack Compose + Material 3 + MVVM + Clean Architecture
+
+**Backend:** Cloudflare Workers + TypeScript + D1 + Durable Objects + R2
+
+**Mandatory Backend Rule:** Cloudflare-ই একমাত্র মূল Backend Platform। Workers হবে API ও Business Logic Layer; D1 হবে relational database; Durable Objects হবে Realtime WebSocket ও coordination layer; R2 হবে Private Object Storage। Firebase, Supabase, Appwrite, Node.js/Fastify Backend, PostgreSQL, Redis, Amazon S3 বা অন্য কোনো বিকল্প Backend Provider ব্যবহার করা যাবে না। Cloudflare-এর Free/Paid Plan limits, deployment, bindings, migrations, secrets, security এবং সম্ভাব্য খরচ Document করতে হবে। প্রয়োজনীয় External Connectivity (যেমন WebRTC-এর STUN/TURN) Cloudflare-এর নিজস্ব Service বলে ভুলভাবে দাবি করা যাবে না; বাস্তব Configuration ও সীমাবদ্ধতা জানাতে হবে।
+
+নিচের কোনো Technology ব্যবহার করা যাবে না:
+- Flutter
+- Dart
+- Node.js / Fastify Backend
+- PostgreSQL
+- Redis
+- Amazon S3
+- Firebase
+- OTP System
+- Ads SDK
+
+আগে উল্লেখ করা কোনো Feature নিজের ইচ্ছায় বাদ দেওয়া যাবে না।
+
+কোনো নতুন অপ্রয়োজনীয় Feature যোগ করা যাবে না।
+
+সব Feature বাস্তবভাবে Implement করতে হবে।
+
+প্রয়োজনীয় External Configuration, Service Setup এবং Manual Deployment Step স্পষ্টভাবে Document করতে হবে।
+
+শুধু Demo UI নয়—সম্পূর্ণ Android Source Code, Backend Source Code, Database Migrations, API Documentation, Testing Instructions এবং Build Instructions দিতে হবে।
+
+**APP NAME:** MY CHATTING PRO
+
+**DEVELOPER:** TAWHID SHAKH
+
+**FINAL GOAL:** A Complete Native Android Kotlin + Jetpack Compose Messaging Application with Cloudflare Backend, ready for real-world testing and Google Play Store preparation.

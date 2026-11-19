@@ -1,0 +1,6 @@
+{
+  "name": "MY CHATTING PRO",
+  "description": "Private multilingual messaging and WebRTC audio/video calling application powered by Supabase PostgreSQL, Supabase Storage, Cloudflare Workers, and Cloudflare Durable Objects.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

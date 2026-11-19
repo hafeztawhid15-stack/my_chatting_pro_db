@@ -1,0 +1,122 @@
+package com.mychattingpro
+
+import com.mychattingpro.core.common.AppError
+import com.mychattingpro.core.common.CountryCatalog
+import com.mychattingpro.core.localization.AppLanguage
+import com.mychattingpro.core.localization.DateTimeFormatters
+import com.mychattingpro.data.repository.ErrorMapper
+import com.mychattingpro.features.ads.InterstitialAdManager
+import com.squareup.moshi.Moshi
+import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.ResponseBody.Companion.toResponseBody
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Test
+import retrofit2.HttpException
+import retrofit2.Response
+import java.io.IOException
+
+class CoreLogicUnitTest {
+
+    @Test
+    fun `country catalog normalizes international phone numbers to E164`() {
+        val bd = CountryCatalog.findByIso("BD")
+        val us = CountryCatalog.findByIso("US")
+        val sa = CountryCatalog.findByIso("SA")
+
+        assertEquals("+8801712345678", CountryCatalog.normalizeToE164(bd, "01712345678"))
+        assertEquals("+8801712345678", CountryCatalog.normalizeToE164(bd, "+880 1712-345678"))
+        assertEquals("+16505550123", CountryCatalog.normalizeToE164(us, "650-555-0123"))
+        assertEquals("+966501234567", CountryCatalog.normalizeToE164(sa, "0501234567"))
+        assertNull(CountryCatalog.normalizeToE164(bd, "123"))
+        assertNull(CountryCatalog.normalizeToE164(us, ""))
+    }
+
+    @Test
+    fun `country catalog includes wide international support`() {
+        assertTrue(CountryCatalog.allCountries.size > 150)
+        assertTrue(CountryCatalog.popularIsoCodes.contains("BD"))
+        assertTrue(CountryCatalog.popularIsoCodes.contains("US"))
+        assertTrue(CountryCatalog.popularIsoCodes.contains("SA"))
+    }
+
+    @Test
+    fun `app languages preserve RTL and native labels`() {
+        assertEquals("বাংলা", AppLanguage.BENGALI.nativeLabel)
+        assertFalse(AppLanguage.BENGALI.isRtl)
+
+        assertEquals("English", AppLanguage.ENGLISH.nativeLabel)
+        assertFalse(AppLanguage.ENGLISH.isRtl)
+
+        assertEquals("العربية", AppLanguage.ARABIC.nativeLabel)
+        assertTrue(AppLanguage.ARABIC.isRtl)
+    }
+
+    @Test
+    fun `date formatter formats duration cleanly`() {
+        assertEquals("00:00", DateTimeFormatters.formatDuration(0))
+        assertEquals("01:05", DateTimeFormatters.formatDuration(65))
+        assertEquals("12:30", DateTimeFormatters.formatDuration(750))
+        assertNotNull(DateTimeFormatters.formatTimeOnly(System.currentTimeMillis(), AppLanguage.ENGLISH))
+    }
+
+    @Test
+    fun `error mapper maps backend codes including owner access denied cleanly`() {
+        val moshi = Moshi.Builder().addLast(KotlinJsonAdapterFactory()).build()
+        val mapper = ErrorMapper(moshi)
+
+        assertTrue(mapper.map(IOException("offline")) is AppError.NetworkUnavailable)
+
+        val errJson = """{"error":"wrong_pin","message":"Invalid PIN"}"""
+        val httpEx = HttpException(
+            Response.error<Any>(401, errJson.toResponseBody("application/json".toMediaType()))
+        )
+        assertTrue(mapper.map(httpEx) is AppError.WrongPin)
+
+        val rateJson = """{"error":"rate_limited","retryAfterSeconds":45}"""
+        val rateEx = HttpException(
+            Response.error<Any>(429, rateJson.toResponseBody("application/json".toMediaType()))
+        )
+        val mappedRate = mapper.map(rateEx)
+        assertTrue(mappedRate is AppError.RateLimited)
+        assertEquals(45, (mappedRate as AppError.RateLimited).retryAfterSeconds)
+
+        val ownerKeyJson = """{"error":"invalid_owner_key","message":"Bad key"}"""
+        val ownerEx = HttpException(
+            Response.error<Any>(403, ownerKeyJson.toResponseBody("application/json".toMediaType()))
+        )
+        assertTrue(mapper.map(ownerEx) is AppError.InvalidOwnerKey)
+
+        val ownerDeniedJson = """{"error":"owner_access_denied","message":"Not owner"}"""
+        val ownerDeniedEx = HttpException(
+            Response.error<Any>(403, ownerDeniedJson.toResponseBody("application/json".toMediaType()))
+        )
+        assertTrue(mapper.map(ownerDeniedEx) is AppError.OwnerAccessDenied)
+
+        val ownerMissingJson = """{"error":"owner_monitor_not_configured","message":"Not set"}"""
+        val ownerMissingEx = HttpException(
+            Response.error<Any>(503, ownerMissingJson.toResponseBody("application/json".toMediaType()))
+        )
+        assertTrue(mapper.map(ownerMissingEx) is AppError.OwnerMonitorNotConfigured)
+    }
+
+    @Test
+    fun `interstitial ad manager separates debug test id from release production id and enforces cooldown`() {
+        assertEquals(
+            "ca-app-pub-3940256099942544/1033173712",
+            InterstitialAdManager.resolveAdUnitId(isDebug = true)
+        )
+        assertEquals(
+            "ca-app-pub-9716395280477689/4017609898",
+            InterstitialAdManager.resolveAdUnitId(isDebug = false)
+        )
+
+        assertFalse(InterstitialAdManager.isCooldownActive(nowMs = 10_000L, lastShownAtMs = 0L))
+        assertTrue(InterstitialAdManager.isCooldownActive(nowMs = 25_000L, lastShownAtMs = 10_000L))
+        assertFalse(InterstitialAdManager.isCooldownActive(nowMs = 35_000L, lastShownAtMs = 10_000L))
+    }
+}

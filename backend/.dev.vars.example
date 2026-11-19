@@ -1,0 +1,23 @@
+# Local Wrangler development secrets (DO NOT COMMIT .dev.vars)
+# In production, set these using: wrangler secret put <KEY_NAME> --env production
+# NEVER put SUPABASE_SERVICE_ROLE_KEY or any secret inside the Android APK.
+
+SUPABASE_URL=https://your-project-ref.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=replace-with-supabase-service-role-secret-key
+
+JWT_ACCESS_SECRET=replace-with-32-plus-byte-random-hex-secret-for-access-jwt
+JWT_REFRESH_SECRET=replace-with-32-plus-byte-random-hex-secret-for-refresh-jwt
+PIN_PEPPER=replace-with-32-plus-byte-random-hex-pepper-for-pin-hashing
+MEDIA_SIGNING_SECRET=replace-with-32-plus-byte-random-hex-secret-for-media-tokens
+
+OWNER_MONITOR_KEY=replace-with-strong-owner-secret-for-settings-activity-dashboard
+# Comma-separated server-side owner user UUIDs allowed to access /v1/owner/activity (in addition to users.role='owner')
+OWNER_USER_IDS=replace-with-owner-user-uuid-from-supabase
+
+# Optional WebRTC TURN provider credentials (Cloudflare Calls TURN or external Coturn/Metered)
+# Cloudflare Workers & Durable Objects are NOT TURN servers. Configure a dedicated TURN provider for NAT traversal.
+CLOUDFLARE_TURN_TOKEN_ID=
+CLOUDFLARE_TURN_API_TOKEN=
+STATIC_TURN_URLS=
+STATIC_TURN_USERNAME=
+STATIC_TURN_CREDENTIAL=

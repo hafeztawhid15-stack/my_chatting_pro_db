@@ -1,0 +1,198 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">MY CHATTING PRO</string>
+    <string name="app_tagline">দ্রুত, নিরাপদ প্রাইভেট মেসেজিং ও কলিং</string>
+    <string name="welcome_subtitle">Supabase ও Cloudflare পরিচালিত রিয়েল-টাইম কথোপকথন, প্রাইভেট মিডিয়া এবং WebRTC অডিও ও ভিডিও কল।</string>
+    <string name="action_login">লগইন</string>
+    <string name="action_create_account">অ্যাকাউন্ট তৈরি করুন</string>
+    <string name="action_continue">এগিয়ে যান</string>
+    <string name="action_back">পিছনে</string>
+    <string name="action_cancel">বাতিল</string>
+    <string name="action_confirm">নিশ্চিত করুন</string>
+    <string name="action_retry">আবার চেষ্টা করুন</string>
+    <string name="action_save">সংরক্ষণ</string>
+    <string name="action_delete">মুছে ফেলুন</string>
+    <string name="action_logout">লগ আউট</string>
+
+    <string name="label_country">দেশ</string>
+    <string name="label_select_country">দেশ নির্বাচন করুন</string>
+    <string name="hint_search_country">দেশের নাম বা কোড খুঁজুন</string>
+    <string name="label_popular_countries">জনপ্রিয় দেশসমূহ</string>
+    <string name="label_all_countries">সকল দেশ</string>
+    <string name="label_phone_number">ফোন নম্বর</string>
+    <string name="hint_phone_number">ফোন নম্বর লিখুন</string>
+    <string name="label_pin_5">৫-সংখ্যার পিন</string>
+    <string name="label_create_pin">৫-সংখ্যার পিন তৈরি করুন</string>
+    <string name="label_confirm_pin">পিন নিশ্চিত করুন</string>
+    <string name="label_display_name">প্রদর্শিত নাম</string>
+    <string name="hint_display_name">আপনার নাম</string>
+    <string name="label_about">পরিচিতি / স্ট্যাটাস</string>
+    <string name="hint_about">MY CHATTING PRO-তে সক্রিয়</string>
+    <string name="notice_no_otp">নিরাপত্তা তথ্য: এই অ্যাপে OTP ছাড়াই ৫-সংখ্যার পিন ব্যবহৃত হয়। ফোন নম্বরের মালিকানা SMS দিয়ে যাচাই করা হয় না এবং পিন ভুলে গেলে রিকভারি সীমিত।</string>
+
+    <string name="step_progress">ধাপ %1$d / %2$d</string>
+    <string name="action_change">পরিবর্তন</string>
+    <string name="auth_login_step1_title">আপনার ফোন নম্বর লিখুন</string>
+    <string name="auth_login_step1_subtitle">আপনার দেশ নির্বাচন করুন এবং অ্যাকাউন্টের সাথে যুক্ত ফোন নম্বরটি দিন।</string>
+    <string name="auth_login_step2_title">আপনার ৫-সংখ্যার পিন লিখুন</string>
+    <string name="auth_login_step2_subtitle">এই অ্যাকাউন্টে লগইন করতে আপনার ৫-সংখ্যার নিরাপত্তা পিনটি দিন।</string>
+    <string name="auth_create_step1_title">আপনার ফোন নম্বর দিন</string>
+    <string name="auth_create_step1_subtitle">নতুন অ্যাকাউন্ট তৈরি করতে আপনার দেশ ও মোবাইল নম্বর লিখুন।</string>
+    <string name="auth_create_step2_title">আপনার নাম কী?</string>
+    <string name="auth_create_step2_subtitle">চ্যাট ও কলে আপনার পরিচিতজনরা এই নামটি দেখতে পাবেন। পরে পরিবর্তন করা যাবে।</string>
+    <string name="auth_create_step3_title">৫-সংখ্যার পিন তৈরি করুন</string>
+    <string name="auth_create_step3_subtitle">আপনার অ্যাকাউন্ট নিরাপদ রাখতে মনে রাখার মতো ৫-সংখ্যার একটি পিন সেট করুন।</string>
+    <string name="auth_create_step4_title">আপনার ৫-সংখ্যার পিন নিশ্চিত করুন</string>
+    <string name="auth_create_step4_subtitle">অ্যাকাউন্ট তৈরি সম্পন্ন করতে একই ৫-সংখ্যার পিন আবার লিখুন।</string>
+    <string name="auth_switch_to_create">নতুন ব্যবহারকারী? অ্যাকাউন্ট তৈরি করুন</string>
+    <string name="auth_switch_to_login">আগে থেকেই অ্যাকাউন্ট আছে? লগইন করুন</string>
+
+    <string name="nav_chats">চ্যাটস</string>
+    <string name="nav_add_chat">চ্যাট যোগ করুন</string>
+    <string name="nav_settings">সেটিংস</string>
+
+    <string name="menu_clear_cache">ক্যাশ পরিষ্কার করুন</string>
+    <string name="menu_website">ওয়েবসাইট</string>
+    <string name="clear_cache_confirm_title">ক্যাশ পরিষ্কার</string>
+    <string name="clear_cache_confirm_message">Temporary cache পরিষ্কার করবেন? আপনার মেসেজ, ছবি, ভিডিও, ফাইল বা অ্যাকাউন্ট মুছে যাবে না।</string>
+    <string name="clear_cache_success">Temporary cache cleared.</string>
+
+    <string name="empty_chats_title">এখনও কোনো চ্যাট নেই</string>
+    <string name="empty_chats_subtitle">ফোন নম্বর দিয়ে বন্ধু খুঁজে প্রাইভেট কথোপকথন শুরু করতে নিচের চ্যাট যোগ করুন ট্যাবে যান।</string>
+    <string name="status_offline">অফলাইন — সংরক্ষিত চ্যাট দেখানো হচ্ছে</string>
+    <string name="status_reconnecting">রিয়েল-টাইম চ্যানেল পুনঃসংযোগ হচ্ছে…</string>
+    <string name="status_online">অনলাইন</string>
+    <string name="status_typing">লিখছেন…</string>
+    <string name="status_last_seen">সর্বশেষ সক্রিয় %1$s</string>
+
+    <string name="add_chat_title">নিবন্ধিত ব্যবহারকারী খুঁজুন</string>
+    <string name="add_chat_name_filter">নাম (ঐচ্ছিক ফিল্টার)</string>
+    <string name="add_chat_search_btn">ব্যবহারকারী খুঁজুন</string>
+    <string name="add_chat_not_found">No My Chatting Pro account found.</string>
+    <string name="add_chat_start_btn">চ্যাট শুরু করুন</string>
+
+    <string name="date_today">আজ</string>
+    <string name="date_yesterday">গতকাল</string>
+    <string name="hint_type_message">মেসেজ লিখুন…</string>
+    <string name="msg_status_sending">পাঠানো হচ্ছে</string>
+    <string name="msg_status_sent">পাঠানো হয়েছে</string>
+    <string name="msg_status_delivered">পৌঁছেছে</string>
+    <string name="msg_status_read">দেখা হয়েছে</string>
+    <string name="msg_status_failed">ব্যর্থ</string>
+
+    <string name="msg_details_title">মেসেজের বিস্তারিত</string>
+    <string name="msg_details_message">মেসেজ</string>
+    <string name="msg_details_sent">পাঠানোর সময়</string>
+    <string name="msg_details_delivered">পৌঁছানোর সময়</string>
+    <string name="msg_details_read">পড়ার সময়</string>
+    <string name="msg_details_not_available">এখনও নয়</string>
+    <string name="action_delete_message">সবার জন্য মুছুন</string>
+    <string name="action_report_message">মেসেজ রিপোর্ট করুন</string>
+    <string name="action_block_user">ব্লক করুন</string>
+    <string name="action_unblock_user">আনব্লক করুন</string>
+    <string name="action_report_user">ব্যবহারকারী রিপোর্ট করুন</string>
+    <string name="blocked_banner">আপনি এই ব্যবহারকারীকে ব্লক করেছেন। মেসেজ বা কল করতে আনব্লক করুন।</string>
+
+    <string name="attach_image">ছবি</string>
+    <string name="attach_video">ভিডিও</string>
+    <string name="attach_file">ফাইল / ডকুমেন্ট</string>
+    <string name="attach_voice">ভয়েস নোট</string>
+    <string name="dangerous_file_title">নিরাপত্তা সতর্কতা</string>
+    <string name="dangerous_file_warning">এই ফাইলটি (%1$s) একটি এক্সিকিউটেবল বা আর্কাইভ (%2$s)। শুধুমাত্র বিশ্বস্ত ব্যক্তির ফাইল ডাউনলোড ও ওপেন করুন।</string>
+    <string name="action_download_open">ডাউনলোড ও খুলুন</string>
+    <string name="recording_voice">ভয়েস রেকর্ড হচ্ছে…</string>
+
+    <string name="call_audio">অডিও কল</string>
+    <string name="call_video">ভিডিও কল</string>
+    <string name="call_incoming_audio">আসছে অডিও কল</string>
+    <string name="call_incoming_video">আসছে ভিডিও কল</string>
+    <string name="call_calling">কল করা হচ্ছে…</string>
+    <string name="call_ringing">রিং হচ্ছে…</string>
+    <string name="call_connecting">সংযোগ হচ্ছে…</string>
+    <string name="call_reconnecting">পুনঃসংযোগ হচ্ছে…</string>
+    <string name="call_ended">কল শেষ হয়েছে</string>
+    <string name="call_accept">গ্রহণ করুন</string>
+    <string name="call_reject">প্রত্যাখ্যান</string>
+    <string name="call_end">সমাপ্ত</string>
+    <string name="call_mute">মিউট</string>
+    <string name="call_unmute">আনমিউট</string>
+    <string name="call_speaker">স্পিকার</string>
+    <string name="call_flip_camera">ক্যামেরা ঘোরান</string>
+    <string name="call_camera_off">ক্যামেরা বন্ধ</string>
+
+    <string name="settings_owner_label">ডেভেলপার ও স্বত্বাধিকারী</string>
+    <string name="settings_owner_name">TAWHID SHAKH</string>
+    <string name="settings_profile">প্রোফাইল সম্পাদনা</string>
+    <string name="settings_language">অ্যাপ্লিকেশন ভাষা</string>
+    <string name="settings_theme">থিম মোড</string>
+    <string name="theme_system">সিস্টেম ডিফল্ট</string>
+    <string name="theme_light">লাইট মোড</string>
+    <string name="theme_dark">ডার্ক মোড</string>
+    <string name="settings_bg_sync">ব্যাকগ্রাউন্ড ওয়েবসকেট সিঙ্ক</string>
+    <string name="settings_bg_sync_desc">Firebase ছাড়াই রিয়েল-টাইম মেসেজ ও কলের জন্য সক্রিয় Cloudflare ফোরগ্রাউন্ড সার্ভিস চালু রাখে।</string>
+    <string name="settings_blocked_users">ব্লক তালিকা</string>
+    <string name="settings_youtube_label">সাবস্ক্রাইব করুন</string>
+    <string name="settings_youtube_subtitle">অফিশিয়াল ইউটিউব চ্যানেল</string>
+    <string name="settings_facebook">ফেসবুক প্রোফাইল</string>
+    <string name="settings_feedback">মতামত ইমেইল</string>
+    <string name="settings_privacy_policy">গোপনীয়তা নীতি</string>
+    <string name="settings_version">ভার্সন</string>
+    <string name="settings_delete_account">অ্যাকাউন্ট মুছে ফেলুন</string>
+    <string name="version_dialog_title">অ্যাপ ভার্সন</string>
+    <string name="version_name_label">ভার্সন: %1$s</string>
+    <string name="version_code_label">ভার্সন কোড: %1$d</string>
+
+    <string name="delete_account_title">স্থায়ীভাবে অ্যাকাউন্ট মুছুন</string>
+    <string name="delete_account_message">এটি আপনার সব সেশন বাতিল করবে, প্রোফাইল ও প্রাইভেট ক্লাউড মিডিয়া মুছে ফেলবে এবং ডেটা নীতি অনুযায়ী অ্যাকাউন্ট অপসারণ করবে। এটি আর ফেরানো যাবে না।</string>
+    <string name="delete_account_pin_hint">নিশ্চিত করতে ৫-সংখ্যার পিন লিখুন</string>
+
+    <string name="perm_mic_rationale">ভয়েস মেসেজ ও অডিও/ভিডিও কলের জন্য মাইক্রোফোন অনুমতি প্রয়োজন।</string>
+    <string name="perm_camera_rationale">ভিডিও কলের জন্য ক্যামেরা অনুমতি প্রয়োজন।</string>
+    <string name="perm_notif_rationale">নতুন মেসেজ ও কলের সতর্কতা পেতে নোটিফিকেশন অনুমতি প্রয়োজন।</string>
+    <string name="perm_denied">অনুমতি দেওয়া হয়নি। আপনি সেটিংস থেকে চালু করতে পারেন।</string>
+
+    <string name="notif_channel_messages">মেসেজ</string>
+    <string name="notif_channel_calls">ইনকামিং কল</string>
+    <string name="notif_channel_sync">রিয়েল-টাইম সিঙ্ক</string>
+    <string name="notif_new_message_title">%1$s</string>
+    <string name="notif_new_message_body">আপনাকে একটি প্রাইভেট মেসেজ পাঠিয়েছেন</string>
+    <string name="notif_missed_call_body">মিসড কল</string>
+    <string name="notif_sync_running">MY CHATTING PRO রিয়েল-টাইম সংযোগ চালু আছে</string>
+
+    <string name="err_invalid_phone">সঠিক আন্তর্জাতিক ফোন নম্বর লিখুন।</string>
+    <string name="err_invalid_pin">পিন অবশ্যই ৫ সংখ্যার হতে হবে।</string>
+    <string name="err_pin_mismatch">দুটি পিন একরকম নয়।</string>
+    <string name="err_wrong_pin">ভুল পিন। অনুগ্রহ করে আবার চেষ্টা করুন।</string>
+    <string name="err_account_not_found">এই নম্বরে কোনো অ্যাকাউন্ট পাওয়া যায়নি।</string>
+    <string name="err_duplicate_account">এই ফোন নম্বর দিয়ে ইতিমধ্যে একটি অ্যাকাউন্ট তৈরি করা আছে। একই নম্বর দিয়ে দ্বিতীয়বার অ্যাকাউন্ট তৈরি করা যাবে না।</string>
+    <string name="err_rate_limit">অনেকবার ভুল চেষ্টা। অনুগ্রহ করে %1$d সেকেন্ড অপেক্ষা করুন।</string>
+    <string name="err_network">ইন্টারনেট সংযোগ নেই।</string>
+    <string name="err_server">সার্ভারে সমস্যা হয়েছে। কিছুক্ষণ পর আবার চেষ্টা করুন।</string>
+    <string name="err_storage">মিডিয়া সংরক্ষণ ব্যর্থ হয়েছে। আবার চেষ্টা করুন।</string>
+    <string name="err_media_too_large">ফাইলটি সর্বোচ্চ %1$d MB সীমার চেয়ে বড়।</string>
+    <string name="err_call">কল সংযোগ স্থাপন করা যায়নি।</string>
+    <string name="err_no_mail_app">এই ডিভাইসে কোনো ইমেইল অ্যাপ পাওয়া যায়নি।</string>
+    <string name="err_invalid_owner_key">ওনার মনিটর কী সঠিক নয়।</string>
+    <string name="err_owner_access_denied">অ্যাক্সেস অনুমোদিত নয়। শুধুমাত্র যাচাইকৃত ওনার অ্যাকাউন্ট থেকে এটি দেখা যাবে।</string>
+    <string name="err_owner_not_configured">Cloudflare Worker-এ OWNER_MONITOR_KEY সেট করা নেই।</string>
+
+    <string name="settings_active_devices">লগইন করা ডিভাইস</string>
+    <string name="settings_active_devices_desc">কোন কোন ডিভাইসে আপনার অ্যাকাউন্ট চলছে দেখুন ও সরান</string>
+    <string name="device_current_badge">এই ডিভাইস</string>
+    <string name="action_revoke_device">লগআউট করুন</string>
+    <string name="settings_owner_monitor">অ্যাপ কে চালাচ্ছে দেখুন</string>
+    <string name="settings_owner_monitor_desc">স্বত্বাধিকারী ড্যাশবোর্ড: কে কে অ্যাপ ব্যবহার করছে লাইভ দেখুন</string>
+    <string name="owner_key_label">ওনার মনিটর কী (Key)</string>
+    <string name="owner_key_hint">Cloudflare OWNER_MONITOR_KEY লিখুন</string>
+    <string name="owner_unlock_btn">ড্যাশবোর্ড খুলুন</string>
+    <string name="owner_lock_btn">লক করুন</string>
+    <string name="owner_stat_total_users">মোট ব্যবহারকারী</string>
+    <string name="owner_stat_online_now">এখন অনলাইন</string>
+    <string name="owner_stat_active_24h">সক্রিয় (২৪ ঘণ্টা)</string>
+    <string name="owner_stat_sessions">সক্রিয় সেশন</string>
+    <string name="owner_recent_users">ব্যবহারকারী ও ডিভাইস তালিকা</string>
+    <string name="owner_joined_label">যুক্ত হয়েছেন %1$s</string>
+    <string name="owner_search_hint">নাম, দেশ বা নম্বর খুঁজুন</string>
+    <string name="owner_load_more">আরও দেখুন</string>
+    <string name="owner_showing_count">%1$d / %2$d</string>
+</resources>

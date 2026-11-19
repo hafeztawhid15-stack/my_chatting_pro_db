@@ -1,0 +1,198 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">MY CHATTING PRO</string>
+    <string name="app_tagline">مراسلة خاصة سريعة ومكالمات عالية الجودة</string>
+    <string name="welcome_subtitle">محادثات فورية ووسائط خاصة ومكالمات صوت وفيديو عبر WebRTC مدعومة ببنية Supabase و Cloudflare.</string>
+    <string name="action_login">تسجيل الدخول</string>
+    <string name="action_create_account">إنشاء حساب</string>
+    <string name="action_continue">متابعة</string>
+    <string name="action_back">رجوع</string>
+    <string name="action_cancel">إلغاء</string>
+    <string name="action_confirm">تأكيد</string>
+    <string name="action_retry">إعادة المحاولة</string>
+    <string name="action_save">حفظ</string>
+    <string name="action_delete">حذف</string>
+    <string name="action_logout">تسجيل الخروج</string>
+
+    <string name="label_country">الدولة</string>
+    <string name="label_select_country">اختر الدولة</string>
+    <string name="hint_search_country">ابحث عن الدولة أو رمز الاتصال</string>
+    <string name="label_popular_countries">الدول الشائعة</string>
+    <string name="label_all_countries">جميع الدول</string>
+    <string name="label_phone_number">رقم الهاتف</string>
+    <string name="hint_phone_number">أدخل رقم الهاتف</string>
+    <string name="label_pin_5">رمز PIN من 5 أرقام</string>
+    <string name="label_create_pin">أنشئ رمز PIN من 5 أرقام</string>
+    <string name="label_confirm_pin">تأكيد رمز PIN</string>
+    <string name="label_display_name">الاسم المعروض</string>
+    <string name="hint_display_name">اسمك</string>
+    <string name="label_about">الحالة / نبذة</string>
+    <string name="hint_about">متاح على MY CHATTING PRO</string>
+    <string name="notice_no_otp">ملاحظة أمنية: تستخدم الحسابات رمز PIN من 5 أرقام بدون رمز OTP. لا يتم التحقق من ملكية الرقم عبر SMS.</string>
+
+    <string name="step_progress">الخطوة %1$d من %2$d</string>
+    <string name="action_change">تغيير</string>
+    <string name="auth_login_step1_title">أدخل رقم هاتفك</string>
+    <string name="auth_login_step1_subtitle">اختر دولتك وأدخل رقم الهاتف المرتبط بحسابك.</string>
+    <string name="auth_login_step2_title">أدخل رمز PIN من 5 أرقام</string>
+    <string name="auth_login_step2_subtitle">أدخل رمز PIN الأمني المكون من 5 أرقام الخاص بهذا الحساب.</string>
+    <string name="auth_create_step1_title">أدخل رقم هاتفك</string>
+    <string name="auth_create_step1_subtitle">اختر رمز الدولة وأدخل رقم هاتفك لإنشاء حساب جديد.</string>
+    <string name="auth_create_step2_title">ما هو اسمك؟</string>
+    <string name="auth_create_step2_subtitle">سيظهر هذا الاسم لجهات اتصالك في المحادثات والمكالمات. يمكنك تعديله لاحقاً.</string>
+    <string name="auth_create_step3_title">أنشئ رمز PIN من 5 أرقام</string>
+    <string name="auth_create_step3_subtitle">اختر رمز PIN من 5 أرقام يسهل تذكره لحماية حسابك.</string>
+    <string name="auth_create_step4_title">تأكيد رمز PIN من 5 أرقام</string>
+    <string name="auth_create_step4_subtitle">أعد إدخال نفس رمز PIN لإتمام إنشاء حسابك.</string>
+    <string name="auth_switch_to_create">مستخدم جديد؟ أنشئ حساباً</string>
+    <string name="auth_switch_to_login">لديك حساب بالفعل؟ تسجيل الدخول</string>
+
+    <string name="nav_chats">المحادثات</string>
+    <string name="nav_add_chat">إضافة محادثة</string>
+    <string name="nav_settings">الإعدادات</string>
+
+    <string name="menu_clear_cache">مسح ذاكرة التخزين المؤقت</string>
+    <string name="menu_website">الموقع الإلكتروني</string>
+    <string name="clear_cache_confirm_title">مسح التخزين المؤقت</string>
+    <string name="clear_cache_confirm_message">Temporary cache পরিষ্কার করবেন? لن يتم حذف الرسائل أو الصور أو الفيديو أو الملفات أو حسابك.</string>
+    <string name="clear_cache_success">Temporary cache cleared.</string>
+
+    <string name="empty_chats_title">لا توجد محادثات بعد</string>
+    <string name="empty_chats_subtitle">اضغط على إضافة محادثة أدناه للبحث عن مستخدم برقم الهاتف وبدء محادثة خاصة.</string>
+    <string name="status_offline">غير متصل — يتم عرض المحادثات المحفوظة</string>
+    <string name="status_reconnecting">جارٍ إعادة الاتصال بالقناة الفورية…</string>
+    <string name="status_online">متصل</string>
+    <string name="status_typing">يكتب الآن…</string>
+    <string name="status_last_seen">آخر ظهور %1$s</string>
+
+    <string name="add_chat_title">البحث عن مستخدم مسجل</string>
+    <string name="add_chat_name_filter">الاسم (تصفية اختيارية)</string>
+    <string name="add_chat_search_btn">بحث عن مستخدم</string>
+    <string name="add_chat_not_found">No My Chatting Pro account found.</string>
+    <string name="add_chat_start_btn">بدء المحادثة</string>
+
+    <string name="date_today">اليوم</string>
+    <string name="date_yesterday">أمس</string>
+    <string name="hint_type_message">اكتب رسالة…</string>
+    <string name="msg_status_sending">جارٍ الإرسال</string>
+    <string name="msg_status_sent">تم الإرسال</string>
+    <string name="msg_status_delivered">تم التسليم</string>
+    <string name="msg_status_read">تمت القراءة</string>
+    <string name="msg_status_failed">فشل</string>
+
+    <string name="msg_details_title">تفاصيل الرسالة</string>
+    <string name="msg_details_message">الرسالة</string>
+    <string name="msg_details_sent">وقت الإرسال</string>
+    <string name="msg_details_delivered">وقت التسليم</string>
+    <string name="msg_details_read">وقت القراءة</string>
+    <string name="msg_details_not_available">ليس بعد</string>
+    <string name="action_delete_message">حذف لدى الجميع</string>
+    <string name="action_report_message">الإبلاغ عن الرسالة</string>
+    <string name="action_block_user">حظر المستخدم</string>
+    <string name="action_unblock_user">إلغاء الحظر</string>
+    <string name="action_report_user">الإبلاغ عن المستخدم</string>
+    <string name="blocked_banner">لقد قمت بحظر هذا المستخدم. قم بإلغاء الحظر لإرسال الرسائل أو إجراء المكالمات.</string>
+
+    <string name="attach_image">صورة</string>
+    <string name="attach_video">فيديو</string>
+    <string name="attach_file">ملف / مستند</string>
+    <string name="attach_voice">رسالة صوتية</string>
+    <string name="dangerous_file_title">تحذير أمني</string>
+    <string name="dangerous_file_warning">هذا الملف (%1$s) من نوع تنفيذي أو أرشيف (%2$s). قم بتنزيل وفتح الملفات من جهات اتصال موثوقة فقط.</string>
+    <string name="action_download_open">تنزيل وفتح</string>
+    <string name="recording_voice">جارٍ تسجيل رسالة صوتية…</string>
+
+    <string name="call_audio">مكالمة صوتية</string>
+    <string name="call_video">مكالمة فيديو</string>
+    <string name="call_incoming_audio">مكالمة صوتية واردة</string>
+    <string name="call_incoming_video">مكالمة فيديو واردة</string>
+    <string name="call_calling">جارٍ الاتصال…</string>
+    <string name="call_ringing">يرن…</string>
+    <string name="call_connecting">جارٍ التوصيل…</string>
+    <string name="call_reconnecting">جارٍ إعادة الاتصال…</string>
+    <string name="call_ended">انتهت المكالمة</string>
+    <string name="call_accept">رد</string>
+    <string name="call_reject">رفض</string>
+    <string name="call_end">إنهاء</string>
+    <string name="call_mute">كتم</string>
+    <string name="call_unmute">إلغاء الكتم</string>
+    <string name="call_speaker">مكبر الصوت</string>
+    <string name="call_flip_camera">تبديل الكاميرا</string>
+    <string name="call_camera_off">إيقاف الكاميرا</string>
+
+    <string name="settings_owner_label">المطور والمالك</string>
+    <string name="settings_owner_name">TAWHID SHAKH</string>
+    <string name="settings_profile">تعديل الملف الشخصي</string>
+    <string name="settings_language">لغة التطبيق</string>
+    <string name="settings_theme">المظهر</string>
+    <string name="theme_system">افتراضي النظام</string>
+    <string name="theme_light">الوضع الفاتح</string>
+    <string name="theme_dark">الوضع الداكن</string>
+    <string name="settings_bg_sync">مزامنة WebSocket في الخلفية</string>
+    <string name="settings_bg_sync_desc">يحافظ على اتصال Cloudflare WebSocket نشطاً للرسائل والمكالمات الفورية بدون Firebase FCM.</string>
+    <string name="settings_blocked_users">المستخدمون المحظورون</string>
+    <string name="settings_youtube_label">সাবস্ক্রাইব করুন</string>
+    <string name="settings_youtube_subtitle">القناة الرسمية على يوتيوب</string>
+    <string name="settings_facebook">ملف فيسبوك</string>
+    <string name="settings_feedback">بريد الملاحظات</string>
+    <string name="settings_privacy_policy">سياسة الخصوصية</string>
+    <string name="settings_version">الإصدار</string>
+    <string name="settings_delete_account">حذف الحساب</string>
+    <string name="version_dialog_title">إصدار التطبيق</string>
+    <string name="version_name_label">الإصدار: %1$s</string>
+    <string name="version_code_label">رمز الإصدار: %1$d</string>
+
+    <string name="delete_account_title">حذف الحساب نهائياً</string>
+    <string name="delete_account_message">سيؤدي هذا إلى إلغاء جميع الجلسات وحذف ملفك الشخصي ووسائطك السحابية الخاصة وإزالة سجلات الحساب وفق سياسة الاحتفاظ بالبيانات. لا يمكن التراجع عن هذا الإجراء.</string>
+    <string name="delete_account_pin_hint">أدخل رمز PIN من 5 أرقام للتأكيد</string>
+
+    <string name="perm_mic_rationale">مطلوب إذن الميكروفون للرسائل الصوتية والمكالمات.</string>
+    <string name="perm_camera_rationale">مطلوب إذن الكاميرا لمكالمات الفيديو.</string>
+    <string name="perm_notif_rationale">يتيح إذن الإشعارات تلقي تنبيهات للرسائل الجديدة والمكالمات الواردة.</string>
+    <string name="perm_denied">تم رفض الإذن. يمكنك تفعيله من إعدادات التطبيق.</string>
+
+    <string name="notif_channel_messages">الرسائل</string>
+    <string name="notif_channel_calls">المكالمات الواردة</string>
+    <string name="notif_channel_sync">المزامنة الفورية</string>
+    <string name="notif_new_message_title">%1$s</string>
+    <string name="notif_new_message_body">أرسل لك رسالة خاصة</string>
+    <string name="notif_missed_call_body">مكالمة فائتة</string>
+    <string name="notif_sync_running">قناة MY CHATTING PRO الفورية نشطة</string>
+
+    <string name="err_invalid_phone">يرجى إدخال رقم هاتف دولي صحيح.</string>
+    <string name="err_invalid_pin">يجب أن يتكون رمز PIN من 5 أرقام بالضبط.</string>
+    <string name="err_pin_mismatch">رمزا PIN غير متطابقين.</string>
+    <string name="err_wrong_pin">رمز PIN غير صحيح. يرجى المحاولة مرة أخرى.</string>
+    <string name="err_account_not_found">لا يوجد حساب لهذا الرقم.</string>
+    <string name="err_duplicate_account">يوجد حساب مسجل بهذا الرقم بالفعل. لا يمكنك إنشاء حساب ثانٍ بنفس الرقم.</string>
+    <string name="err_rate_limit">محاولات كثيرة جداً. يرجى الانتظار %1$d ثانية.</string>
+    <string name="err_network">لا يوجد اتصال بالإنترنت.</string>
+    <string name="err_server">حدث خطأ في الخادم. يرجى المحاولة لاحقاً.</string>
+    <string name="err_storage">فشل حفظ الوسائط. يرجى إعادة المحاولة.</string>
+    <string name="err_media_too_large">حجم الملف يتجاوز الحد الأقصى (%1$d ميجابايت).</string>
+    <string name="err_call">تعذر إنشاء اتصال المكالمة.</string>
+    <string name="err_no_mail_app">لم يتم العثور على تطبيق بريد إلكتروني على هذا الجهاز.</string>
+    <string name="err_invalid_owner_key">مفتاح مراقبة المالك غير صحيح.</string>
+    <string name="err_owner_access_denied">تم رفض الوصول. هذه اللوحة مخصصة لحساب مالك التطبيق المعتمد فقط.</string>
+    <string name="err_owner_not_configured">لم يتم تكوين مفتاح المراقبة على خادم Cloudflare.</string>
+
+    <string name="settings_active_devices">الأجهزة النشطة</string>
+    <string name="settings_active_devices_desc">عرض وإزالة الأجهزة المسجلة بحسابك</string>
+    <string name="device_current_badge">هذا الجهاز</string>
+    <string name="action_revoke_device">تسجيل الخروج</string>
+    <string name="settings_owner_monitor">مراقبة مستخدمي التطبيق</string>
+    <string name="settings_owner_monitor_desc">لوحة المالك: معرفة من يستخدم MY CHATTING PRO مباشرة</string>
+    <string name="owner_key_label">مفتاح مراقبة المالك</string>
+    <string name="owner_key_hint">أدخل مفتاح Cloudflare OWNER_MONITOR_KEY</string>
+    <string name="owner_unlock_btn">فتح اللوحة</string>
+    <string name="owner_lock_btn">قفل</string>
+    <string name="owner_stat_total_users">إجمالي المستخدمين</string>
+    <string name="owner_stat_online_now">متصل الآن</string>
+    <string name="owner_stat_active_24h">نشط (٢٤ ساعة)</string>
+    <string name="owner_stat_sessions">الجلسات النشطة</string>
+    <string name="owner_recent_users">المستخدمون والأجهزة</string>
+    <string name="owner_joined_label">انضم %1$s</string>
+    <string name="owner_search_hint">ابحث بالاسم أو الدولة أو الرقم</string>
+    <string name="owner_load_more">تحميل المزيد</string>
+    <string name="owner_showing_count">%1$d من %2$d</string>
+</resources>

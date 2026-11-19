@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <cache-path name="temp_media_cache" path="temp_media/" />
+    <cache-path name="temp_downloads" path="downloads/" />
+    <files-path name="voice_notes" path="voice/" />
+    <files-path name="saved_downloads" path="files/" />
+</paths>
