@@ -63,6 +63,8 @@
     <string name="status_offline">অফলাইন — সংরক্ষিত চ্যাট দেখানো হচ্ছে</string>
     <string name="status_reconnecting">রিয়েল-টাইম চ্যানেল পুনঃসংযোগ হচ্ছে…</string>
     <string name="status_online">অনলাইন</string>
+    <string name="status_user_offline">অফলাইন</string>
+    <string name="status_user_offline_last_seen">অফলাইন • %1$s</string>
     <string name="status_typing">লিখছেন…</string>
     <string name="status_last_seen">সর্বশেষ সক্রিয় %1$s</string>
 
@@ -263,6 +265,8 @@
     <string name="err_duplicate_report">আপনি ইতিমধ্যেই সম্প্রতি এই বিষয়ে রিপোর্ট করেছেন।</string>
     <string name="err_session_revoked">অন্য ডিভাইস থেকে লগআউট করা হয়েছে বা সেশনের মেয়াদ শেষ হয়েছে।</string>
     <string name="err_user_blocked">ব্যবহারকারী ব্লক থাকায় এই কাজটি করা যাচ্ছে না।</string>
+    <string name="err_conversation_in_private_chat">এই কনট্যাক্টটি আপনার প্রাইভেট চ্যাটে রয়েছে। মেসেজ করতে প্রাইভেট চ্যাট খুলুন।</string>
+    <string name="err_cannot_move_native_private_chat">সরাসরি প্রাইভেট চ্যাটে শুরু করা কথোপকথন সাধারণ চ্যাটে নেওয়া যাবে না।</string>
     <string name="err_no_browser">এই লিংকটি খোলার জন্য কোনো ব্রাউজার পাওয়া যায়নি।</string>
 
     <string name="notif_channel_security">নিরাপত্তা সতর্কতা</string>
@@ -331,6 +335,14 @@
     <string name="chat_menu_delete_chat">চ্যাট ডিলিট করুন</string>
     <string name="chat_menu_delete_private_chat">প্রাইভেট চ্যাট ডিলিট করুন</string>
     <string name="chat_delete_confirm_message">আপনার তালিকা থেকে এই কথোপকথনটি মুছে ফেলবেন?</string>
+    <string name="chat_menu_move_to_private">প্রাইভেট চ্যাটে পাঠান</string>
+    <string name="chat_move_private_confirm_title">প্রাইভেট চ্যাটে পাঠাবেন?</string>
+    <string name="chat_move_private_confirm_message">%1$s-কে প্রাইভেট চ্যাটে পাঠাবেন? এতে এই কনট্যাক্টটি সাধারণ চ্যাট তালিকা থেকে লুকানো থাকবে এবং আপনার ৫-সংখ্যার প্রাইভেট পিন দিয়ে সুরক্ষিত থাকবে।</string>
+    <string name="chat_moved_to_private_notice">প্রাইভেট চ্যাটে পাঠানো হয়েছে</string>
+    <string name="chat_menu_move_to_regular">সাধারণ চ্যাটে ফিরিয়ে আনুন</string>
+    <string name="chat_move_regular_confirm_title">সাধারণ চ্যাটে ফিরিয়ে আনবেন?</string>
+    <string name="chat_move_regular_confirm_message">%1$s-কে আবার আপনার সাধারণ চ্যাট তালিকায় ফিরিয়ে আনবেন?</string>
+    <string name="chat_moved_to_regular_notice">সাধারণ চ্যাটে ফিরিয়ে আনা হয়েছে</string>
     <string name="report_reason_label">কারণ</string>
     <string name="report_details_hint">বিস্তারিত তথ্য (ঐচ্ছিক)</string>
     <string name="report_submit">রিপোর্ট জমা দিন</string>

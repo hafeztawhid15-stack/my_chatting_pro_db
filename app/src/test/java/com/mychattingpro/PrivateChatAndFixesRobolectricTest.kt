@@ -646,6 +646,7 @@ class PrivateChatAndFixesRobolectricTest {
         override suspend fun setPrivateMarkedUnread(conversationId: String, unread: Boolean): Result<Unit> = Result.success(Unit)
         override suspend fun clearPrivateConversation(conversationId: String): Result<Unit> = Result.success(Unit)
         override suspend fun deletePrivateConversation(conversationId: String): Result<Unit> = Result.success(Unit)
+        override suspend fun moveToRegularChat(conversationId: String): Result<Unit> = Result.success(Unit)
         override suspend fun getPrivatePeerProfile(conversationId: String): Result<ConversationPeerProfile> =
             Result.failure(UnsupportedOperationException())
         override fun observePrivateMessages(conversationId: String): Flow<List<Message>> = flowOf(emptyList())
@@ -736,6 +737,7 @@ class PrivateChatAndFixesRobolectricTest {
         override suspend fun setMarkedUnread(conversationId: String, unread: Boolean) = Result.success(Unit)
         override suspend fun clearConversation(conversationId: String) = Result.success(Unit)
         override suspend fun deleteConversation(conversationId: String) = Result.success(Unit)
+        override suspend fun moveToPrivateChat(conversationId: String) = Result.success(Unit)
         override suspend fun getPeerProfile(conversationId: String) =
             Result.failure<ConversationPeerProfile>(UnsupportedOperationException())
     }

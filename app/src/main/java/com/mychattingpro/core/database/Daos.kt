@@ -53,6 +53,18 @@ interface ConversationDao {
     @Query("UPDATE cached_conversations SET isBlockedByMe = :blocked WHERE peerUserId = :peerUserId")
     suspend fun updateBlockedByMe(peerUserId: String, blocked: Boolean)
 
+    @Query("UPDATE cached_conversations SET isPrivate = :isPrivate WHERE id = :conversationId")
+    suspend fun updatePrivateState(conversationId: String, isPrivate: Boolean)
+
+    @Query("DELETE FROM cached_conversations WHERE isPrivate = :isPrivate AND id NOT IN (:activeIds)")
+    suspend fun deleteMissingByPrivacy(isPrivate: Boolean, activeIds: List<String>)
+
+    @Query("DELETE FROM cached_conversations WHERE isPrivate = :isPrivate")
+    suspend fun deleteAllByPrivacy(isPrivate: Boolean)
+
+    @Query("DELETE FROM cached_conversations WHERE peerUserId = :peerUserId AND isPrivate = 0")
+    suspend fun deleteRegularCopiesForPeer(peerUserId: String)
+
     @Query("DELETE FROM cached_conversations WHERE id = :conversationId")
     suspend fun deleteById(conversationId: String)
 
@@ -100,6 +112,9 @@ interface MessageDao {
 
     @Query("UPDATE cached_messages SET deletedForAllAtMs = :deletedAtMs, bodyText = NULL, mediaId = NULL WHERE id = :messageId")
     suspend fun markDeletedForAll(messageId: String, deletedAtMs: Long)
+
+    @Query("UPDATE cached_messages SET isPrivate = :isPrivate WHERE conversationId = :conversationId")
+    suspend fun updateConversationMessagesPrivateState(conversationId: String, isPrivate: Boolean)
 
     @Query("DELETE FROM cached_messages WHERE isPrivate = 1")
     suspend fun clearPrivate()

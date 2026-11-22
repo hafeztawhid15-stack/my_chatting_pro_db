@@ -51,6 +51,8 @@ class ErrorMapper(private val moshi: Moshi) {
                 "duplicate_report" -> AppError.DuplicateReport
                 "session_revoked", "session_compromised", "invalid_refresh_token" -> AppError.SessionRevoked
                 "user_blocked" -> AppError.UserBlocked
+                "conversation_in_private_chat" -> AppError.ConversationInPrivateChat
+                "cannot_move_native_private_chat" -> AppError.CannotMoveNativePrivateChat
                 else -> when (throwable.code()) {
                     401 -> when {
                         path.contains("/auth/login") || path.contains("/pin/change") ||

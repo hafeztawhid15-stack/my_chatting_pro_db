@@ -430,7 +430,9 @@ class ChatRepositoryImpl(
                     is RealtimeEvent.MessageNew -> {
                         val msg = event.message
                         val myId = tokenStore.getSession()?.userId
-                        if (msg.isPrivate) {
+                        val localConv = conversationDao.getById(msg.conversationId)
+                        val effectivePrivate = msg.isPrivate || (localConv?.isPrivate == true)
+                        if (effectivePrivate) {
                             if (privateChatLockManager?.currentTokenOrNull() != null) {
                                 messageDao.upsert(msg.toEntity(myId, forcePrivate = true))
                                 if (myId != null && msg.senderId != myId) {
@@ -446,7 +448,17 @@ class ChatRepositoryImpl(
                                 }
                                 runCatching {
                                     val resp = api.listPrivateConversations()
-                                    conversationDao.upsertAll(resp.conversations.map { it.toEntity(forcePrivate = true) })
+                                    val entities = resp.conversations.map { it.toEntity(forcePrivate = true) }
+                                    if (entities.isEmpty()) {
+                                        conversationDao.deleteAllByPrivacy(isPrivate = true)
+                                    } else {
+                                        conversationDao.deleteMissingByPrivacy(
+                                            isPrivate = true,
+                                            activeIds = entities.map { it.id }
+                                        )
+                                        conversationDao.upsertAll(entities)
+                                        entities.forEach { conversationDao.deleteRegularCopiesForPeer(it.peerUserId) }
+                                    }
                                 }
                             }
                         } else {
@@ -473,11 +485,26 @@ class ChatRepositoryImpl(
                     }
                     is RealtimeEvent.MessageDeleted -> {
                         messageDao.markDeletedForAll(event.messageId, event.deletedAtMs)
-                        if (event.isPrivate) {
+                        val deletedMsg = messageDao.getById(event.messageId)
+                        val localConv = deletedMsg?.let { conversationDao.getById(it.conversationId) }
+                        val effectivePrivate = event.isPrivate ||
+                            (localConv?.isPrivate == true) ||
+                            (deletedMsg?.isPrivate == true)
+                        if (effectivePrivate) {
                             if (privateChatLockManager?.currentTokenOrNull() != null) {
                                 runCatching {
                                     val resp = api.listPrivateConversations()
-                                    conversationDao.upsertAll(resp.conversations.map { it.toEntity(forcePrivate = true) })
+                                    val entities = resp.conversations.map { it.toEntity(forcePrivate = true) }
+                                    if (entities.isEmpty()) {
+                                        conversationDao.deleteAllByPrivacy(isPrivate = true)
+                                    } else {
+                                        conversationDao.deleteMissingByPrivacy(
+                                            isPrivate = true,
+                                            activeIds = entities.map { it.id }
+                                        )
+                                        conversationDao.upsertAll(entities)
+                                        entities.forEach { conversationDao.deleteRegularCopiesForPeer(it.peerUserId) }
+                                    }
                                 }
                             }
                         } else {
@@ -501,7 +528,13 @@ class ChatRepositoryImpl(
 
     override suspend fun refreshConversations(): Result<Unit> = runCatching {
         val resp = api.listConversations()
-        conversationDao.upsertAll(resp.conversations.map { it.toEntity() })
+        val entities = resp.conversations.map { it.toEntity(forcePrivate = false) }
+        if (entities.isEmpty()) {
+            conversationDao.deleteAllByPrivacy(isPrivate = false)
+        } else {
+            conversationDao.deleteMissingByPrivacy(isPrivate = false, activeIds = entities.map { it.id })
+            conversationDao.upsertAll(entities)
+        }
     }.recoverCatching { throw AppException(errorMapper.map(it)) }
 
     override suspend fun searchUser(phoneE164: String, nameFilter: String?): Result<PublicUser?> = runCatching {
@@ -570,6 +603,14 @@ class ChatRepositoryImpl(
         api.deleteConversation(conversationId)
         messageDao.clearConversationMessages(conversationId, isPrivate = false)
         conversationDao.deleteById(conversationId)
+    }.recoverCatching { throw AppException(errorMapper.map(it)) }
+
+    override suspend fun moveToPrivateChat(conversationId: String): Result<Unit> = runCatching {
+        api.moveConversationToPrivate(conversationId)
+        conversationDao.updatePrivateState(conversationId, true)
+        conversationDao.updatePinned(conversationId, false, null)
+        conversationDao.updateArchived(conversationId, false, null)
+        messageDao.updateConversationMessagesPrivateState(conversationId, true)
     }.recoverCatching { throw AppException(errorMapper.map(it)) }
 
     override suspend fun getPeerProfile(conversationId: String): Result<ConversationPeerProfile> = runCatching {
@@ -1102,7 +1143,14 @@ class PrivateChatRepositoryImpl(
         requireUnlocked()
         lockManager.touchActivity()
         val resp = api.listPrivateConversations()
-        conversationDao.upsertAll(resp.conversations.map { it.toEntity(forcePrivate = true) })
+        val entities = resp.conversations.map { it.toEntity(forcePrivate = true) }
+        if (entities.isEmpty()) {
+            conversationDao.deleteAllByPrivacy(isPrivate = true)
+        } else {
+            conversationDao.deleteMissingByPrivacy(isPrivate = true, activeIds = entities.map { it.id })
+            conversationDao.upsertAll(entities)
+            entities.forEach { conversationDao.deleteRegularCopiesForPeer(it.peerUserId) }
+        }
     }.recoverCatching { throw AppException(errorMapper.map(it)) }
 
     override suspend fun searchUserForPrivateChat(phoneE164: String, nameFilter: String?): Result<PublicUser?> =
@@ -1130,7 +1178,9 @@ class PrivateChatRepositoryImpl(
         lockManager.touchActivity()
         val resp = api.createOrGetPrivateDirectConversation(DirectConversationRequestDto(targetUserId))
         val entity = resp.conversation.toEntity(forcePrivate = true)
+        conversationDao.deleteRegularCopiesForPeer(entity.peerUserId)
         conversationDao.upsert(entity)
+        messageDao.updateConversationMessagesPrivateState(entity.id, true)
         entity.toDomain()
     }.recoverCatching { throw AppException(errorMapper.map(it)) }
 
@@ -1190,6 +1240,16 @@ class PrivateChatRepositoryImpl(
         api.deletePrivateConversation(conversationId)
         messageDao.clearConversationMessages(conversationId, isPrivate = true)
         conversationDao.deleteById(conversationId)
+    }.recoverCatching { throw AppException(errorMapper.map(it)) }
+
+    override suspend fun moveToRegularChat(conversationId: String): Result<Unit> = runCatching {
+        requireUnlocked()
+        lockManager.touchActivity()
+        api.movePrivateConversationToRegular(conversationId)
+        conversationDao.updatePrivateState(conversationId, false)
+        conversationDao.updatePinned(conversationId, false, null)
+        conversationDao.updateArchived(conversationId, false, null)
+        messageDao.updateConversationMessagesPrivateState(conversationId, false)
     }.recoverCatching { throw AppException(errorMapper.map(it)) }
 
     override suspend fun getPrivatePeerProfile(conversationId: String): Result<ConversationPeerProfile> = runCatching {

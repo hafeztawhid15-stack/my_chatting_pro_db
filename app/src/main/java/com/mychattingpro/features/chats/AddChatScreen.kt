@@ -253,7 +253,8 @@ fun AddChatScreen(
                                     avatarMediaId = user.avatarMediaId,
                                     networkModule = networkModule,
                                     size = 64.dp,
-                                    isOnline = user.isOnline
+                                    isOnline = user.isOnline,
+                                    showOfflineDot = true
                                 )
                                 Spacer(modifier = Modifier.width(14.dp))
                                 Column(modifier = Modifier.weight(1f)) {
@@ -264,24 +265,27 @@ fun AddChatScreen(
                                     )
                                     val statusLabel = when {
                                         user.isOnline -> stringResource(R.string.status_online)
-                                        user.lastSeenMs != null -> DateTimeFormatters.formatChatListTime(
-                                            context,
-                                            user.lastSeenMs,
-                                            language
+                                        user.lastSeenMs != null -> stringResource(
+                                            R.string.status_user_offline_last_seen,
+                                            DateTimeFormatters.formatChatListTime(
+                                                context,
+                                                user.lastSeenMs,
+                                                language
+                                            )
                                         )
-                                        else -> ""
+                                        else -> stringResource(R.string.status_user_offline)
                                     }
-                                    if (statusLabel.isNotBlank()) {
-                                        Text(
-                                            text = statusLabel,
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = if (user.isOnline) {
-                                                MaterialTheme.colorScheme.primary
-                                            } else {
-                                                MaterialTheme.colorScheme.onSurfaceVariant
-                                            }
-                                        )
-                                    }
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(
+                                        text = statusLabel,
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = if (user.isOnline) {
+                                            com.mychattingpro.core.theme.OnlineGreen
+                                        } else {
+                                            MaterialTheme.colorScheme.onSurfaceVariant
+                                        }
+                                    )
                                     if (user.about.isNotBlank()) {
                                         Spacer(modifier = Modifier.height(4.dp))
                                         Text(

@@ -63,6 +63,8 @@
     <string name="status_offline">غير متصل — يتم عرض المحادثات المحفوظة</string>
     <string name="status_reconnecting">جارٍ إعادة الاتصال بالقناة الفورية…</string>
     <string name="status_online">متصل</string>
+    <string name="status_user_offline">غير متصل</string>
+    <string name="status_user_offline_last_seen">غير متصل • %1$s</string>
     <string name="status_typing">يكتب الآن…</string>
     <string name="status_last_seen">آخر ظهور %1$s</string>
 
@@ -263,6 +265,8 @@
     <string name="err_duplicate_report">لقد أرسلت بلاغاً حديثاً لهذا العنصر بالفعل.</string>
     <string name="err_session_revoked">تم تسجيل خروج جلستك من جهاز آخر أو انتهت صلاحيتها.</string>
     <string name="err_user_blocked">تعذر الإجراء بسبب وجود حظر بين المستخدمين.</string>
+    <string name="err_conversation_in_private_chat">جهة الاتصال هذه موجودة في الدردشة الخاصة. افتح الدردشة الخاصة لمراسلتها.</string>
+    <string name="err_cannot_move_native_private_chat">لا يمكن نقل المحادثات التي بدأت مباشرة في الدردشة الخاصة إلى الدردشات العادية.</string>
     <string name="err_no_browser">لم يتم العثور على متصفح ويب لفتح هذا الرابط.</string>
 
     <string name="notif_channel_security">تنبيهات الأمان</string>
@@ -331,6 +335,14 @@
     <string name="chat_menu_delete_chat">حذف المحادثة</string>
     <string name="chat_menu_delete_private_chat">حذف المحادثة الخاصة</string>
     <string name="chat_delete_confirm_message">حذف هذه المحادثة من قائمتك؟</string>
+    <string name="chat_menu_move_to_private">نقل إلى الدردشة الخاصة</string>
+    <string name="chat_move_private_confirm_title">نقل إلى الدردشة الخاصة؟</string>
+    <string name="chat_move_private_confirm_message">نقل %1$s إلى الدردشة الخاصة؟ سيتم إخفاء جهة الاتصال هذه من قائمة الدردشات العادية وحمايتها برمز PIN الخاص المكون من 5 أرقام.</string>
+    <string name="chat_moved_to_private_notice">تم النقل إلى الدردشة الخاصة</string>
+    <string name="chat_menu_move_to_regular">إرجاع إلى الدردشات العادية</string>
+    <string name="chat_move_regular_confirm_title">إرجاع إلى الدردشات العادية؟</string>
+    <string name="chat_move_regular_confirm_message">إرجاع %1$s إلى قائمة الدردشات العادية؟</string>
+    <string name="chat_moved_to_regular_notice">تم الإرجاع إلى الدردشات العادية</string>
     <string name="report_reason_label">السبب</string>
     <string name="report_details_hint">تفاصيل إضافية (اختياري)</string>
     <string name="report_submit">إرسال البلاغ</string>

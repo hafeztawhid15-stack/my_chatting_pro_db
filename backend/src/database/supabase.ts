@@ -304,6 +304,12 @@ export interface DatabaseClient {
   listUserConversations(userId: string): Promise<ConversationQueryRow[]>;
   listUserPrivateConversations(userId: string): Promise<ConversationQueryRow[]>;
   isConversationPrivate(conversationId: string): Promise<boolean | null>;
+  getUserConversationPrivacyState(
+    conversationId: string,
+    userId: string
+  ): Promise<{ isConversationPrivate: boolean; userMovedToPrivate: boolean; deletedAtMs: number | null } | null>;
+  getMembersPrivateFlags(conversationId: string, memberIds: string[]): Promise<Record<string, boolean>>;
+  findDirectConversationIdByKey(directKey: string): Promise<string | null>;
   isActiveUserExists(userId: string): Promise<boolean>;
   getOrCreateDirectConversation(
     currentUserId: string,
@@ -347,6 +353,8 @@ export interface DatabaseClient {
     markedUnread?: boolean;
     clearedAtMs?: number | null;
     deletedAtMs?: number | null;
+    movedToPrivate?: boolean;
+    movedToPrivateAtMs?: number | null;
   }): Promise<void>;
   getConversationPeerProfile(
     conversationId: string,
@@ -454,6 +462,7 @@ export interface DatabaseClient {
   deleteNotificationEndpoint(userId: string, deviceId: string): Promise<void>;
 
   updateUserPresence(userId: string, isOnline: boolean, lastSeenMs: number): Promise<void>;
+  listPresencePeerIds(userId: string): Promise<string[]>;
   checkConversationPair(conversationId: string, userId: string, targetUserId: string): Promise<boolean>;
 
   getOwnerActivitySnapshot(input: {
@@ -935,6 +944,62 @@ export class SupabaseDatabase implements DatabaseClient {
     return Boolean(rows[0].is_private);
   }
 
+  async getUserConversationPrivacyState(
+    conversationId: string,
+    userId: string
+  ): Promise<{ isConversationPrivate: boolean; userMovedToPrivate: boolean; deletedAtMs: number | null } | null> {
+    const [convRows, ucsRows] = await Promise.all([
+      this.requestJson<Array<{ is_private?: boolean }>>(
+        `/conversations?select=is_private&id=eq.${this.enc(conversationId)}&limit=1`,
+        { method: 'GET', headers: this.headers() }
+      ),
+      this.requestJson<Array<{ moved_to_private?: boolean; deleted_at_ms?: number | null }>>(
+        `/user_conversation_settings?select=moved_to_private,deleted_at_ms&user_id=eq.${this.enc(userId)}&conversation_id=eq.${this.enc(conversationId)}&limit=1`,
+        { method: 'GET', headers: this.headers() }
+      ),
+    ]);
+    if (!convRows[0]) return null;
+    const ucs = ucsRows[0];
+    return {
+      isConversationPrivate: Boolean(convRows[0].is_private),
+      userMovedToPrivate: Boolean(ucs?.moved_to_private),
+      deletedAtMs: ucs?.deleted_at_ms ?? null,
+    };
+  }
+
+  async getMembersPrivateFlags(conversationId: string, memberIds: string[]): Promise<Record<string, boolean>> {
+    const flags: Record<string, boolean> = {};
+    if (memberIds.length === 0) return flags;
+    const isConvPrivate = await this.isConversationPrivate(conversationId);
+    if (isConvPrivate) {
+      for (const id of memberIds) {
+        flags[id] = true;
+      }
+      return flags;
+    }
+
+    const ucsRows = await this.requestJson<Array<{ user_id: string; moved_to_private?: boolean }>>(
+      `/user_conversation_settings?select=user_id,moved_to_private&conversation_id=eq.${this.enc(conversationId)}`,
+      { method: 'GET', headers: this.headers() }
+    );
+    const movedMap = new Map<string, boolean>();
+    for (const row of ucsRows) {
+      movedMap.set(row.user_id, Boolean(row.moved_to_private));
+    }
+    for (const id of memberIds) {
+      flags[id] = movedMap.get(id) ?? false;
+    }
+    return flags;
+  }
+
+  async findDirectConversationIdByKey(directKey: string): Promise<string | null> {
+    const rows = await this.requestJson<Array<{ id: string }>>(
+      `/conversations?select=id&direct_key=eq.${this.enc(directKey)}&limit=1`,
+      { method: 'GET', headers: this.headers() }
+    );
+    return rows[0]?.id ?? null;
+  }
+
   async isActiveUserExists(userId: string): Promise<boolean> {
     const rows = await this.requestJson<Array<{ id: string }>>(
       `/users?select=id&id=eq.${this.enc(userId)}&account_status=eq.active&limit=1`,
@@ -1061,6 +1126,8 @@ export class SupabaseDatabase implements DatabaseClient {
     markedUnread?: boolean;
     clearedAtMs?: number | null;
     deletedAtMs?: number | null;
+    movedToPrivate?: boolean;
+    movedToPrivateAtMs?: number | null;
   }): Promise<void> {
     const existingRows = await this.requestJson<Array<Record<string, unknown>>>(
       `/user_conversation_settings?user_id=eq.${this.enc(input.userId)}&conversation_id=eq.${this.enc(input.conversationId)}&limit=1`,
@@ -1091,6 +1158,12 @@ export class SupabaseDatabase implements DatabaseClient {
         input.clearedAtMs !== undefined ? input.clearedAtMs : (existing.cleared_at_ms ?? null),
       deleted_at_ms:
         input.deletedAtMs !== undefined ? input.deletedAtMs : (existing.deleted_at_ms ?? null),
+      moved_to_private:
+        input.movedToPrivate !== undefined ? input.movedToPrivate : Boolean(existing.moved_to_private),
+      moved_to_private_at_ms:
+        input.movedToPrivateAtMs !== undefined
+          ? input.movedToPrivateAtMs
+          : (existing.moved_to_private_at_ms ?? null),
       updated_at_ms: input.nowMs,
     };
 
@@ -1508,6 +1581,41 @@ export class SupabaseDatabase implements DatabaseClient {
         last_seen_ms: lastSeenMs,
       }),
     });
+  }
+
+  async listPresencePeerIds(userId: string): Promise<string[]> {
+    const convRows = await this.requestJson<Array<{ conversation_id: string }>>(
+      `/conversation_members?select=conversation_id&user_id=eq.${this.enc(userId)}`,
+      { method: 'GET', headers: this.headers() }
+    );
+    const convIds = Array.from(new Set(convRows.map((r) => r.conversation_id))).slice(0, 100);
+    if (convIds.length === 0) return [];
+
+    const inList = convIds.map((id) => encodeURIComponent(id)).join(',');
+    const [memberRows, blockedRows] = await Promise.all([
+      this.requestJson<Array<{ user_id: string }>>(
+        `/conversation_members?select=user_id&conversation_id=in.(${inList})&user_id=neq.${this.enc(userId)}`,
+        { method: 'GET', headers: this.headers() }
+      ),
+      this.requestJson<Array<{ blocker_id: string; blocked_id: string }>>(
+        `/blocked_users?select=blocker_id,blocked_id&or=(blocker_id.eq.${this.enc(userId)},blocked_id.eq.${this.enc(userId)})`,
+        { method: 'GET', headers: this.headers() }
+      ),
+    ]);
+
+    const blockedPeerIds = new Set<string>();
+    for (const row of blockedRows) {
+      if (row.blocker_id !== userId) blockedPeerIds.add(row.blocker_id);
+      if (row.blocked_id !== userId) blockedPeerIds.add(row.blocked_id);
+    }
+
+    const peerIds = new Set<string>();
+    for (const row of memberRows) {
+      if (row.user_id !== userId && !blockedPeerIds.has(row.user_id)) {
+        peerIds.add(row.user_id);
+      }
+    }
+    return Array.from(peerIds);
   }
 
   async checkConversationPair(

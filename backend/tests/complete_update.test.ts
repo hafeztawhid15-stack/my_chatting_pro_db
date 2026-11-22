@@ -191,6 +191,11 @@ describe('Complete Update: Media MIME, PIN Security, Chat Menu, Account Delete &
     const fakeDb = {
       listConversationMemberIds: async () => ['u1', 'u2'],
       isConversationPrivate: async (id: string) => id.startsWith('priv-'),
+      getUserConversationPrivacyState: async (id: string) => ({
+        isConversationPrivate: id.startsWith('priv-'),
+        userMovedToPrivate: false,
+        deletedAtMs: null,
+      }),
       upsertUserConversationSettings: async (input: Record<string, unknown>) => {
         savedPrefs.push(input);
       },

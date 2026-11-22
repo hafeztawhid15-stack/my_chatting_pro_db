@@ -7,6 +7,7 @@ import android.net.Uri
 import androidx.core.content.FileProvider
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.R
 import com.mychattingpro.core.common.AppError
 import com.mychattingpro.core.datastore.AppPreferencesDataStore
 import com.mychattingpro.core.localization.AppLanguage
@@ -115,6 +116,14 @@ class ChatDetailViewModel(
     private var audioPlayer: MediaPlayer? = null
 
     init {
+        viewModelScope.launch {
+            if (isPrivate && privateChatRepository != null) {
+                privateChatRepository.refreshPrivateConversations()
+            } else {
+                chatRepository.refreshConversations()
+            }
+        }
+
         viewModelScope.launch {
             myUserId = tokenStore.getSession()?.userId
             val res = if (isPrivate && privateChatRepository != null) {
@@ -565,6 +574,39 @@ class ChatDetailViewModel(
             }.onFailure { err ->
                 _uiState.value = _uiState.value.copy(error = (err as? AppException)?.appError ?: AppError.ServerError())
             }
+        }
+    }
+
+    fun moveToPrivateChat() {
+        if (isPrivate) return
+        viewModelScope.launch {
+            chatRepository.moveToPrivateChat(conversationId)
+                .onSuccess {
+                    _uiState.value = _uiState.value.copy(
+                        conversationDeleted = true,
+                        infoToast = context.getString(R.string.chat_moved_to_private_notice)
+                    )
+                }
+                .onFailure { err ->
+                    _uiState.value = _uiState.value.copy(error = (err as? AppException)?.appError ?: AppError.ServerError())
+                }
+        }
+    }
+
+    fun moveToRegularChat() {
+        if (!isPrivate || privateChatRepository == null) return
+        touchPrivateActivity()
+        viewModelScope.launch {
+            privateChatRepository.moveToRegularChat(conversationId)
+                .onSuccess {
+                    _uiState.value = _uiState.value.copy(
+                        conversationDeleted = true,
+                        infoToast = context.getString(R.string.chat_moved_to_regular_notice)
+                    )
+                }
+                .onFailure { err ->
+                    _uiState.value = _uiState.value.copy(error = (err as? AppException)?.appError ?: AppError.ServerError())
+                }
         }
     }
 

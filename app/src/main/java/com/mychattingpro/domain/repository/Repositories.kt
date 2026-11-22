@@ -75,6 +75,7 @@ interface ChatRepository {
     suspend fun setMarkedUnread(conversationId: String, unread: Boolean): Result<Unit>
     suspend fun clearConversation(conversationId: String): Result<Unit>
     suspend fun deleteConversation(conversationId: String): Result<Unit>
+    suspend fun moveToPrivateChat(conversationId: String): Result<Unit>
     suspend fun getPeerProfile(conversationId: String): Result<ConversationPeerProfile>
 }
 
@@ -125,6 +126,7 @@ interface PrivateChatRepository {
     suspend fun setPrivateMarkedUnread(conversationId: String, unread: Boolean): Result<Unit>
     suspend fun clearPrivateConversation(conversationId: String): Result<Unit>
     suspend fun deletePrivateConversation(conversationId: String): Result<Unit>
+    suspend fun moveToRegularChat(conversationId: String): Result<Unit>
     suspend fun getPrivatePeerProfile(conversationId: String): Result<ConversationPeerProfile>
     fun observePrivateMessages(conversationId: String): Flow<List<Message>>
     suspend fun loadLatestPrivateMessages(conversationId: String): Result<Boolean>

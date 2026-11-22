@@ -17,6 +17,7 @@ interface SocketAttachment {
  */
 export class UserRealtimeCoordinator extends DurableObject<Env> {
   private readonly maxBuffer = 100;
+  private lastPingDbUpdateMs = 0;
 
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
@@ -24,7 +25,13 @@ export class UserRealtimeCoordinator extends DurableObject<Env> {
     // Internal HTTP dispatch from Worker routes or ConversationCoordinator
     if (url.pathname === '/internal/push' && request.method === 'POST') {
       const envelope = (await request.json()) as RealtimeEnvelope;
-      await this.bufferEvent(envelope);
+      const isEphemeral =
+        envelope.type === 'presence.update' ||
+        envelope.type === 'typing.start' ||
+        envelope.type === 'typing.stop';
+      if (!isEphemeral) {
+        await this.bufferEvent(envelope);
+      }
       const deliveredCount = this.broadcastToUserSockets(envelope);
       return Response.json({ ok: true, deliveredCount });
     }
@@ -56,9 +63,11 @@ export class UserRealtimeCoordinator extends DurableObject<Env> {
       this.ctx.acceptWebSocket(server, [userId, deviceId]);
       server.serializeAttachment(attachment);
 
-      // Update online presence in Supabase PostgreSQL
+      // Update online presence in Supabase PostgreSQL & notify conversation peers
+      const now = Date.now();
       const db = createSupabaseDb(this.env);
-      await db.updateUserPresence(userId, true, Date.now());
+      await db.updateUserPresence(userId, true, now);
+      this.ctx.waitUntil(this.broadcastPresenceToPeers(userId, true, now));
 
       // Send initial connection ack
       const ack: RealtimeEnvelope = {
@@ -100,11 +109,19 @@ export class UserRealtimeCoordinator extends DurableObject<Env> {
     }
 
     if (parsed.type === 'ping') {
+      const now = Date.now();
+      if (now - this.lastPingDbUpdateMs >= 60_000) {
+        this.lastPingDbUpdateMs = now;
+        const db = createSupabaseDb(this.env);
+        this.ctx.waitUntil(
+          db.updateUserPresence(attachment.userId, true, now).catch(() => undefined)
+        );
+      }
       ws.send(
         JSON.stringify({
           eventId: crypto.randomUUID(),
           type: 'pong',
-          timestampMs: Date.now(),
+          timestampMs: now,
           payload: {},
         } satisfies RealtimeEnvelope)
       );
@@ -177,8 +194,10 @@ export class UserRealtimeCoordinator extends DurableObject<Env> {
 
     const remaining = this.ctx.getWebSockets();
     if (remaining.length === 0) {
+      const now = Date.now();
       const db = createSupabaseDb(this.env);
-      await db.updateUserPresence(attachment.userId, false, Date.now());
+      await db.updateUserPresence(attachment.userId, false, now);
+      this.ctx.waitUntil(this.broadcastPresenceToPeers(attachment.userId, false, now));
     }
   }
 
@@ -207,6 +226,42 @@ export class UserRealtimeCoordinator extends DurableObject<Env> {
       existing.splice(0, existing.length - this.maxBuffer);
     }
     await this.ctx.storage.put('recent_events', existing);
+  }
+
+  private async broadcastPresenceToPeers(
+    userId: string,
+    isOnline: boolean,
+    timestampMs: number
+  ): Promise<void> {
+    try {
+      const db = createSupabaseDb(this.env);
+      const peerIds = await db.listPresencePeerIds(userId);
+      if (peerIds.length === 0) return;
+
+      const envelope: RealtimeEnvelope = {
+        eventId: crypto.randomUUID(),
+        type: 'presence.update',
+        timestampMs,
+        payload: {
+          userId,
+          isOnline,
+          lastSeenMs: timestampMs,
+        },
+      };
+
+      await Promise.allSettled(
+        peerIds.map((peerId) => {
+          const stub = this.env.USER_COORDINATOR.get(this.env.USER_COORDINATOR.idFromName(peerId));
+          return stub.fetch('https://do.internal/internal/push', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(envelope),
+          });
+        })
+      );
+    } catch {
+      // Presence broadcast failures should never disrupt socket lifecycle
+    }
   }
 
   private async getBufferedEventsSince(sinceMs: number): Promise<RealtimeEnvelope[]> {

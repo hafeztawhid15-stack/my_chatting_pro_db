@@ -3,6 +3,7 @@ package com.mychattingpro.features.privatechat
 import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.R
 import com.mychattingpro.core.common.AppError
 import com.mychattingpro.core.common.Country
 import com.mychattingpro.core.common.CountryCatalog
@@ -215,6 +216,19 @@ class PrivateChatViewModel(
         viewModelScope.launch {
             privateChatRepository.deletePrivateConversation(conversation.id)
                 .onSuccess { _actionNotice.value = "Private chat deleted" }
+                .onFailure { err ->
+                    _chatsError.value = (err as? AppException)?.appError ?: AppError.ServerError()
+                }
+        }
+    }
+
+    fun moveToRegularChat(context: Context, conversation: Conversation) {
+        touchActivity()
+        viewModelScope.launch {
+            privateChatRepository.moveToRegularChat(conversation.id)
+                .onSuccess {
+                    _actionNotice.value = context.getString(R.string.chat_moved_to_regular_notice)
+                }
                 .onFailure { err ->
                     _chatsError.value = (err as? AppException)?.appError ?: AppError.ServerError()
                 }

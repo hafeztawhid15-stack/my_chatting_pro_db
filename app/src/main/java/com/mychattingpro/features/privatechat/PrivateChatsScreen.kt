@@ -89,6 +89,7 @@ import com.mychattingpro.features.common.ConversationActionModals
 import com.mychattingpro.features.common.ConversationActionsDropdownMenu
 import com.mychattingpro.features.common.ConversationMenuCallbacks
 import com.mychattingpro.features.common.NetworkStatusBanner
+import com.mychattingpro.features.common.PresenceBadge
 import com.mychattingpro.features.common.UserAvatar
 import com.mychattingpro.features.common.rememberConversationMenuController
 
@@ -145,7 +146,8 @@ fun PrivateChatsScreen(
             onClearChat = { conv -> viewModel.clearChat(conv) },
             onToggleBlock = { conv -> viewModel.toggleBlockPeer(conv) },
             onReportUser = { conv, reason, details -> viewModel.reportPeer(conv, reason, details) },
-            onDeleteChat = { conv -> viewModel.deleteChat(conv) }
+            onDeleteChat = { conv -> viewModel.deleteChat(conv) },
+            onMoveToRegularChat = { conv -> viewModel.moveToRegularChat(context, conv) }
         )
     }
 
@@ -443,7 +445,8 @@ private fun PrivateConversationRow(
             avatarMediaId = conversation.peerAvatarMediaId,
             networkModule = networkModule,
             size = 54.dp,
-            isOnline = conversation.peerIsOnline
+            isOnline = conversation.peerIsOnline,
+            showOfflineDot = true
         )
         Spacer(modifier = Modifier.width(14.dp))
         Column(modifier = Modifier.weight(1f)) {
@@ -452,14 +455,21 @@ private fun PrivateConversationRow(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = conversation.peerDisplayName,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = if (hasUnread) FontWeight.Bold else FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f)
-                )
+                Row(
+                    modifier = Modifier.weight(1f),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = conversation.peerDisplayName,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = if (hasUnread) FontWeight.Bold else FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    PresenceBadge(isOnline = conversation.peerIsOnline)
+                }
                 Spacer(modifier = Modifier.width(6.dp))
                 if (conversation.isPinned) {
                     Icon(

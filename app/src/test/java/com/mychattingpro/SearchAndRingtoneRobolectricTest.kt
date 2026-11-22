@@ -144,6 +144,7 @@ class SearchAndRingtoneRobolectricTest {
         override suspend fun setMarkedUnread(conversationId: String, unread: Boolean) = Result.success(Unit)
         override suspend fun clearConversation(conversationId: String) = Result.success(Unit)
         override suspend fun deleteConversation(conversationId: String) = Result.success(Unit)
+        override suspend fun moveToPrivateChat(conversationId: String) = Result.success(Unit)
         override suspend fun getPeerProfile(conversationId: String) =
             Result.failure<ConversationPeerProfile>(UnsupportedOperationException())
     }

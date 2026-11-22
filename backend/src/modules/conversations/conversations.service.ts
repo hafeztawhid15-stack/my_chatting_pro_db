@@ -82,7 +82,58 @@ export class ConversationsService {
     }
 
     const pair = [currentUserId, targetUserId].sort();
-    const directKey = isPrivate ? `priv:${pair[0]}:${pair[1]}` : `${pair[0]}:${pair[1]}`;
+    const regularDirectKey = `${pair[0]}:${pair[1]}`;
+    const privateDirectKey = `priv:${pair[0]}:${pair[1]}`;
+
+    const existingRegularId = await this.db.findDirectConversationIdByKey(regularDirectKey);
+    const existingPrivateId = await this.db.findDirectConversationIdByKey(privateDirectKey);
+
+    if (!isPrivate) {
+      if (existingRegularId) {
+        const privacy = await this.db.getUserConversationPrivacyState(existingRegularId, currentUserId);
+        if (privacy?.userMovedToPrivate) {
+          throw new ApiError(
+            409,
+            'conversation_in_private_chat',
+            'This contact has been moved to your Private Chat.'
+          );
+        }
+      }
+      if (existingPrivateId) {
+        const privMembers = await this.db.listConversationMemberIds(existingPrivateId);
+        const privState = await this.db.getUserConversationPrivacyState(existingPrivateId, currentUserId);
+        if (privMembers.includes(currentUserId) && !privState?.deletedAtMs) {
+          throw new ApiError(
+            409,
+            'conversation_in_private_chat',
+            'This contact is already in your Private Chat.'
+          );
+        }
+      }
+    }
+
+    if (isPrivate && existingRegularId && !existingPrivateId) {
+      const now = Date.now();
+      await this.db.upsertUserConversationSettings({
+        userId: currentUserId,
+        conversationId: existingRegularId,
+        nowMs: now,
+        isPinned: false,
+        pinnedAtMs: null,
+        isArchived: false,
+        archivedAtMs: null,
+        deletedAtMs: null,
+        movedToPrivate: true,
+        movedToPrivateAtMs: now,
+      });
+      const allPriv = await this.listForUser(currentUserId, true);
+      const movedMatch = allPriv.find((c) => c.id === existingRegularId);
+      if (movedMatch) {
+        return movedMatch;
+      }
+    }
+
+    const directKey = isPrivate ? privateDirectKey : regularDirectKey;
     const convId = await this.db.getOrCreateDirectConversation(
       currentUserId,
       targetUserId,
@@ -91,6 +142,21 @@ export class ConversationsService {
       Date.now(),
       isPrivate
     );
+
+    if (isPrivate && existingRegularId && convId !== existingRegularId) {
+      const now = Date.now();
+      await this.db.upsertUserConversationSettings({
+        userId: currentUserId,
+        conversationId: existingRegularId,
+        nowMs: now,
+        isPinned: false,
+        pinnedAtMs: null,
+        isArchived: false,
+        archivedAtMs: null,
+        movedToPrivate: true,
+        movedToPrivateAtMs: now,
+      });
+    }
 
     const all = await this.listForUser(currentUserId, isPrivate);
     const match = all.find((c) => c.id === convId);
@@ -193,6 +259,58 @@ export class ConversationsService {
     };
   }
 
+  async moveConversationToPrivate(
+    userId: string,
+    conversationId: string
+  ): Promise<{ ok: true; conversationId: string }> {
+    await this.assertMember(conversationId, userId, false);
+    const now = Date.now();
+    await this.db.upsertUserConversationSettings({
+      userId,
+      conversationId,
+      nowMs: now,
+      isPinned: false,
+      pinnedAtMs: null,
+      isArchived: false,
+      archivedAtMs: null,
+      deletedAtMs: null,
+      movedToPrivate: true,
+      movedToPrivateAtMs: now,
+    });
+    return { ok: true, conversationId };
+  }
+
+  async moveConversationToRegular(
+    userId: string,
+    conversationId: string
+  ): Promise<{ ok: true; conversationId: string }> {
+    await this.assertMember(conversationId, userId, true);
+    const privacy = await this.db.getUserConversationPrivacyState(conversationId, userId);
+    if (!privacy) {
+      throw new ApiError(404, 'conversation_not_found', 'Conversation not found.');
+    }
+    if (privacy.isConversationPrivate) {
+      throw new ApiError(
+        400,
+        'cannot_move_native_private_chat',
+        'Chats started directly inside Private Chat cannot be moved to regular Chats.'
+      );
+    }
+    const now = Date.now();
+    await this.db.upsertUserConversationSettings({
+      userId,
+      conversationId,
+      nowMs: now,
+      isPinned: false,
+      pinnedAtMs: null,
+      isArchived: false,
+      archivedAtMs: null,
+      movedToPrivate: false,
+      movedToPrivateAtMs: null,
+    });
+    return { ok: true, conversationId };
+  }
+
   async assertMember(
     conversationId: string,
     userId: string,
@@ -204,18 +322,19 @@ export class ConversationsService {
     }
 
     if (expectedPrivate !== undefined) {
-      const isPrivate = await this.db.isConversationPrivate(conversationId);
-      if (isPrivate === null) {
+      const privacy = await this.db.getUserConversationPrivacyState(conversationId, userId);
+      if (!privacy) {
         throw new ApiError(404, 'conversation_not_found', 'Conversation not found.');
       }
-      if (!expectedPrivate && isPrivate) {
+      const effectivePrivate = privacy.isConversationPrivate || privacy.userMovedToPrivate;
+      if (!expectedPrivate && effectivePrivate) {
         throw new ApiError(
           403,
           'private_chat_locked',
           'Private conversations cannot be accessed through regular chat endpoints.'
         );
       }
-      if (expectedPrivate && !isPrivate) {
+      if (expectedPrivate && !effectivePrivate) {
         throw new ApiError(
           403,
           'forbidden_conversation',

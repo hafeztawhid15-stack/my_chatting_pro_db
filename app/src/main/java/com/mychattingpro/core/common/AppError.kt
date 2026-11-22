@@ -38,6 +38,8 @@ sealed class AppError {
     data object DuplicateReport : AppError()
     data object SessionRevoked : AppError()
     data object UserBlocked : AppError()
+    data object ConversationInPrivateChat : AppError()
+    data object CannotMoveNativePrivateChat : AppError()
     data class ServerError(val serverMessage: String? = null) : AppError()
 
     fun toLocalizedMessage(context: Context): String = when (this) {
@@ -75,6 +77,8 @@ sealed class AppError {
         DuplicateReport -> context.getString(R.string.err_duplicate_report)
         SessionRevoked -> context.getString(R.string.err_session_revoked)
         UserBlocked -> context.getString(R.string.err_user_blocked)
+        ConversationInPrivateChat -> context.getString(R.string.err_conversation_in_private_chat)
+        CannotMoveNativePrivateChat -> context.getString(R.string.err_cannot_move_native_private_chat)
         is ServerError -> serverMessage?.takeIf { it.isNotBlank() } ?: context.getString(R.string.err_server)
     }
 }

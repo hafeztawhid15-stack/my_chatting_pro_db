@@ -52,6 +52,14 @@ conversationsRoutes.delete('/:conversationId', authMiddleware, async (c) => {
   return c.json(result, 200);
 });
 
+conversationsRoutes.post('/:conversationId/move-to-private', authMiddleware, async (c) => {
+  const auth = c.get('auth');
+  const conversationId = c.req.param('conversationId') ?? '';
+  const service = new ConversationsService(c.get('db'));
+  const result = await service.moveConversationToPrivate(auth.userId, conversationId);
+  return c.json(result, 200);
+});
+
 conversationsRoutes.get('/:conversationId/peer-profile', authMiddleware, async (c) => {
   const auth = c.get('auth');
   const conversationId = c.req.param('conversationId') ?? '';

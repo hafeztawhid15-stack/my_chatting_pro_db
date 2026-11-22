@@ -153,6 +153,14 @@ privateChatRoutes.delete('/conversations/:conversationId', privateChatAuthMiddle
   return c.json(result, 200);
 });
 
+privateChatRoutes.post('/conversations/:conversationId/move-to-regular', privateChatAuthMiddleware, async (c) => {
+  const auth = c.get('auth');
+  const conversationId = c.req.param('conversationId') ?? '';
+  const service = new ConversationsService(c.get('db'));
+  const result = await service.moveConversationToRegular(auth.userId, conversationId);
+  return c.json(result, 200);
+});
+
 privateChatRoutes.get('/conversations/:conversationId/peer-profile', privateChatAuthMiddleware, async (c) => {
   const auth = c.get('auth');
   const conversationId = c.req.param('conversationId') ?? '';

@@ -96,6 +96,7 @@ import com.mychattingpro.core.localization.DateTimeFormatters
 import com.mychattingpro.core.network.NetworkModule
 import com.mychattingpro.core.theme.IncomingBubbleDark
 import com.mychattingpro.core.theme.IncomingBubbleLight
+import com.mychattingpro.core.theme.OnlineGreen
 import com.mychattingpro.core.theme.OutgoingBubbleDark
 import com.mychattingpro.core.theme.OutgoingBubbleLight
 import com.mychattingpro.core.theme.ReadTickCyan
@@ -169,7 +170,13 @@ fun ChatDetailScreen(
             onClearChat = { viewModel.clearChat() },
             onToggleBlock = { conv -> viewModel.toggleBlockPeer(conv.isBlockedByMe) },
             onReportUser = { _, reason, details -> viewModel.report(null, reason, details) },
-            onDeleteChat = { viewModel.deleteChat() }
+            onDeleteChat = { viewModel.deleteChat() },
+            onMoveToPrivateChat = if (!viewModel.isPrivate) {
+                { viewModel.moveToPrivateChat() }
+            } else null,
+            onMoveToRegularChat = if (viewModel.isPrivate) {
+                { viewModel.moveToRegularChat() }
+            } else null
         )
     }
 
@@ -390,7 +397,8 @@ fun ChatDetailScreen(
                             avatarMediaId = conversation?.peerAvatarMediaId,
                             networkModule = networkModule,
                             size = 38.dp,
-                            isOnline = conversation?.peerIsOnline == true
+                            isOnline = conversation?.peerIsOnline == true,
+                            showOfflineDot = conversation != null
                         )
                         Spacer(modifier = Modifier.width(10.dp))
                         Column {
@@ -414,31 +422,54 @@ fun ChatDetailScreen(
                                     overflow = TextOverflow.Ellipsis
                                 )
                             }
+                            val peerIsOnline = conversation?.peerIsOnline == true
                             val subtitle = when {
                                 uiState.isPeerTyping -> stringResource(R.string.status_typing)
-                                conversation?.peerIsOnline == true -> stringResource(R.string.status_online)
+                                peerIsOnline -> stringResource(R.string.status_online)
                                 conversation?.peerLastSeenMs != null -> stringResource(
-                                    R.string.status_last_seen,
+                                    R.string.status_user_offline_last_seen,
                                     DateTimeFormatters.formatChatListTime(
                                         context,
                                         conversation!!.peerLastSeenMs!!,
                                         language
                                     )
                                 )
-                                else -> conversation?.peerAbout.orEmpty()
+                                conversation != null -> stringResource(R.string.status_user_offline)
+                                else -> ""
                             }
                             if (subtitle.isNotBlank()) {
-                                Text(
-                                    text = subtitle,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = if (uiState.isPeerTyping) {
-                                        MaterialTheme.colorScheme.primary
-                                    } else {
-                                        MaterialTheme.colorScheme.onSurfaceVariant
-                                    },
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(5.dp)
+                                ) {
+                                    if (!uiState.isPeerTyping && conversation != null) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(7.dp)
+                                                .clip(CircleShape)
+                                                .background(
+                                                    if (peerIsOnline) OnlineGreen
+                                                    else MaterialTheme.colorScheme.outline
+                                                )
+                                        )
+                                    }
+                                    Text(
+                                        text = subtitle,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        fontWeight = if (uiState.isPeerTyping || peerIsOnline) {
+                                            FontWeight.SemiBold
+                                        } else {
+                                            FontWeight.Normal
+                                        },
+                                        color = when {
+                                            uiState.isPeerTyping -> MaterialTheme.colorScheme.primary
+                                            peerIsOnline -> OnlineGreen
+                                            else -> MaterialTheme.colorScheme.onSurfaceVariant
+                                        },
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
                             }
                         }
                     }

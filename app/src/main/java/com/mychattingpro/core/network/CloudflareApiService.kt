@@ -75,6 +75,9 @@ interface CloudflareApiService {
     @DELETE("v1/conversations/{conversationId}")
     suspend fun deleteConversation(@Path("conversationId") conversationId: String): DeleteConversationResponseDto
 
+    @POST("v1/conversations/{conversationId}/move-to-private")
+    suspend fun moveConversationToPrivate(@Path("conversationId") conversationId: String)
+
     @GET("v1/conversations/{conversationId}/peer-profile")
     suspend fun getConversationPeerProfile(@Path("conversationId") conversationId: String): PeerProfileResponseDto
 
@@ -189,6 +192,9 @@ interface CloudflareApiService {
 
     @DELETE("v1/private-chat/conversations/{conversationId}")
     suspend fun deletePrivateConversation(@Path("conversationId") conversationId: String): DeleteConversationResponseDto
+
+    @POST("v1/private-chat/conversations/{conversationId}/move-to-regular")
+    suspend fun movePrivateConversationToRegular(@Path("conversationId") conversationId: String)
 
     @GET("v1/private-chat/conversations/{conversationId}/peer-profile")
     suspend fun getPrivateConversationPeerProfile(@Path("conversationId") conversationId: String): PeerProfileResponseDto

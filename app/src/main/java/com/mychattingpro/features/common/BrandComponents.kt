@@ -55,6 +55,7 @@ fun UserAvatar(
     networkModule: NetworkModule,
     size: Dp = 48.dp,
     isOnline: Boolean = false,
+    showOfflineDot: Boolean = false,
     onClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
@@ -118,7 +119,8 @@ fun UserAvatar(
             }
         }
 
-        if (isOnline) {
+        if (isOnline || showOfflineDot) {
+            val dotColor = if (isOnline) OnlineGreen else MaterialTheme.colorScheme.outline
             Box(
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
@@ -127,7 +129,59 @@ fun UserAvatar(
                     .background(MaterialTheme.colorScheme.surface)
                     .padding(2.dp)
                     .clip(CircleShape)
-                    .background(OnlineGreen)
+                    .background(dotColor)
+            )
+        }
+    }
+}
+
+@Composable
+fun PresenceBadge(
+    isOnline: Boolean,
+    modifier: Modifier = Modifier,
+    onDarkSurface: Boolean = false
+) {
+    val dotColor = if (isOnline) {
+        if (onDarkSurface) androidx.compose.ui.graphics.Color(0xFF4ADE80) else OnlineGreen
+    } else {
+        if (onDarkSurface) androidx.compose.ui.graphics.Color.White.copy(alpha = 0.55f)
+        else MaterialTheme.colorScheme.outline
+    }
+    val containerColor = when {
+        onDarkSurface && isOnline -> androidx.compose.ui.graphics.Color(0xFF16A34A).copy(alpha = 0.24f)
+        onDarkSurface -> androidx.compose.ui.graphics.Color.White.copy(alpha = 0.12f)
+        isOnline -> OnlineGreen.copy(alpha = 0.13f)
+        else -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f)
+    }
+    val textColor = when {
+        onDarkSurface && isOnline -> androidx.compose.ui.graphics.Color(0xFF86EFAC)
+        onDarkSurface -> androidx.compose.ui.graphics.Color.White.copy(alpha = 0.80f)
+        isOnline -> OnlineGreen
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+
+    Surface(
+        shape = RoundedCornerShape(50),
+        color = containerColor,
+        modifier = modifier
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(7.dp)
+                    .clip(CircleShape)
+                    .background(dotColor)
+            )
+            Text(
+                text = stringResource(if (isOnline) R.string.status_online else R.string.status_user_offline),
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = textColor,
+                maxLines = 1
             )
         }
     }

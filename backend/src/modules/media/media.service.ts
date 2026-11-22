@@ -38,11 +38,12 @@ export class MediaService {
       if (!input.conversationId) {
         throw new ApiError(400, 'missing_conversation_id', 'Conversation ID is required for chat media.');
       }
-      const isPrivate = await this.db.isConversationPrivate(input.conversationId);
-      if (isPrivate === null) {
+      const privacy = await this.db.getUserConversationPrivacyState(input.conversationId, input.userId);
+      if (!privacy) {
         throw new ApiError(404, 'conversation_not_found', 'Conversation not found.');
       }
-      if (isPrivate) {
+      const effectivePrivate = privacy.isConversationPrivate || privacy.userMovedToPrivate;
+      if (effectivePrivate) {
         const unlocked = await verifyPrivateUnlockToken(input.privateUnlockToken, this.env, this.db, {
           userId: input.userId,
           sessionId: input.sessionId,
@@ -52,7 +53,7 @@ export class MediaService {
         }
       }
       const convService = new ConversationsService(this.db);
-      await convService.assertMember(input.conversationId, input.userId, isPrivate);
+      await convService.assertMember(input.conversationId, input.userId, effectivePrivate);
     }
 
     const validation = validateMediaConstraints(
@@ -200,8 +201,11 @@ export class MediaService {
       throw new ApiError(403, 'forbidden_media', 'Access denied.');
     }
 
-    const isPrivate = await this.db.isConversationPrivate(media.conversation_id);
-    if (isPrivate) {
+    const privacy = await this.db.getUserConversationPrivacyState(media.conversation_id, viewerUserId);
+    const effectivePrivate = Boolean(
+      privacy && (privacy.isConversationPrivate || privacy.userMovedToPrivate)
+    );
+    if (effectivePrivate) {
       const unlocked = await verifyPrivateUnlockToken(options?.privateUnlockToken, this.env, this.db, {
         userId: viewerUserId,
         sessionId: options?.sessionId,

@@ -62,6 +62,8 @@
     <string name="status_offline">Offline — showing cached chats</string>
     <string name="status_reconnecting">Reconnecting realtime channel…</string>
     <string name="status_online">Online</string>
+    <string name="status_user_offline">Offline</string>
+    <string name="status_user_offline_last_seen">Offline • %1$s</string>
     <string name="status_typing">Typing…</string>
     <string name="status_last_seen">Last seen %1$s</string>
 
@@ -263,6 +265,8 @@
     <string name="err_duplicate_report">You have already submitted a recent report for this item.</string>
     <string name="err_session_revoked">Your session was signed out from another device or expired.</string>
     <string name="err_user_blocked">Action blocked because one of the users blocked the other.</string>
+    <string name="err_conversation_in_private_chat">This contact is in your Private Chat. Open Private Chat to message them.</string>
+    <string name="err_cannot_move_native_private_chat">Chats started directly in Private Chat cannot be moved to regular Chats.</string>
     <string name="err_no_browser">No web browser found to open this link.</string>
 
     <string name="notif_channel_security">Security Alerts</string>
@@ -331,6 +335,14 @@
     <string name="chat_menu_delete_chat">Delete Chat</string>
     <string name="chat_menu_delete_private_chat">Delete Private Chat</string>
     <string name="chat_delete_confirm_message">Delete this conversation from your list?</string>
+    <string name="chat_menu_move_to_private">Move to Private Chat</string>
+    <string name="chat_move_private_confirm_title">Move to Private Chat?</string>
+    <string name="chat_move_private_confirm_message">Move %1$s to Private Chat? This contact will be hidden from your regular Chats list and protected by your 5-digit Private PIN.</string>
+    <string name="chat_moved_to_private_notice">Moved to Private Chat</string>
+    <string name="chat_menu_move_to_regular">Move to Regular Chats</string>
+    <string name="chat_move_regular_confirm_title">Move to Regular Chats?</string>
+    <string name="chat_move_regular_confirm_message">Move %1$s back to your regular Chats list?</string>
+    <string name="chat_moved_to_regular_notice">Moved back to Regular Chats</string>
     <string name="report_reason_label">Reason</string>
     <string name="report_details_hint">Additional details (optional)</string>
     <string name="report_submit">Submit Report</string>

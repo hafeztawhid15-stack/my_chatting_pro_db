@@ -59,23 +59,28 @@ import com.mychattingpro.data.repository.AppException
 import com.mychattingpro.domain.models.CallHistoryFilter
 import com.mychattingpro.domain.models.CallHistoryItem
 import com.mychattingpro.domain.repository.CallRepository
+import com.mychattingpro.domain.repository.ChatRepository
+import com.mychattingpro.features.common.PresenceBadge
 import com.mychattingpro.features.common.UserAvatar
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 data class CallHistoryUiState(
     val selectedFilter: CallHistoryFilter = CallHistoryFilter.ALL,
     val calls: List<CallHistoryItem> = emptyList(),
+    val peerOnlineMap: Map<String, Boolean> = emptyMap(),
     val isRefreshing: Boolean = false,
     val error: AppError? = null
 )
 
 class CallHistoryViewModel(
-    private val callRepository: CallRepository
+    private val callRepository: CallRepository,
+    private val chatRepository: ChatRepository? = null
 ) : ViewModel() {
 
     private val filterFlow = MutableStateFlow(CallHistoryFilter.ALL)
@@ -85,9 +90,10 @@ class CallHistoryViewModel(
     val uiState: StateFlow<CallHistoryUiState> = combine(
         filterFlow,
         callRepository.observeCallHistory(),
+        chatRepository?.observeConversations() ?: flowOf(emptyList()),
         refreshingFlow,
         errorFlow
-    ) { filter, allCalls, refreshing, err ->
+    ) { filter, allCalls, conversations, refreshing, err ->
         val filtered = when (filter) {
             CallHistoryFilter.ALL -> allCalls
             CallHistoryFilter.INCOMING -> allCalls.filter { it.direction == "incoming" }
@@ -95,9 +101,11 @@ class CallHistoryViewModel(
             CallHistoryFilter.MISSED -> allCalls.filter { it.status == "missed" }
             CallHistoryFilter.REJECTED -> allCalls.filter { it.status == "rejected" }
         }
+        val onlineMap = conversations.associate { it.peerUserId to it.peerIsOnline }
         CallHistoryUiState(
             selectedFilter = filter,
             calls = filtered,
+            peerOnlineMap = onlineMap,
             isRefreshing = refreshing,
             error = err
         )
@@ -116,6 +124,7 @@ class CallHistoryViewModel(
         viewModelScope.launch {
             refreshingFlow.value = true
             errorFlow.value = null
+            chatRepository?.let { launch { it.refreshConversations() } }
             callRepository.refreshCallHistory(CallHistoryFilter.ALL)
                 .onFailure { err ->
                     errorFlow.value = (err as? AppException)?.appError ?: AppError.ServerError()
@@ -241,6 +250,7 @@ fun CallHistoryScreen(
                     items(state.calls, key = { it.callId }) { item ->
                         CallHistoryRow(
                             item = item,
+                            peerIsOnline = state.peerOnlineMap[item.peerUserId],
                             networkModule = networkModule,
                             onAudioCall = { onStartCallback(item, false) },
                             onVideoCall = { onStartCallback(item, true) }
@@ -255,6 +265,7 @@ fun CallHistoryScreen(
 @Composable
 private fun CallHistoryRow(
     item: CallHistoryItem,
+    peerIsOnline: Boolean?,
     networkModule: NetworkModule,
     onAudioCall: () -> Unit,
     onVideoCall: () -> Unit
@@ -294,17 +305,28 @@ private fun CallHistoryRow(
                 displayName = item.peerDisplayName,
                 avatarMediaId = item.peerAvatarMediaId,
                 networkModule = networkModule,
-                size = 48.dp
+                size = 48.dp,
+                isOnline = peerIsOnline == true,
+                showOfflineDot = peerIsOnline != null
             )
             Spacer(modifier = Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = item.peerDisplayName,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = item.peerDisplayName,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false)
+                    )
+                    if (peerIsOnline != null) {
+                        Spacer(modifier = Modifier.width(6.dp))
+                        PresenceBadge(isOnline = peerIsOnline)
+                    }
+                }
                 Spacer(modifier = Modifier.height(2.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(

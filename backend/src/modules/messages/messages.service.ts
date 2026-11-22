@@ -61,7 +61,7 @@ export class MessagesService {
     const hasMore = rows.length > limit;
     const pageRows = hasMore ? rows.slice(0, limit) : rows;
     const oldest = pageRows[pageRows.length - 1];
-    const messages = pageRows.reverse().map((r) => this.mapRowToDto(r));
+    const messages = pageRows.reverse().map((r) => this.mapRowToDto(r, isPrivateScope));
 
     return {
       messages,
@@ -141,6 +141,7 @@ export class MessagesService {
       throw new ApiError(500, 'message_persist_failed', 'Message failed to persist.');
     }
     const dto: MessageDto = { ...rawDto, isPrivate: isPrivateScope };
+    const memberIsPrivate = await this.db.getMembersPrivateFlags(input.conversationId, memberIds);
 
     const envelope: RealtimeEnvelope = {
       eventId: `msg:${messageId}`,
@@ -154,7 +155,7 @@ export class MessagesService {
     await convStub.fetch('https://do.internal/internal/fanout', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ memberIds, envelope }),
+      body: JSON.stringify({ memberIds, envelope, memberIsPrivate }),
     });
 
     // Best-effort UnifiedPush fallback for recipients with registered external endpoints
@@ -166,13 +167,14 @@ export class MessagesService {
             (e) => e.transport === 'unified_push' && e.endpoint_url?.startsWith('https://')
           );
           if (targets.length === 0) return;
+          const recipientIsPrivate = Boolean(memberIsPrivate[rid] ?? isPrivateScope);
           const payload = JSON.stringify({
             eventId: envelope.eventId,
             category: 'message',
-            title: isPrivateScope ? 'MY CHATTING PRO' : 'New Message',
-            body: isPrivateScope ? 'New encrypted private message' : preview,
-            conversationId: isPrivateScope ? undefined : input.conversationId,
-            isPrivate: isPrivateScope,
+            title: recipientIsPrivate ? 'MY CHATTING PRO' : 'New Message',
+            body: recipientIsPrivate ? 'New encrypted private message' : preview,
+            conversationId: recipientIsPrivate ? undefined : input.conversationId,
+            isPrivate: recipientIsPrivate,
             timestampMs: serverTimestampMs,
           });
           await Promise.allSettled(
@@ -203,6 +205,7 @@ export class MessagesService {
     const now = Date.now();
     const boundedIds = input.messageIds.slice(0, 100);
     await this.db.markMessageReceiptsTx(input.conversationId, userId, boundedIds, input.type, now);
+    const memberIsPrivate = await this.db.getMembersPrivateFlags(input.conversationId, memberIds);
 
     const envelope: RealtimeEnvelope = {
       eventId: crypto.randomUUID(),
@@ -222,7 +225,7 @@ export class MessagesService {
     await convStub.fetch('https://do.internal/internal/fanout', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ memberIds, envelope }),
+      body: JSON.stringify({ memberIds, envelope, memberIsPrivate }),
     });
   }
 
@@ -247,6 +250,7 @@ export class MessagesService {
       await this.storage.deleteObjects(bucket, [media.storage_path]);
     }
 
+    const memberIsPrivate = await this.db.getMembersPrivateFlags(msg.conversation_id, memberIds);
     const envelope: RealtimeEnvelope = {
       eventId: `del:${messageId}`,
       type: 'message.deleted',
@@ -264,7 +268,7 @@ export class MessagesService {
     await convStub.fetch('https://do.internal/internal/fanout', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ memberIds, envelope }),
+      body: JSON.stringify({ memberIds, envelope, memberIsPrivate }),
     });
   }
 
@@ -273,7 +277,7 @@ export class MessagesService {
     return row ? this.mapRowToDto(row) : null;
   }
 
-  private mapRowToDto(r: MessageQueryRow): MessageDto {
+  private mapRowToDto(r: MessageQueryRow, isPrivate?: boolean): MessageDto {
     return {
       id: r.id,
       conversationId: r.conversation_id,
@@ -299,6 +303,7 @@ export class MessagesService {
       createdAtMs: r.created_at_ms,
       deliveredAtMs: r.delivered_at_ms,
       readAtMs: r.read_at_ms,
+      ...(isPrivate !== undefined ? { isPrivate } : {}),
     };
   }
 

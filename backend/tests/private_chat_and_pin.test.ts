@@ -211,9 +211,31 @@ describe('Private Chat & Separate 5-Digit Private PIN Backend', () => {
 
   it('isolates private conversations and messages from regular chat endpoints', async () => {
     const env = makeTestEnv();
+    const movedConvs = new Set<string>();
     const fakeDb = {
       listConversationMemberIds: async () => ['u1', 'u2'],
       isConversationPrivate: async (convId: string) => (convId === 'priv-conv-1' ? true : false),
+      getUserConversationPrivacyState: async (convId: string) => ({
+        isConversationPrivate: convId === 'priv-conv-1',
+        userMovedToPrivate: movedConvs.has(convId),
+        deletedAtMs: null,
+      }),
+      getMembersPrivateFlags: async (convId: string, memberIds: string[]) => {
+        const res: Record<string, boolean> = {};
+        for (const m of memberIds) {
+          res[m] = convId === 'priv-conv-1' || (m === 'u1' && movedConvs.has(convId));
+        }
+        return res;
+      },
+      findDirectConversationIdByKey: async (key: string) =>
+        key === 'u1:u2' ? 'reg-conv-1' : null,
+      upsertUserConversationSettings: async (input: {
+        conversationId: string;
+        movedToPrivate?: boolean;
+      }) => {
+        if (input.movedToPrivate === true) movedConvs.add(input.conversationId);
+        if (input.movedToPrivate === false) movedConvs.delete(input.conversationId);
+      },
       listConversationMessages: async () => [],
       isBlockedBetween: async () => false,
     } as unknown as DatabaseClient;
@@ -248,5 +270,25 @@ describe('Private Chat & Separate 5-Digit Private PIN Backend', () => {
       statusCode: 403,
       code: 'forbidden_conversation',
     });
+
+    // Moving reg-conv-1 to Private Chat hides it from regular endpoints for u1 only
+    await convService.moveConversationToPrivate('u1', 'reg-conv-1');
+    await expect(convService.assertMember('reg-conv-1', 'u1', false)).rejects.toMatchObject({
+      statusCode: 403,
+      code: 'private_chat_locked',
+    });
+    await expect(convService.assertMember('reg-conv-1', 'u1', true)).resolves.toEqual(['u1', 'u2']);
+    // Peer u2 still accesses reg-conv-1 on regular chat
+    await expect(convService.assertMember('reg-conv-1', 'u2', false)).resolves.toEqual(['u1', 'u2']);
+
+    // Native private chat cannot be moved back to regular chats
+    await expect(convService.moveConversationToRegular('u1', 'priv-conv-1')).rejects.toMatchObject({
+      statusCode: 400,
+      code: 'cannot_move_native_private_chat',
+    });
+
+    // Moved regular chat can be restored back to regular chats
+    await convService.moveConversationToRegular('u1', 'reg-conv-1');
+    await expect(convService.assertMember('reg-conv-1', 'u1', false)).resolves.toEqual(['u1', 'u2']);
   });
 });

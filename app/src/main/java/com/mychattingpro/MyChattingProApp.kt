@@ -214,7 +214,8 @@ class AppContainer(context: Context) {
                             if (mutedUntil != null && mutedUntil > System.currentTimeMillis()) {
                                 return@collect
                             }
-                            if (event.message.isPrivate) {
+                            val effectivePrivate = event.message.isPrivate || (conv?.isPrivate == true)
+                            if (effectivePrivate) {
                                 notificationManager.showNewPrivateMessageNotification(
                                     prefs = prefs,
                                     mutedUntilMs = conv?.mutedUntilMs,

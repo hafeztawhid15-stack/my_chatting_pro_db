@@ -549,7 +549,7 @@ private fun MyChattingProNavRoot(
         composable<AppRoute.CallHistory> {
             val callHistoryVm: CallHistoryViewModel = viewModel(
                 factory = singleVmFactory {
-                    CallHistoryViewModel(container.callRepository)
+                    CallHistoryViewModel(container.callRepository, container.chatRepository)
                 }
             )
             CallHistoryScreen(
@@ -686,7 +686,8 @@ private fun MyChattingProNavRoot(
                         autoAccept = route.autoAccept,
                         onStopIncomingAlert = { cid ->
                             container.stopIncomingCallAlert(cid.ifBlank { route.callId })
-                        }
+                        },
+                        chatRepository = container.chatRepository
                     )
                 }
             )

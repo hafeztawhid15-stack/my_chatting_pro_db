@@ -34,6 +34,7 @@ name = "my-chatting-pro-api"
 
 [env.production.vars]
 ENVIRONMENT = "production"
+SUPABASE_URL = "https://kfgqysczabdkrrrlrpyn.supabase.co"
 SUPABASE_STORAGE_BUCKET = "my-chatting-pro-media"
 ACCESS_TOKEN_TTL_SECONDS = "900"
 REFRESH_TOKEN_TTL_SECONDS = "2592000"

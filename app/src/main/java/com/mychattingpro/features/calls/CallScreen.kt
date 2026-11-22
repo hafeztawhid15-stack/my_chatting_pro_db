@@ -60,6 +60,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.R
 import com.mychattingpro.core.localization.DateTimeFormatters
 import com.mychattingpro.core.network.NetworkModule
+import com.mychattingpro.features.common.PresenceBadge
 import com.mychattingpro.features.common.UserAvatar
 import org.webrtc.RendererCommon
 import org.webrtc.SurfaceViewRenderer
@@ -233,7 +234,9 @@ fun CallScreen(
                     displayName = peerName,
                     avatarMediaId = peerAvatarMediaId,
                     networkModule = networkModule,
-                    size = 96.dp
+                    size = 96.dp,
+                    isOnline = state.peerIsOnline == true,
+                    showOfflineDot = state.peerIsOnline != null
                 )
                 Spacer(modifier = Modifier.height(18.dp))
             }
@@ -244,6 +247,14 @@ fun CallScreen(
                 fontWeight = FontWeight.Bold,
                 color = Color.White
             )
+            if (state.peerIsOnline != null && state.stage != WebRtcConnectionStage.CONNECTED) {
+                Spacer(modifier = Modifier.height(6.dp))
+                PresenceBadge(
+                    isOnline = state.peerIsOnline == true,
+                    onDarkSurface = true,
+                    modifier = Modifier.testTag("call_peer_presence_badge")
+                )
+            }
             Spacer(modifier = Modifier.height(6.dp))
 
             val stageLabel = when (state.stage) {

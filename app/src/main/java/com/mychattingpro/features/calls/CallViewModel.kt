@@ -10,6 +10,7 @@ import com.mychattingpro.core.network.RealtimeSocketManager
 import com.mychattingpro.data.repository.AppException
 import com.mychattingpro.domain.models.IceServerConfig
 import com.mychattingpro.domain.repository.CallRepository
+import com.mychattingpro.domain.repository.ChatRepository
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -30,6 +31,8 @@ data class CallUiState(
     val isCameraOn: Boolean = true,
     val durationSeconds: Long = 0L,
     val turnConfigured: Boolean = false,
+    val peerIsOnline: Boolean? = null,
+    val peerLastSeenMs: Long? = null,
     val error: AppError? = null
 )
 
@@ -45,7 +48,8 @@ class CallViewModel(
     private val networkMonitor: NetworkMonitor,
     private val autoAccept: Boolean = false,
     private val onStopIncomingAlert: (String) -> Unit = {},
-    val webRtcManager: WebRtcCallManager = WebRtcCallManager(context, socketManager)
+    val webRtcManager: WebRtcCallManager = WebRtcCallManager(context, socketManager),
+    private val chatRepository: ChatRepository? = null
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(
@@ -71,6 +75,24 @@ class CallViewModel(
     init {
         listenToSignaling()
         observeNetworkForReconnecting()
+        observePeerPresence()
+    }
+
+    private fun observePeerPresence() {
+        val repo = chatRepository ?: return
+        viewModelScope.launch {
+            repo.refreshConversations()
+        }
+        viewModelScope.launch {
+            repo.observeConversation(conversationId).collect { conv ->
+                if (conv != null) {
+                    _uiState.value = _uiState.value.copy(
+                        peerIsOnline = conv.peerIsOnline,
+                        peerLastSeenMs = conv.peerLastSeenMs
+                    )
+                }
+            }
+        }
     }
 
     private fun observeNetworkForReconnecting() {
@@ -297,6 +319,14 @@ class CallViewModel(
         viewModelScope.launch {
             socketManager.events.collect { event ->
                 when (event) {
+                    is RealtimeEvent.PresenceChanged -> {
+                        if (event.userId == peerUserId) {
+                            _uiState.value = _uiState.value.copy(
+                                peerIsOnline = event.isOnline,
+                                peerLastSeenMs = event.lastSeenMs ?: _uiState.value.peerLastSeenMs
+                            )
+                        }
+                    }
                     is RealtimeEvent.CallMissed -> {
                         if (activeCallId.isNotBlank() && event.callId == activeCallId) {
                             ringTimeoutJob?.cancel()

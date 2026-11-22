@@ -27,6 +27,8 @@ import androidx.compose.material.icons.outlined.Block
 import androidx.compose.material.icons.outlined.CleaningServices
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.Flag
+import androidx.compose.material.icons.outlined.Lock
+import androidx.compose.material.icons.outlined.LockOpen
 import androidx.compose.material.icons.outlined.MarkChatRead
 import androidx.compose.material.icons.outlined.MarkChatUnread
 import androidx.compose.material.icons.outlined.MusicNote
@@ -77,7 +79,9 @@ data class ConversationMenuCallbacks(
     val onClearChat: (Conversation) -> Unit,
     val onToggleBlock: (Conversation) -> Unit,
     val onReportUser: (Conversation, String, String?) -> Unit,
-    val onDeleteChat: (Conversation) -> Unit
+    val onDeleteChat: (Conversation) -> Unit,
+    val onMoveToPrivateChat: ((Conversation) -> Unit)? = null,
+    val onMoveToRegularChat: ((Conversation) -> Unit)? = null
 )
 
 class ConversationMenuController {
@@ -86,6 +90,8 @@ class ConversationMenuController {
     var activeClearTarget by mutableStateOf<Conversation?>(null)
     var activeDeleteTarget by mutableStateOf<Conversation?>(null)
     var activeReportTarget by mutableStateOf<Conversation?>(null)
+    var activeMoveToPrivateTarget by mutableStateOf<Conversation?>(null)
+    var activeMoveToRegularTarget by mutableStateOf<Conversation?>(null)
 }
 
 @Composable
@@ -219,6 +225,40 @@ fun ConversationActionsDropdownMenu(
             },
             modifier = Modifier.testTag("chat_action_archive")
         )
+        // 6b. Move to Private Chat / Move back to Regular Chats
+        if (!isPrivate && callbacks.onMoveToPrivateChat != null) {
+            DropdownMenuItem(
+                leadingIcon = {
+                    Icon(
+                        Icons.Outlined.Lock,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                },
+                text = { Text(stringResource(R.string.chat_menu_move_to_private)) },
+                onClick = {
+                    onDismiss()
+                    controller.activeMoveToPrivateTarget = conversation
+                },
+                modifier = Modifier.testTag("chat_action_move_to_private")
+            )
+        } else if (isPrivate && callbacks.onMoveToRegularChat != null) {
+            DropdownMenuItem(
+                leadingIcon = {
+                    Icon(
+                        Icons.Outlined.LockOpen,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                },
+                text = { Text(stringResource(R.string.chat_menu_move_to_regular)) },
+                onClick = {
+                    onDismiss()
+                    controller.activeMoveToRegularTarget = conversation
+                },
+                modifier = Modifier.testTag("chat_action_move_to_regular")
+            )
+        }
         HorizontalDivider()
         // 7. Clear Chat
         DropdownMenuItem(
@@ -460,6 +500,68 @@ fun ConversationActionModals(
         )
     }
 
+    controller.activeMoveToPrivateTarget?.let { target ->
+        AlertDialog(
+            onDismissRequest = { controller.activeMoveToPrivateTarget = null },
+            title = { Text(stringResource(R.string.chat_move_private_confirm_title)) },
+            text = {
+                Text(
+                    stringResource(
+                        R.string.chat_move_private_confirm_message,
+                        target.peerDisplayName
+                    )
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        controller.activeMoveToPrivateTarget = null
+                        callbacks.onMoveToPrivateChat?.invoke(target)
+                    },
+                    modifier = Modifier.testTag("confirm_move_to_private_button")
+                ) {
+                    Text(stringResource(R.string.action_confirm))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { controller.activeMoveToPrivateTarget = null }) {
+                    Text(stringResource(R.string.action_cancel))
+                }
+            }
+        )
+    }
+
+    controller.activeMoveToRegularTarget?.let { target ->
+        AlertDialog(
+            onDismissRequest = { controller.activeMoveToRegularTarget = null },
+            title = { Text(stringResource(R.string.chat_move_regular_confirm_title)) },
+            text = {
+                Text(
+                    stringResource(
+                        R.string.chat_move_regular_confirm_message,
+                        target.peerDisplayName
+                    )
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        controller.activeMoveToRegularTarget = null
+                        callbacks.onMoveToRegularChat?.invoke(target)
+                    },
+                    modifier = Modifier.testTag("confirm_move_to_regular_button")
+                ) {
+                    Text(stringResource(R.string.action_confirm))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { controller.activeMoveToRegularTarget = null }) {
+                    Text(stringResource(R.string.action_cancel))
+                }
+            }
+        )
+    }
+
     controller.activeReportTarget?.let { target ->
         val reasons = listOf("Spam", "Abuse", "Harassment", "Other")
         var selectedReason by remember(target.id) { mutableStateOf("Spam") }
@@ -539,7 +641,8 @@ fun ConversationActionModals(
                                 avatarMediaId = user.avatarMediaId,
                                 networkModule = networkModule,
                                 size = 76.dp,
-                                isOnline = user.isOnline
+                                isOnline = user.isOnline,
+                                showOfflineDot = true
                             )
                             Text(
                                 text = user.displayName,
@@ -551,14 +654,19 @@ fun ConversationActionModals(
                                     stringResource(R.string.status_online)
                                 } else if (user.lastSeenMs != null) {
                                     stringResource(
-                                        R.string.status_last_seen,
+                                        R.string.status_user_offline_last_seen,
                                         DateTimeFormatters.formatChatListTime(context, user.lastSeenMs, language)
                                     )
                                 } else {
-                                    stringResource(R.string.status_offline)
+                                    stringResource(R.string.status_user_offline)
                                 },
                                 style = MaterialTheme.typography.labelMedium,
-                                color = if (user.isOnline) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                                fontWeight = FontWeight.SemiBold,
+                                color = if (user.isOnline) {
+                                    com.mychattingpro.core.theme.OnlineGreen
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                }
                             )
                             if (user.about.isNotBlank()) {
                                 Surface(
