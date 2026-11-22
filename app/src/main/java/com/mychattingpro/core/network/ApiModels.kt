@@ -83,7 +83,8 @@ data class UpdateProfileRequestDto(
 
 @JsonClass(generateAdapter = true)
 data class DeleteAccountRequestDto(
-    val pin: String
+    val pin: String,
+    val confirmText: String = "DELETE"
 )
 
 @JsonClass(generateAdapter = true)
@@ -92,6 +93,50 @@ data class DeleteAccountResponseDto(
     val deletedAtMs: Long,
     val removedMediaObjects: Int,
     val retentionNotice: String
+)
+
+@JsonClass(generateAdapter = true)
+data class ChangeLoginPinRequestDto(
+    val currentPin: String,
+    val newPin: String,
+    val confirmNewPin: String
+)
+
+@JsonClass(generateAdapter = true)
+data class ChangeLoginPinResponseDto(
+    val updatedAtMs: Long,
+    val revokedOtherSessions: Boolean = false
+)
+
+@JsonClass(generateAdapter = true)
+data class GenerateRecoveryCodeRequestDto(
+    val currentPin: String
+)
+
+@JsonClass(generateAdapter = true)
+data class GenerateRecoveryCodeResponseDto(
+    val recoveryCode: String,
+    val generatedAtMs: Long
+)
+
+@JsonClass(generateAdapter = true)
+data class ResetLoginPinRequestDto(
+    val phone: String,
+    val recoveryCode: String,
+    val newPin: String,
+    val confirmNewPin: String,
+    val deviceName: String,
+    val appVersion: String
+)
+
+@JsonClass(generateAdapter = true)
+data class LogoutAllRequestDto(
+    val keepCurrent: Boolean = false
+)
+
+@JsonClass(generateAdapter = true)
+data class LogoutAllResponseDto(
+    val revokedAll: Boolean = true
 )
 
 @JsonClass(generateAdapter = true)
@@ -129,7 +174,43 @@ data class ConversationDto(
     val lastMessageSenderId: String?,
     val lastMessageAtMs: Long?,
     val unreadCount: Int,
-    val updatedAtMs: Long
+    val updatedAtMs: Long,
+    val isPrivate: Boolean = false,
+    val isPinned: Boolean = false,
+    val pinnedAtMs: Long? = null,
+    val isArchived: Boolean = false,
+    val archivedAtMs: Long? = null,
+    val mutedUntilMs: Long? = null,
+    val customSoundUri: String? = null,
+    val customSoundLabel: String? = null,
+    val markedUnread: Boolean = false
+)
+
+@JsonClass(generateAdapter = true)
+data class UpdateConversationPreferencesRequestDto(
+    val isPinned: Boolean? = null,
+    val isArchived: Boolean? = null,
+    val mutedUntilMs: Long? = null,
+    val customSoundUri: String? = null,
+    val customSoundLabel: String? = null,
+    val markedUnread: Boolean? = null
+)
+
+@JsonClass(generateAdapter = true)
+data class ClearConversationResponseDto(
+    val clearedAtMs: Long
+)
+
+@JsonClass(generateAdapter = true)
+data class DeleteConversationResponseDto(
+    val deletedAtMs: Long
+)
+
+@JsonClass(generateAdapter = true)
+data class PeerProfileResponseDto(
+    val user: PublicUserDto,
+    val isBlockedByMe: Boolean,
+    val hasBlockedMe: Boolean
 )
 
 @JsonClass(generateAdapter = true)
@@ -172,7 +253,8 @@ data class MessageDto(
     val deletedForAllAtMs: Long? = null,
     val createdAtMs: Long,
     val deliveredAtMs: Long? = null,
-    val readAtMs: Long? = null
+    val readAtMs: Long? = null,
+    val isPrivate: Boolean = false
 )
 
 @JsonClass(generateAdapter = true)
@@ -258,6 +340,34 @@ data class CreateCallResponseDto(
 @JsonClass(generateAdapter = true)
 data class UpdateCallStateRequestDto(
     val action: String
+)
+
+@JsonClass(generateAdapter = true)
+data class CallHistoryItemDto(
+    val callId: String,
+    val conversationId: String,
+    val callerId: String,
+    val peerUserId: String,
+    val peerDisplayName: String,
+    val peerAvatarMediaId: String?,
+    val callType: String,
+    val status: String,
+    val direction: String,
+    val startedAtMs: Long,
+    val answeredAtMs: Long?,
+    val endedAtMs: Long?,
+    val durationSeconds: Int
+)
+
+@JsonClass(generateAdapter = true)
+data class CallHistoryResponseDto(
+    val calls: List<CallHistoryItemDto>
+)
+
+@JsonClass(generateAdapter = true)
+data class NotificationEndpointRequestDto(
+    val transport: String,
+    val endpointUrl: String? = null
 )
 
 @JsonClass(generateAdapter = true)
@@ -347,4 +457,43 @@ data class OwnerActivityResponseDto(
     val summary: OwnerActivitySummaryDto,
     val pagination: OwnerPaginationDto? = null,
     val users: List<OwnerTrackedUserDto>
+)
+
+@JsonClass(generateAdapter = true)
+data class PrivatePinStatusResponseDto(
+    val hasPrivatePin: Boolean,
+    val lockedUntilMs: Long? = null,
+    val retryAfterSeconds: Int = 0
+)
+
+@JsonClass(generateAdapter = true)
+data class PrivatePinSetupRequestDto(
+    val pin: String,
+    val confirmPin: String
+)
+
+@JsonClass(generateAdapter = true)
+data class PrivatePinUnlockRequestDto(
+    val pin: String
+)
+
+@JsonClass(generateAdapter = true)
+data class PrivatePinChangeRequestDto(
+    val oldPin: String,
+    val newPin: String,
+    val confirmNewPin: String
+)
+
+@JsonClass(generateAdapter = true)
+data class PrivatePinResetRequestDto(
+    val loginPin: String,
+    val newPrivatePin: String,
+    val confirmNewPrivatePin: String
+)
+
+@JsonClass(generateAdapter = true)
+data class PrivatePinUnlockResponseDto(
+    val unlocked: Boolean,
+    val privateUnlockToken: String,
+    val expiresInSeconds: Int
 )

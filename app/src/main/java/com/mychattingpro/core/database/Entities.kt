@@ -22,7 +22,17 @@ data class ConversationEntity(
     val lastMessageSenderId: String?,
     val lastMessageAtMs: Long?,
     val unreadCount: Int,
-    val updatedAtMs: Long
+    val updatedAtMs: Long,
+    val isPrivate: Boolean = false,
+    val isPinned: Boolean = false,
+    val pinnedAtMs: Long? = null,
+    val isArchived: Boolean = false,
+    val archivedAtMs: Long? = null,
+    val mutedUntilMs: Long? = null,
+    val customSoundUri: String? = null,
+    val customSoundLabel: String? = null,
+    val markedUnread: Boolean = false,
+    val clearedAtMs: Long? = null
 )
 
 @Entity(
@@ -51,5 +61,26 @@ data class MessageEntity(
     val deletedForAllAtMs: Long?,
     val createdAtMs: Long,
     val deliveredAtMs: Long?,
-    val readAtMs: Long?
+    val readAtMs: Long?,
+    val isPrivate: Boolean = false
+)
+
+@Entity(
+    tableName = "cached_call_history",
+    indices = [Index(value = ["startedAtMs"])]
+)
+data class CallHistoryEntity(
+    @PrimaryKey val callId: String,
+    val conversationId: String,
+    val callerId: String,
+    val peerUserId: String,
+    val peerDisplayName: String,
+    val peerAvatarMediaId: String?,
+    val callType: String, // audio, video
+    val status: String, // ringing, accepted, rejected, missed, ended
+    val direction: String, // incoming, outgoing
+    val startedAtMs: Long,
+    val answeredAtMs: Long?,
+    val endedAtMs: Long?,
+    val durationSeconds: Int
 )

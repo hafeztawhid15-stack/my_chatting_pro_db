@@ -21,7 +21,9 @@ import com.mychattingpro.domain.models.Message
 import com.mychattingpro.domain.models.MessageType
 import com.mychattingpro.domain.repository.ChatRepository
 import com.mychattingpro.domain.repository.MessageRepository
+import com.mychattingpro.domain.repository.PrivateChatRepository
 import com.mychattingpro.domain.repository.SafetyRepository
+import com.mychattingpro.features.common.PeerProfileModalState
 import com.mychattingpro.features.media.VoiceRecorderManager
 import com.mychattingpro.features.media.VoiceRecordingState
 import kotlinx.coroutines.Dispatchers
@@ -53,6 +55,8 @@ data class ChatDetailUiState(
     val pendingMediaPreviewUri: Uri? = null,
     val pendingMediaIsVideo: Boolean = false,
     val downloadingMessageId: String? = null,
+    val peerProfileModal: PeerProfileModalState? = null,
+    val conversationDeleted: Boolean = false,
     val error: AppError? = null,
     val infoToast: String? = null
 )
@@ -61,24 +65,37 @@ class ChatDetailViewModel(
     private val context: Context,
     val conversationId: String,
     val peerUserId: String,
-    chatRepository: ChatRepository,
+    private val chatRepository: ChatRepository,
     private val messageRepository: MessageRepository,
     private val safetyRepository: SafetyRepository,
     private val tokenStore: EncryptedTokenStore,
     prefsStore: AppPreferencesDataStore,
     private val socketManager: RealtimeSocketManager,
     private val okHttpClient: OkHttpClient,
-    networkMonitor: NetworkMonitor
+    networkMonitor: NetworkMonitor,
+    val isPrivate: Boolean = false,
+    private val privateChatRepository: PrivateChatRepository? = null
 ) : ViewModel() {
 
     val voiceRecorder = VoiceRecorderManager(context)
     val voiceState: StateFlow<VoiceRecordingState> = voiceRecorder.state
 
-    val conversation: StateFlow<Conversation?> = chatRepository.observeConversation(conversationId)
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+    val isPrivateUnlocked: StateFlow<Boolean> =
+        privateChatRepository?.isUnlocked ?: MutableStateFlow(true)
 
-    val messages: StateFlow<List<Message>> = messageRepository.observeMessages(conversationId)
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val conversation: StateFlow<Conversation?> =
+        if (isPrivate && privateChatRepository != null) {
+            privateChatRepository.observePrivateConversation(conversationId)
+        } else {
+            chatRepository.observeConversation(conversationId)
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
+    val messages: StateFlow<List<Message>> =
+        if (isPrivate && privateChatRepository != null) {
+            privateChatRepository.observePrivateMessages(conversationId)
+        } else {
+            messageRepository.observeMessages(conversationId)
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val language: StateFlow<AppLanguage> = prefsStore.preferencesFlow
         .map { it.language }
@@ -100,7 +117,11 @@ class ChatDetailViewModel(
     init {
         viewModelScope.launch {
             myUserId = tokenStore.getSession()?.userId
-            val res = messageRepository.loadLatestMessages(conversationId)
+            val res = if (isPrivate && privateChatRepository != null) {
+                privateChatRepository.loadLatestPrivateMessages(conversationId)
+            } else {
+                messageRepository.loadLatestMessages(conversationId)
+            }
             res.onSuccess { hasMore ->
                 _uiState.value = _uiState.value.copy(isLoadingInitial = false, hasMoreOlder = hasMore)
             }.onFailure { err ->
@@ -117,7 +138,11 @@ class ChatDetailViewModel(
                     .filter { it.senderId != mine && it.readAtMs == null && !it.id.startsWith("pending_") }
                     .map { it.id }
                 if (unreadIds.isNotEmpty()) {
-                    messageRepository.markReceipts(conversationId, unreadIds, read = true)
+                    if (isPrivate && privateChatRepository != null) {
+                        privateChatRepository.markPrivateReceipts(conversationId, unreadIds, read = true)
+                    } else {
+                        messageRepository.markReceipts(conversationId, unreadIds, read = true)
+                    }
                 }
             }
         }
@@ -135,7 +160,14 @@ class ChatDetailViewModel(
         }
     }
 
+    fun touchPrivateActivity() {
+        if (isPrivate) {
+            privateChatRepository?.touchActivity()
+        }
+    }
+
     fun updateComposerText(text: String) {
+        touchPrivateActivity()
         _uiState.value = _uiState.value.copy(composerText = text, error = null)
         socketManager.sendTyping(conversationId, peerUserId, text.isNotBlank())
         typingTimeoutJob?.cancel()
@@ -148,13 +180,18 @@ class ChatDetailViewModel(
     }
 
     fun sendTextMessage() {
+        touchPrivateActivity()
         val text = _uiState.value.composerText.trim()
         if (text.isEmpty()) return
         _uiState.value = _uiState.value.copy(composerText = "", error = null)
         socketManager.sendTyping(conversationId, peerUserId, false)
 
         viewModelScope.launch {
-            val res = messageRepository.sendTextMessage(conversationId, text)
+            val res = if (isPrivate && privateChatRepository != null) {
+                privateChatRepository.sendPrivateTextMessage(conversationId, text)
+            } else {
+                messageRepository.sendTextMessage(conversationId, text)
+            }
             res.onFailure { err ->
                 val appErr = (err as? AppException)?.appError ?: AppError.ServerError()
                 _uiState.value = _uiState.value.copy(error = appErr)
@@ -192,19 +229,33 @@ class ChatDetailViewModel(
         caption: String? = null,
         durationMs: Long? = null
     ) {
+        touchPrivateActivity()
         val cid = UUID.randomUUID().toString()
         val job = viewModelScope.launch {
             updateProgress(cid, 0.05f)
-            val res = messageRepository.sendMediaMessage(
-                conversationId = conversationId,
-                uri = uri,
-                messageType = messageType,
-                category = category,
-                caption = caption,
-                durationMs = durationMs,
-                existingClientMessageId = cid,
-                onProgress = { p -> updateProgress(cid, p) }
-            )
+            val res = if (isPrivate && privateChatRepository != null) {
+                privateChatRepository.sendPrivateMediaMessage(
+                    conversationId = conversationId,
+                    uri = uri,
+                    messageType = messageType,
+                    category = category,
+                    caption = caption,
+                    durationMs = durationMs,
+                    existingClientMessageId = cid,
+                    onProgress = { p -> updateProgress(cid, p) }
+                )
+            } else {
+                messageRepository.sendMediaMessage(
+                    conversationId = conversationId,
+                    uri = uri,
+                    messageType = messageType,
+                    category = category,
+                    caption = caption,
+                    durationMs = durationMs,
+                    existingClientMessageId = cid,
+                    onProgress = { p -> updateProgress(cid, p) }
+                )
+            }
             clearProgress(cid)
             uploadJobs.remove(cid)
             res.onFailure { err ->
@@ -221,11 +272,18 @@ class ChatDetailViewModel(
     }
 
     fun retryMessage(message: Message) {
+        touchPrivateActivity()
         val cid = message.clientMessageId
         val job = viewModelScope.launch {
             if (message.type != MessageType.TEXT) updateProgress(cid, 0.05f)
-            val res = messageRepository.retryFailedMessage(message) { p ->
-                updateProgress(cid, p)
+            val res = if (isPrivate && privateChatRepository != null) {
+                privateChatRepository.retryFailedPrivateMessage(message) { p ->
+                    updateProgress(cid, p)
+                }
+            } else {
+                messageRepository.retryFailedMessage(message) { p ->
+                    updateProgress(cid, p)
+                }
             }
             clearProgress(cid)
             uploadJobs.remove(cid)
@@ -241,10 +299,15 @@ class ChatDetailViewModel(
         val state = _uiState.value
         if (state.isLoadingOlder || !state.hasMoreOlder) return
         val oldest = messages.value.firstOrNull { !it.id.startsWith("pending_") } ?: return
+        touchPrivateActivity()
 
         _uiState.value = state.copy(isLoadingOlder = true)
         viewModelScope.launch {
-            val res = messageRepository.loadOlderMessages(conversationId, oldest.createdAtMs, oldest.id)
+            val res = if (isPrivate && privateChatRepository != null) {
+                privateChatRepository.loadOlderPrivateMessages(conversationId, oldest.createdAtMs, oldest.id)
+            } else {
+                messageRepository.loadOlderMessages(conversationId, oldest.createdAtMs, oldest.id)
+            }
             res.onSuccess { hasMore ->
                 _uiState.value = _uiState.value.copy(isLoadingOlder = false, hasMoreOlder = hasMore)
             }.onFailure {
@@ -256,7 +319,8 @@ class ChatDetailViewModel(
     fun sendRecordedVoiceNote() {
         val result = voiceRecorder.stopRecording() ?: return
         val (file, durationMs) = result
-        voiceRecorder.cancelRecording()
+        // Preserve recorded file on disk until upload succeeds or is cancelled
+        voiceRecorder.clearRecordedStateWithoutDeleting()
         sendMediaUri(
             uri = Uri.fromFile(file),
             messageType = MessageType.VOICE,
@@ -346,10 +410,160 @@ class ChatDetailViewModel(
     }
 
     fun deleteMessage(messageId: String) {
+        touchPrivateActivity()
         viewModelScope.launch {
-            messageRepository.deleteOwnMessage(messageId).onFailure { err ->
+            val res = if (isPrivate && privateChatRepository != null) {
+                privateChatRepository.deleteOwnPrivateMessage(messageId)
+            } else {
+                messageRepository.deleteOwnMessage(messageId)
+            }
+            res.onFailure { err ->
                 val appErr = (err as? AppException)?.appError ?: AppError.ServerError()
                 _uiState.value = _uiState.value.copy(error = appErr)
+            }
+        }
+    }
+
+    // 10-Action Conversation Menu Support
+    fun viewPeerProfile() {
+        touchPrivateActivity()
+        _uiState.value = _uiState.value.copy(peerProfileModal = PeerProfileModalState(isLoading = true))
+        viewModelScope.launch {
+            val res = if (isPrivate && privateChatRepository != null) {
+                privateChatRepository.getPrivatePeerProfile(conversationId)
+            } else {
+                chatRepository.getPeerProfile(conversationId)
+            }
+            res.onSuccess { profile ->
+                _uiState.value = _uiState.value.copy(
+                    peerProfileModal = PeerProfileModalState(isLoading = false, profile = profile)
+                )
+            }.onFailure { err ->
+                val appErr = (err as? AppException)?.appError ?: AppError.ServerError()
+                _uiState.value = _uiState.value.copy(
+                    peerProfileModal = PeerProfileModalState(
+                        isLoading = false,
+                        errorMessage = appErr.toLocalizedMessage(context)
+                    )
+                )
+            }
+        }
+    }
+
+    fun dismissPeerProfile() {
+        _uiState.value = _uiState.value.copy(peerProfileModal = null)
+    }
+
+    fun setMutedUntil(mutedUntilMs: Long?) {
+        touchPrivateActivity()
+        viewModelScope.launch {
+            val res = if (isPrivate && privateChatRepository != null) {
+                privateChatRepository.setPrivateMutedUntil(conversationId, mutedUntilMs)
+            } else {
+                chatRepository.setMutedUntil(conversationId, mutedUntilMs)
+            }
+            res.onSuccess {
+                _uiState.value = _uiState.value.copy(
+                    infoToast = if (mutedUntilMs != null) "Notifications muted" else "Notifications unmuted"
+                )
+            }.onFailure { err ->
+                _uiState.value = _uiState.value.copy(error = (err as? AppException)?.appError ?: AppError.ServerError())
+            }
+        }
+    }
+
+    fun setCustomSound(soundUri: String?, soundLabel: String?) {
+        touchPrivateActivity()
+        viewModelScope.launch {
+            val res = if (isPrivate && privateChatRepository != null) {
+                privateChatRepository.setPrivateCustomSound(conversationId, soundUri, soundLabel)
+            } else {
+                chatRepository.setCustomSound(conversationId, soundUri, soundLabel)
+            }
+            res.onSuccess {
+                _uiState.value = _uiState.value.copy(
+                    infoToast = soundLabel ?: "Default notification sound restored"
+                )
+            }.onFailure { err ->
+                _uiState.value = _uiState.value.copy(error = (err as? AppException)?.appError ?: AppError.ServerError())
+            }
+        }
+    }
+
+    fun togglePin(currentlyPinned: Boolean) {
+        touchPrivateActivity()
+        viewModelScope.launch {
+            val res = if (isPrivate && privateChatRepository != null) {
+                privateChatRepository.setPrivatePinned(conversationId, !currentlyPinned)
+            } else {
+                chatRepository.setPinned(conversationId, !currentlyPinned)
+            }
+            res.onFailure { err ->
+                _uiState.value = _uiState.value.copy(error = (err as? AppException)?.appError ?: AppError.ServerError())
+            }
+        }
+    }
+
+    fun toggleMarkUnread(currentlyUnread: Boolean) {
+        touchPrivateActivity()
+        viewModelScope.launch {
+            val res = if (isPrivate && privateChatRepository != null) {
+                privateChatRepository.setPrivateMarkedUnread(conversationId, !currentlyUnread)
+            } else {
+                chatRepository.setMarkedUnread(conversationId, !currentlyUnread)
+            }
+            res.onFailure { err ->
+                _uiState.value = _uiState.value.copy(error = (err as? AppException)?.appError ?: AppError.ServerError())
+            }
+        }
+    }
+
+    fun toggleArchive(currentlyArchived: Boolean) {
+        touchPrivateActivity()
+        viewModelScope.launch {
+            val res = if (isPrivate && privateChatRepository != null) {
+                privateChatRepository.setPrivateArchived(conversationId, !currentlyArchived)
+            } else {
+                chatRepository.setArchived(conversationId, !currentlyArchived)
+            }
+            res.onSuccess {
+                _uiState.value = _uiState.value.copy(
+                    infoToast = if (!currentlyArchived) "Chat archived" else "Chat restored"
+                )
+            }.onFailure { err ->
+                _uiState.value = _uiState.value.copy(error = (err as? AppException)?.appError ?: AppError.ServerError())
+            }
+        }
+    }
+
+    fun clearChat() {
+        touchPrivateActivity()
+        viewModelScope.launch {
+            val res = if (isPrivate && privateChatRepository != null) {
+                privateChatRepository.clearPrivateConversation(conversationId)
+            } else {
+                chatRepository.clearConversation(conversationId)
+            }
+            res.onSuccess {
+                _uiState.value = _uiState.value.copy(infoToast = "Chat cleared")
+            }.onFailure { err ->
+                _uiState.value = _uiState.value.copy(error = (err as? AppException)?.appError ?: AppError.ServerError())
+            }
+        }
+    }
+
+    fun deleteChat() {
+        touchPrivateActivity()
+        viewModelScope.launch {
+            val res = if (isPrivate && privateChatRepository != null) {
+                privateChatRepository.deletePrivateConversation(conversationId)
+            } else {
+                chatRepository.deleteConversation(conversationId)
+            }
+            res.onSuccess {
+                _uiState.value = _uiState.value.copy(conversationDeleted = true)
+            }.onFailure { err ->
+                _uiState.value = _uiState.value.copy(error = (err as? AppException)?.appError ?: AppError.ServerError())
             }
         }
     }
@@ -368,9 +582,9 @@ class ChatDetailViewModel(
         }
     }
 
-    fun report(messageId: String?, reason: String) {
+    fun report(messageId: String?, reason: String, details: String? = null) {
         viewModelScope.launch {
-            safetyRepository.report(peerUserId, messageId, reason, null)
+            safetyRepository.report(peerUserId, messageId, reason, details)
                 .onSuccess {
                     _uiState.value = _uiState.value.copy(infoToast = "Report submitted.")
                 }

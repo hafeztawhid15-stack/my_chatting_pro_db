@@ -4,17 +4,61 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
-    entities = [ConversationEntity::class, MessageEntity::class],
-    version = 1,
+    entities = [ConversationEntity::class, MessageEntity::class, CallHistoryEntity::class],
+    version = 3,
     exportSchema = false
 )
 abstract class MyChattingProDatabase : RoomDatabase() {
     abstract fun conversationDao(): ConversationDao
     abstract fun messageDao(): MessageDao
+    abstract fun callHistoryDao(): CallHistoryDao
 
     companion object {
+        val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE cached_conversations ADD COLUMN isPrivate INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE cached_messages ADD COLUMN isPrivate INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
+        val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE cached_conversations ADD COLUMN isPinned INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE cached_conversations ADD COLUMN pinnedAtMs INTEGER")
+                db.execSQL("ALTER TABLE cached_conversations ADD COLUMN isArchived INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE cached_conversations ADD COLUMN archivedAtMs INTEGER")
+                db.execSQL("ALTER TABLE cached_conversations ADD COLUMN mutedUntilMs INTEGER")
+                db.execSQL("ALTER TABLE cached_conversations ADD COLUMN customSoundUri TEXT")
+                db.execSQL("ALTER TABLE cached_conversations ADD COLUMN customSoundLabel TEXT")
+                db.execSQL("ALTER TABLE cached_conversations ADD COLUMN markedUnread INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE cached_conversations ADD COLUMN clearedAtMs INTEGER")
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS cached_call_history (
+                        callId TEXT NOT NULL PRIMARY KEY,
+                        conversationId TEXT NOT NULL,
+                        callerId TEXT NOT NULL,
+                        peerUserId TEXT NOT NULL,
+                        peerDisplayName TEXT NOT NULL,
+                        peerAvatarMediaId TEXT,
+                        callType TEXT NOT NULL,
+                        status TEXT NOT NULL,
+                        direction TEXT NOT NULL,
+                        startedAtMs INTEGER NOT NULL,
+                        answeredAtMs INTEGER,
+                        endedAtMs INTEGER,
+                        durationSeconds INTEGER NOT NULL
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_cached_call_history_startedAtMs ON cached_call_history(startedAtMs)")
+            }
+        }
+
         @Volatile
         private var INSTANCE: MyChattingProDatabase? = null
 
@@ -25,6 +69,7 @@ abstract class MyChattingProDatabase : RoomDatabase() {
                     MyChattingProDatabase::class.java,
                     "my_chatting_pro_cache.db"
                 )
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                     .fallbackToDestructiveMigration(dropAllTables = true)
                     .build()
                     .also { INSTANCE = it }

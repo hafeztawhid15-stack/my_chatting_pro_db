@@ -4,7 +4,8 @@ export interface JwtPayload {
   sub: string;
   did: string;
   sid: string;
-  typ: 'access' | 'refresh';
+  typ: 'access' | 'refresh' | 'private_unlock';
+  pver?: number;
   iat: number;
   exp: number;
   jti: string;
@@ -64,7 +65,7 @@ export async function signJwt(
 export async function verifyJwt(
   token: string,
   secret: string,
-  expectedType: 'access' | 'refresh'
+  expectedType: 'access' | 'refresh' | 'private_unlock'
 ): Promise<JwtPayload | null> {
   const parts = token.split('.');
   if (parts.length !== 3) return null;

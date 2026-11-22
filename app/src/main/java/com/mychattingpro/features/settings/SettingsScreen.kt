@@ -1,14 +1,10 @@
 package com.mychattingpro.features.settings
 
-import android.Manifest
+import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.net.Uri
-import android.os.Build
 import android.widget.Toast
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -23,7 +19,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.rounded.Logout
@@ -33,13 +31,18 @@ import androidx.compose.material.icons.outlined.DeleteForever
 import androidx.compose.material.icons.outlined.Devices
 import androidx.compose.material.icons.outlined.Email
 import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.Key
 import androidx.compose.material.icons.outlined.Language
-import androidx.compose.material.icons.outlined.Person
+import androidx.compose.material.icons.outlined.Lock
+import androidx.compose.material.icons.outlined.LockReset
+import androidx.compose.material.icons.outlined.Notifications
+import androidx.compose.material.icons.outlined.Password
 import androidx.compose.material.icons.outlined.PlayCircle
 import androidx.compose.material.icons.outlined.Policy
 import androidx.compose.material.icons.outlined.Public
-import androidx.compose.material.icons.outlined.Sync
-import androidx.compose.material.icons.rounded.Shield
+import androidx.compose.material.icons.outlined.Share
+import androidx.compose.material.icons.outlined.StarOutline
+import androidx.compose.material.icons.outlined.SystemUpdate
 import androidx.compose.material.icons.rounded.VerifiedUser
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
@@ -50,10 +53,10 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -75,9 +78,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.core.content.ContextCompat
-import androidx.core.content.pm.PackageInfoCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.BuildConfig
 import com.example.R
 import com.mychattingpro.core.localization.AppLanguage
 import com.mychattingpro.core.network.NetworkModule
@@ -99,9 +101,12 @@ fun SettingsScreen(
     networkModule: NetworkModule,
     interstitialAdManager: InterstitialAdManager,
     onOpenProfile: () -> Unit,
+    onOpenNotificationSettings: () -> Unit,
     onOpenBlockedUsers: () -> Unit,
     onOpenActiveDevices: () -> Unit,
-    onOpenOwnerMonitor: () -> Unit,
+    onOpenChangeLoginPin: () -> Unit,
+    onOpenRecoveryCode: () -> Unit,
+    onOpenForgotLoginPin: () -> Unit,
     onLoggedOutOrDeleted: () -> Unit
 ) {
     val prefs by viewModel.preferences.collectAsStateWithLifecycle()
@@ -110,49 +115,47 @@ fun SettingsScreen(
     val context = LocalContext.current
     val activity = remember(context) { context.findActivity() }
 
+    var showLanguageDialog by remember { mutableStateOf(false) }
+    var showThemeDialog by remember { mutableStateOf(false) }
+    var showVersionDialog by remember { mutableStateOf(false) }
+    var showLogoutDialog by remember { mutableStateOf(false) }
+    var showLogoutAllDialog by remember { mutableStateOf(false) }
+    var showDeleteAccountDialog by remember { mutableStateOf(false) }
+    var deletePin by remember { mutableStateOf("") }
+    var deleteConfirmText by remember { mutableStateOf("") }
+    var showPrivatePinDialog by remember { mutableStateOf(false) }
+
     LaunchedEffect(Unit) {
         interstitialAdManager.preload()
+        viewModel.loadPrivatePinStatus()
+    }
+
+    LaunchedEffect(uiState.deletionCompletedNotice) {
+        if (uiState.deletionCompletedNotice != null) {
+            showDeleteAccountDialog = false
+        }
+    }
+
+    LaunchedEffect(uiState.securityNotice) {
+        uiState.securityNotice?.let { notice ->
+            Toast.makeText(context, notice, Toast.LENGTH_SHORT).show()
+            viewModel.clearError()
+        }
+    }
+
+    LaunchedEffect(uiState.privatePinNoticeResId) {
+        val noticeId = uiState.privatePinNoticeResId ?: return@LaunchedEffect
+        Toast.makeText(context, context.getString(noticeId), Toast.LENGTH_SHORT).show()
+        showPrivatePinDialog = false
+        viewModel.clearPrivatePinFeedback()
     }
 
     fun withSettingsAd(action: () -> Unit) {
         interstitialAdManager.showThen(activity, action)
     }
 
-    var showLanguageDialog by remember { mutableStateOf(false) }
-    var showThemeDialog by remember { mutableStateOf(false) }
-    var showVersionDialog by remember { mutableStateOf(false) }
-    var showLogoutDialog by remember { mutableStateOf(false) }
-    var showDeleteAccountDialog by remember { mutableStateOf(false) }
-    var deletePin by remember { mutableStateOf("") }
-
-    val notifPermissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission()
-    ) { granted ->
-        if (granted) {
-            viewModel.setBackgroundSyncEnabled(true)
-        } else {
-            Toast.makeText(context, context.getString(R.string.perm_denied), Toast.LENGTH_LONG).show()
-            viewModel.setBackgroundSyncEnabled(false)
-        }
-    }
-
-    // Read Version Name & Version Code dynamically from PackageManager
-    val appVersionInfo = remember(context) {
-        runCatching {
-            val pkgInfo = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                context.packageManager.getPackageInfo(
-                    context.packageName,
-                    PackageManager.PackageInfoFlags.of(0L)
-                )
-            } else {
-                @Suppress("DEPRECATION")
-                context.packageManager.getPackageInfo(context.packageName, 0)
-            }
-            val name = pkgInfo.versionName ?: "1.0.0"
-            val code = PackageInfoCompat.getLongVersionCode(pkgInfo)
-            name to code
-        }.getOrElse { "1.0.0" to 1L }
-    }
+    val appVersionName = BuildConfig.VERSION_NAME
+    val appVersionCode = BuildConfig.VERSION_CODE
 
     Scaffold(
         topBar = {
@@ -176,7 +179,7 @@ fun SettingsScreen(
         ) {
             item {
                 Spacer(modifier = Modifier.height(4.dp))
-                // Profile Card
+                // Profile Card -> opens ProfileScreen in read-only view mode (Edit button is only top-left inside ProfileScreen)
                 ElevatedCard(
                     onClick = { withSettingsAd(onOpenProfile) },
                     shape = RoundedCornerShape(20.dp),
@@ -208,7 +211,7 @@ fun SettingsScreen(
                             )
                             Text(
                                 text = session?.about?.ifBlank { stringResource(R.string.hint_about) }
-                                    ?: stringResource(R.string.settings_profile),
+                                    ?: stringResource(R.string.profile_title),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 maxLines = 1,
@@ -224,7 +227,7 @@ fun SettingsScreen(
                         }
                         Icon(
                             imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
-                            contentDescription = stringResource(R.string.settings_profile),
+                            contentDescription = stringResource(R.string.profile_title),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
@@ -280,7 +283,7 @@ fun SettingsScreen(
             }
 
             item {
-                // Preferences Group
+                // Appearance, Language & Notifications
                 ElevatedCard(
                     shape = RoundedCornerShape(20.dp),
                     modifier = Modifier
@@ -288,14 +291,6 @@ fun SettingsScreen(
                         .widthIn(max = 600.dp)
                 ) {
                     Column {
-                        SettingsRowItem(
-                            icon = Icons.Outlined.Person,
-                            title = stringResource(R.string.settings_profile),
-                            subtitle = session?.displayName,
-                            onClick = { withSettingsAd(onOpenProfile) },
-                            testTag = "settings_edit_profile"
-                        )
-                        HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
                         SettingsRowItem(
                             icon = Icons.Outlined.Language,
                             title = stringResource(R.string.settings_language),
@@ -316,53 +311,70 @@ fun SettingsScreen(
                             testTag = "settings_theme"
                         )
                         HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 12.dp)
-                                .testTag("settings_bg_sync_row"),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                imageVector = Icons.Outlined.Sync,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary
-                            )
-                            Spacer(modifier = Modifier.width(14.dp))
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = stringResource(R.string.settings_bg_sync),
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    fontWeight = FontWeight.Medium
-                                )
-                                Text(
-                                    text = stringResource(R.string.settings_bg_sync_desc),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Switch(
-                                checked = prefs.backgroundSyncEnabled,
-                                onCheckedChange = { enable ->
-                                    withSettingsAd {
-                                        if (!enable) {
-                                            viewModel.setBackgroundSyncEnabled(false)
-                                        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-                                            ContextCompat.checkSelfPermission(
-                                                context,
-                                                Manifest.permission.POST_NOTIFICATIONS
-                                            ) != PackageManager.PERMISSION_GRANTED
-                                        ) {
-                                            notifPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                                        } else {
-                                            viewModel.setBackgroundSyncEnabled(true)
-                                        }
-                                    }
-                                },
-                                modifier = Modifier.testTag("settings_bg_sync_switch")
-                            )
-                        }
+                        SettingsRowItem(
+                            icon = Icons.Outlined.Notifications,
+                            title = stringResource(R.string.settings_notifications_title),
+                            subtitle = stringResource(R.string.settings_notifications_desc),
+                            onClick = { withSettingsAd(onOpenNotificationSettings) },
+                            testTag = "settings_notifications"
+                        )
+                    }
+                }
+            }
+
+            item {
+                // Account Security Section
+                SettingsSectionHeader(title = stringResource(R.string.settings_section_security))
+                ElevatedCard(
+                    shape = RoundedCornerShape(20.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .widthIn(max = 600.dp)
+                ) {
+                    Column {
+                        SettingsRowItem(
+                            icon = Icons.Outlined.Password,
+                            title = stringResource(R.string.change_login_pin_title),
+                            onClick = { withSettingsAd(onOpenChangeLoginPin) },
+                            testTag = "settings_change_login_pin"
+                        )
+                        HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+                        SettingsRowItem(
+                            icon = Icons.Outlined.Key,
+                            title = stringResource(R.string.recovery_code_title),
+                            subtitle = if (prefs.recoveryCodeConfigured) {
+                                stringResource(R.string.recovery_code_status_active)
+                            } else {
+                                stringResource(R.string.recovery_code_status_missing)
+                            },
+                            onClick = { withSettingsAd(onOpenRecoveryCode) },
+                            testTag = "settings_recovery_code"
+                        )
+                        HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+                        SettingsRowItem(
+                            icon = Icons.Outlined.LockReset,
+                            title = stringResource(R.string.forgot_login_pin_title),
+                            onClick = { withSettingsAd(onOpenForgotLoginPin) },
+                            testTag = "settings_forgot_login_pin"
+                        )
+                        HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+                        SettingsRowItem(
+                            icon = Icons.Outlined.Lock,
+                            title = stringResource(R.string.settings_private_pin),
+                            subtitle = if (uiState.hasPrivatePin == false) {
+                                stringResource(R.string.settings_private_pin_not_set_desc)
+                            } else {
+                                stringResource(R.string.settings_private_pin_desc)
+                            },
+                            onClick = {
+                                withSettingsAd {
+                                    viewModel.clearPrivatePinFeedback()
+                                    viewModel.loadPrivatePinStatus()
+                                    showPrivatePinDialog = true
+                                }
+                            },
+                            testTag = "settings_private_pin"
+                        )
                         HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
                         SettingsRowItem(
                             icon = Icons.Outlined.Devices,
@@ -373,11 +385,11 @@ fun SettingsScreen(
                         )
                         HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
                         SettingsRowItem(
-                            icon = Icons.Rounded.Shield,
-                            title = stringResource(R.string.settings_owner_monitor),
-                            subtitle = stringResource(R.string.settings_owner_monitor_desc),
-                            onClick = { withSettingsAd(onOpenOwnerMonitor) },
-                            testTag = "settings_owner_monitor"
+                            icon = Icons.AutoMirrored.Rounded.Logout,
+                            title = stringResource(R.string.logout_all_devices_title),
+                            subtitle = stringResource(R.string.logout_all_devices_desc),
+                            onClick = { withSettingsAd { showLogoutAllDialog = true } },
+                            testTag = "settings_logout_all_devices"
                         )
                         HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
                         SettingsRowItem(
@@ -391,7 +403,46 @@ fun SettingsScreen(
             }
 
             item {
-                // External Links, Feedback, Legal, Version
+                // App Info, Updates & Support
+                SettingsSectionHeader(title = stringResource(R.string.settings_section_app_info))
+                ElevatedCard(
+                    shape = RoundedCornerShape(20.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .widthIn(max = 600.dp)
+                ) {
+                    Column {
+                        SettingsRowItem(
+                            icon = Icons.Outlined.SystemUpdate,
+                            title = stringResource(R.string.check_for_updates),
+                            subtitle = if (uiState.isCheckingUpdate) {
+                                stringResource(R.string.checking_updates)
+                            } else {
+                                "v$appVersionName ($appVersionCode)"
+                            },
+                            onClick = { withSettingsAd { viewModel.checkForUpdates() } },
+                            testTag = "settings_check_updates"
+                        )
+                        HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+                        SettingsRowItem(
+                            icon = Icons.Outlined.StarOutline,
+                            title = stringResource(R.string.rate_this_app),
+                            onClick = { withSettingsAd { openPlayStoreListing(context) } },
+                            testTag = "settings_rate_app"
+                        )
+                        HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+                        SettingsRowItem(
+                            icon = Icons.Outlined.Share,
+                            title = stringResource(R.string.share_app),
+                            onClick = { withSettingsAd { shareApp(context) } },
+                            testTag = "settings_share_app"
+                        )
+                    }
+                }
+            }
+
+            item {
+                // External Links, Feedback, Privacy Policy, Version (Links strictly preserved)
                 ElevatedCard(
                     shape = RoundedCornerShape(20.dp),
                     modifier = Modifier
@@ -432,7 +483,7 @@ fun SettingsScreen(
                         SettingsRowItem(
                             icon = Icons.Outlined.Info,
                             title = stringResource(R.string.settings_version),
-                            subtitle = "v${appVersionInfo.first} (${appVersionInfo.second})",
+                            subtitle = "v$appVersionName ($appVersionCode)",
                             onClick = { withSettingsAd { showVersionDialog = true } },
                             testTag = "settings_version"
                         )
@@ -464,6 +515,7 @@ fun SettingsScreen(
                             onClick = {
                                 withSettingsAd {
                                     deletePin = ""
+                                    deleteConfirmText = ""
                                     viewModel.clearError()
                                     showDeleteAccountDialog = true
                                 }
@@ -575,11 +627,11 @@ fun SettingsScreen(
                         fontWeight = FontWeight.Bold
                     )
                     Text(
-                        text = stringResource(R.string.version_name_label, appVersionInfo.first),
+                        text = stringResource(R.string.version_name_label, appVersionName),
                         style = MaterialTheme.typography.bodyMedium
                     )
                     Text(
-                        text = stringResource(R.string.version_code_label, appVersionInfo.second),
+                        text = stringResource(R.string.version_code_label, appVersionCode.toLong()),
                         style = MaterialTheme.typography.bodyMedium
                     )
                     Spacer(modifier = Modifier.height(4.dp))
@@ -593,6 +645,98 @@ fun SettingsScreen(
             confirmButton = {
                 TextButton(onClick = { showVersionDialog = false }) {
                     Text(stringResource(R.string.action_confirm))
+                }
+            }
+        )
+    }
+
+    if (uiState.appUpdateInfo != null || uiState.updateCheckError != null) {
+        val info = uiState.appUpdateInfo
+        AlertDialog(
+            onDismissRequest = viewModel::dismissUpdateDialog,
+            title = {
+                Text(
+                    if (info?.isUpdateAvailable == true) {
+                        stringResource(R.string.update_available_title)
+                    } else {
+                        stringResource(R.string.check_for_updates)
+                    }
+                )
+            },
+            text = {
+                Text(
+                    when {
+                        uiState.updateCheckError != null -> uiState.updateCheckError!!
+                        info?.isUpdateAvailable == true -> stringResource(
+                            R.string.update_available_message,
+                            info.storeVersionName ?: info.currentVersionName
+                        )
+                        else -> stringResource(
+                            R.string.update_up_to_date,
+                            info?.currentVersionName ?: appVersionName
+                        )
+                    }
+                )
+            },
+            confirmButton = {
+                if (info?.isUpdateAvailable == true) {
+                    TextButton(
+                        onClick = {
+                            viewModel.dismissUpdateDialog()
+                            openPlayStoreListing(context)
+                        }
+                    ) {
+                        Text(stringResource(R.string.update_download_btn))
+                    }
+                } else {
+                    TextButton(onClick = viewModel::dismissUpdateDialog) {
+                        Text(stringResource(R.string.action_confirm))
+                    }
+                }
+            },
+            dismissButton = {
+                if (info?.isUpdateAvailable == true) {
+                    TextButton(onClick = viewModel::dismissUpdateDialog) {
+                        Text(stringResource(R.string.action_cancel))
+                    }
+                }
+            }
+        )
+    }
+
+    if (showLogoutAllDialog) {
+        AlertDialog(
+            onDismissRequest = { if (!uiState.isLoggingOutAllDevices) showLogoutAllDialog = false },
+            title = { Text(stringResource(R.string.logout_all_devices_title)) },
+            text = { Text(stringResource(R.string.logout_all_devices_desc)) },
+            confirmButton = {
+                TextButton(
+                    enabled = !uiState.isLoggingOutAllDevices,
+                    onClick = {
+                        showLogoutAllDialog = false
+                        viewModel.logoutAllDevices(keepCurrent = true)
+                    },
+                    modifier = Modifier.testTag("settings_confirm_logout_other_devices")
+                ) {
+                    Text(stringResource(R.string.logout_other_devices_btn))
+                }
+            },
+            dismissButton = {
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    TextButton(
+                        enabled = !uiState.isLoggingOutAllDevices,
+                        colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                        onClick = {
+                            showLogoutAllDialog = false
+                            viewModel.logoutAllDevices(keepCurrent = false, onAllLoggedOut = onLoggedOutOrDeleted)
+                        },
+                        modifier = Modifier.testTag("settings_confirm_logout_all_devices")
+                    ) {
+                        Text(stringResource(R.string.logout_all_devices_including_this))
+                    }
+                    TextButton(onClick = { showLogoutAllDialog = false }) {
+                        Text(stringResource(R.string.action_cancel))
+                    }
                 }
             }
         )
@@ -633,6 +777,10 @@ fun SettingsScreen(
     }
 
     if (showDeleteAccountDialog) {
+        val canSubmitDelete = !uiState.isDeletingAccount &&
+            deletePin.length == 5 &&
+            deleteConfirmText.trim().uppercase() == "DELETE"
+
         AlertDialog(
             onDismissRequest = { if (!uiState.isDeletingAccount) showDeleteAccountDialog = false },
             title = {
@@ -642,7 +790,10 @@ fun SettingsScreen(
                 )
             },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Column(
+                    modifier = Modifier.verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
                     Text(
                         text = stringResource(R.string.delete_account_message),
                         style = MaterialTheme.typography.bodyMedium
@@ -660,6 +811,19 @@ fun SettingsScreen(
                         },
                         testTag = "delete_account_pin_input"
                     )
+                    OutlinedTextField(
+                        value = deleteConfirmText,
+                        onValueChange = {
+                            deleteConfirmText = it
+                            viewModel.clearError()
+                        },
+                        label = { Text(stringResource(R.string.delete_account_confirm_word_hint)) },
+                        placeholder = { Text("DELETE") },
+                        singleLine = true,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("delete_account_confirm_word_input")
+                    )
                     uiState.error?.let { err ->
                         Text(
                             text = err.toLocalizedMessage(context),
@@ -671,9 +835,9 @@ fun SettingsScreen(
             },
             confirmButton = {
                 TextButton(
-                    enabled = !uiState.isDeletingAccount && deletePin.length == 5,
+                    enabled = canSubmitDelete,
                     colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
-                    onClick = { viewModel.deleteAccount(deletePin) },
+                    onClick = { viewModel.deleteAccount(deletePin, deleteConfirmText) },
                     modifier = Modifier.testTag("confirm_delete_account_button")
                 ) {
                     if (uiState.isDeletingAccount) {
@@ -699,7 +863,6 @@ fun SettingsScreen(
     }
 
     uiState.deletionCompletedNotice?.let { notice ->
-        showDeleteAccountDialog = false
         AlertDialog(
             onDismissRequest = { viewModel.acknowledgeDeletionAndFinish(onLoggedOutOrDeleted) },
             title = { Text(stringResource(R.string.delete_account_title)) },
@@ -719,6 +882,203 @@ fun SettingsScreen(
             }
         )
     }
+
+    if (showPrivatePinDialog) {
+        PrivatePinSettingsDialog(
+            hasPrivatePin = uiState.hasPrivatePin,
+            isBusy = uiState.isPrivatePinBusy,
+            errorText = uiState.privatePinError?.toLocalizedMessage(context),
+            onDismiss = {
+                if (!uiState.isPrivatePinBusy) {
+                    viewModel.clearPrivatePinFeedback()
+                    showPrivatePinDialog = false
+                }
+            },
+            onClearError = viewModel::clearPrivatePinFeedback,
+            onSetup = viewModel::setupPrivatePinFromSettings,
+            onChange = viewModel::changePrivatePin,
+            onReset = viewModel::resetPrivatePinWithLoginPin
+        )
+    }
+}
+
+@Composable
+private fun SettingsSectionHeader(title: String) {
+    Text(
+        text = title,
+        style = MaterialTheme.typography.labelLarge,
+        fontWeight = FontWeight.Bold,
+        color = MaterialTheme.colorScheme.primary,
+        modifier = Modifier
+            .fillMaxWidth()
+            .widthIn(max = 600.dp)
+            .padding(horizontal = 8.dp, vertical = 2.dp)
+    )
+}
+
+@Composable
+private fun PrivatePinSettingsDialog(
+    hasPrivatePin: Boolean?,
+    isBusy: Boolean,
+    errorText: String?,
+    onDismiss: () -> Unit,
+    onClearError: () -> Unit,
+    onSetup: (String, String) -> Unit,
+    onChange: (String, String, String) -> Unit,
+    onReset: (String, String, String) -> Unit
+) {
+    var resetMode by remember(hasPrivatePin) { mutableStateOf(false) }
+    var oldOrLoginPin by remember { mutableStateOf("") }
+    var newPin by remember { mutableStateOf("") }
+    var confirmPin by remember { mutableStateOf("") }
+
+    val isSetupMode = hasPrivatePin == false
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = when {
+                    isSetupMode -> stringResource(R.string.private_pin_setup_title)
+                    resetMode -> stringResource(R.string.private_pin_reset_title)
+                    else -> stringResource(R.string.private_pin_change_title)
+                },
+                fontWeight = FontWeight.Bold
+            )
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                if (isSetupMode) {
+                    Text(
+                        text = stringResource(R.string.private_pin_setup_subtitle),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                } else if (resetMode) {
+                    Text(
+                        text = stringResource(R.string.private_pin_reset_subtitle),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = stringResource(R.string.private_pin_enter_account_login_pin),
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    FiveDigitPinField(
+                        pin = oldOrLoginPin,
+                        onPinChange = {
+                            oldOrLoginPin = it
+                            onClearError()
+                        },
+                        testTag = "settings_private_pin_login_input"
+                    )
+                } else {
+                    Text(
+                        text = stringResource(R.string.private_pin_old_label),
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    FiveDigitPinField(
+                        pin = oldOrLoginPin,
+                        onPinChange = {
+                            oldOrLoginPin = it
+                            onClearError()
+                        },
+                        testTag = "settings_private_pin_old_input"
+                    )
+                }
+
+                Text(
+                    text = stringResource(R.string.private_pin_new_label),
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+                FiveDigitPinField(
+                    pin = newPin,
+                    onPinChange = {
+                        newPin = it
+                        onClearError()
+                    },
+                    testTag = "settings_private_pin_new_input"
+                )
+
+                Text(
+                    text = stringResource(R.string.private_pin_confirm_label),
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+                FiveDigitPinField(
+                    pin = confirmPin,
+                    onPinChange = {
+                        confirmPin = it
+                        onClearError()
+                    },
+                    testTag = "settings_private_pin_confirm_input"
+                )
+
+                if (!errorText.isNullOrBlank()) {
+                    Text(
+                        text = errorText,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.testTag("settings_private_pin_error")
+                    )
+                }
+
+                if (!isSetupMode) {
+                    TextButton(
+                        enabled = !isBusy,
+                        onClick = {
+                            resetMode = !resetMode
+                            oldOrLoginPin = ""
+                            newPin = ""
+                            confirmPin = ""
+                            onClearError()
+                        },
+                        modifier = Modifier.testTag("settings_private_pin_toggle_reset")
+                    ) {
+                        Text(
+                            text = if (resetMode) {
+                                stringResource(R.string.private_pin_change_title)
+                            } else {
+                                stringResource(R.string.private_pin_forgot_btn)
+                            }
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = !isBusy,
+                onClick = {
+                    when {
+                        isSetupMode -> onSetup(newPin, confirmPin)
+                        resetMode -> onReset(oldOrLoginPin, newPin, confirmPin)
+                        else -> onChange(oldOrLoginPin, newPin, confirmPin)
+                    }
+                },
+                modifier = Modifier.testTag("settings_private_pin_submit")
+            ) {
+                if (isBusy) {
+                    CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                } else {
+                    Text(stringResource(R.string.action_save))
+                }
+            }
+        },
+        dismissButton = {
+            TextButton(enabled = !isBusy, onClick = onDismiss) {
+                Text(stringResource(R.string.action_cancel))
+            }
+        }
+    )
 }
 
 @Composable
@@ -779,7 +1139,37 @@ private fun openExternalUrl(context: Context, url: String) {
         }
         context.startActivity(intent)
     }.onFailure {
-        Toast.makeText(context, context.getString(R.string.err_network), Toast.LENGTH_SHORT).show()
+        Toast.makeText(context, context.getString(R.string.err_no_browser), Toast.LENGTH_SHORT).show()
+    }
+}
+
+private fun openPlayStoreListing(context: Context) {
+    val pkg = BuildConfig.APPLICATION_ID
+    val marketIntent = Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=$pkg")).apply {
+        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    }
+    try {
+        context.startActivity(marketIntent)
+    } catch (_: ActivityNotFoundException) {
+        openExternalUrl(context, "https://play.google.com/store/apps/details?id=$pkg")
+    } catch (_: Throwable) {
+        openExternalUrl(context, "https://play.google.com/store/apps/details?id=$pkg")
+    }
+}
+
+private fun shareApp(context: Context) {
+    val appUrl = "https://play.google.com/store/apps/details?id=${BuildConfig.APPLICATION_ID}"
+    val shareText = context.getString(R.string.share_app_message, appUrl)
+    val intent = Intent(Intent.ACTION_SEND).apply {
+        type = "text/plain"
+        putExtra(Intent.EXTRA_SUBJECT, context.getString(R.string.app_name))
+        putExtra(Intent.EXTRA_TEXT, shareText)
+    }
+    runCatching {
+        val chooser = Intent.createChooser(intent, context.getString(R.string.share_app)).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        context.startActivity(chooser)
     }
 }
 

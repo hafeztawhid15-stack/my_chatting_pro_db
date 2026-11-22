@@ -1,5 +1,6 @@
 import { Env, getIntEnv } from '../config/env';
 import { ALLOWED_MEDIA_MIME_TYPES } from '../config/constants';
+import { ApiError } from '../middleware/errorHandler';
 import { extractExtension } from '../security/validation';
 
 export type MediaCategory = 'profile' | 'image' | 'video' | 'audio' | 'file';
@@ -42,14 +43,19 @@ export function validateMediaConstraints(
   category: MediaCategory,
   mimeType: string,
   sizeBytes: number
-): { ok: true } | { ok: false; error: string } {
+): { ok: true } | { ok: false; code: 'unsupported_media_type' | 'empty_media_file' | 'media_too_large'; error: string } {
   const allowed = ALLOWED_MEDIA_MIME_TYPES[category];
-  const normalizedMime = mimeType.toLowerCase().split(';')[0]?.trim() ?? '';
+  const rawMime = mimeType.toLowerCase().split(';')[0]?.trim() ?? '';
+  const normalizedMime = rawMime === 'image/jpg' ? 'image/jpeg' : rawMime;
   if (!allowed.includes(normalizedMime)) {
-    return { ok: false, error: `Unsupported MIME type for ${category}: ${normalizedMime}` };
+    return {
+      ok: false,
+      code: 'unsupported_media_type',
+      error: `Unsupported MIME type for ${category}: ${normalizedMime || 'unknown'}`,
+    };
   }
   if (!Number.isFinite(sizeBytes) || sizeBytes <= 0) {
-    return { ok: false, error: 'File size must be greater than zero' };
+    return { ok: false, code: 'empty_media_file', error: 'File size must be greater than zero' };
   }
 
   const maxBytes = (() => {
@@ -67,7 +73,11 @@ export function validateMediaConstraints(
   })();
 
   if (sizeBytes > maxBytes) {
-    return { ok: false, error: `File exceeds maximum allowed size (${maxBytes} bytes)` };
+    return {
+      ok: false,
+      code: 'media_too_large',
+      error: `File exceeds maximum allowed size (${maxBytes} bytes)`,
+    };
   }
   return { ok: true };
 }
@@ -165,11 +175,15 @@ export class SupabaseStorageClient implements StorageClient {
   }
 
   private authHeaders(extra?: Record<string, string>): HeadersInit {
-    return {
-      apikey: this.serviceRoleKey,
-      Authorization: `Bearer ${this.serviceRoleKey}`,
+    const key = this.serviceRoleKey.trim();
+    const base: Record<string, string> = {
+      apikey: key,
       ...extra,
     };
+    if (key.split('.').length === 3) {
+      base['Authorization'] = `Bearer ${key}`;
+    }
+    return base;
   }
 
   async uploadObject(
@@ -191,7 +205,16 @@ export class SupabaseStorageClient implements StorageClient {
     );
     if (!res.ok) {
       const detail = await res.text().catch(() => '');
-      throw new Error(`Supabase Storage upload failed (${res.status}): ${detail.slice(0, 200)}`);
+      if (res.status === 401 || res.status === 403) {
+        throw new ApiError(502, 'storage_permission_denied', 'Supabase Storage rejected upload credentials or bucket policy.');
+      }
+      if (res.status === 404 || detail.toLowerCase().includes('bucket not found')) {
+        throw new ApiError(502, 'storage_bucket_missing', `Supabase Storage bucket "${bucket}" was not found.`);
+      }
+      if (res.status === 413) {
+        throw new ApiError(413, 'media_too_large', 'Uploaded file exceeds storage bucket limit.');
+      }
+      throw new ApiError(502, 'storage_upload_failed', `Storage upload failed (${res.status}): ${detail.slice(0, 140)}`);
     }
   }
 
@@ -210,12 +233,18 @@ export class SupabaseStorageClient implements StorageClient {
     );
     if (!res.ok) {
       const detail = await res.text().catch(() => '');
-      throw new Error(`Supabase signed URL generation failed (${res.status}): ${detail.slice(0, 200)}`);
+      if (res.status === 401 || res.status === 403) {
+        throw new ApiError(502, 'storage_permission_denied', 'Supabase Storage rejected signed URL permission.');
+      }
+      if (res.status === 404) {
+        throw new ApiError(404, 'media_object_missing', 'Private media file no longer exists in storage.');
+      }
+      throw new ApiError(502, 'storage_download_failed', `Signed URL creation failed (${res.status}): ${detail.slice(0, 140)}`);
     }
     const payload = (await res.json()) as { signedURL?: string; signedUrl?: string };
     const raw = payload.signedURL ?? payload.signedUrl ?? '';
     if (!raw) {
-      throw new Error('Supabase signed URL response was empty.');
+      throw new ApiError(502, 'storage_download_failed', 'Supabase signed URL response was empty.');
     }
     if (raw.startsWith('https://')) return raw;
     if (raw.startsWith('/storage/v1/')) return `${this.baseUrl}${raw}`;

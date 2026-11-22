@@ -3,12 +3,14 @@ package com.mychattingpro.features.messages
 import android.Manifest
 import android.content.pm.PackageManager
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -41,6 +43,7 @@ import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.InsertDriveFile
+import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Pause
@@ -99,8 +102,12 @@ import com.mychattingpro.core.theme.ReadTickCyan
 import com.mychattingpro.domain.models.Message
 import com.mychattingpro.domain.models.MessageStatus
 import com.mychattingpro.domain.models.MessageType
+import com.mychattingpro.features.common.ConversationActionModals
+import com.mychattingpro.features.common.ConversationActionsDropdownMenu
+import com.mychattingpro.features.common.ConversationMenuCallbacks
 import com.mychattingpro.features.common.NetworkStatusBanner
 import com.mychattingpro.features.common.UserAvatar
+import com.mychattingpro.features.common.rememberConversationMenuController
 import com.mychattingpro.features.media.MediaUploadHelper
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -112,7 +119,8 @@ fun ChatDetailScreen(
     onBack: () -> Unit,
     onStartAudioCall: () -> Unit,
     onStartVideoCall: () -> Unit,
-    onOpenMediaViewer: (mediaId: String, mimeType: String, filename: String, isVideo: Boolean) -> Unit
+    onOpenMediaViewer: (mediaId: String, mimeType: String, filename: String, isVideo: Boolean) -> Unit,
+    onPrivateLockedOut: () -> Unit = {}
 ) {
     val conversation by viewModel.conversation.collectAsStateWithLifecycle()
     val messages by viewModel.messages.collectAsStateWithLifecycle()
@@ -121,16 +129,58 @@ fun ChatDetailScreen(
     val language by viewModel.language.collectAsStateWithLifecycle()
     val isOnline by viewModel.isOnline.collectAsStateWithLifecycle()
     val socketState by viewModel.socketState.collectAsStateWithLifecycle()
+    val isPrivateUnlocked by viewModel.isPrivateUnlocked.collectAsStateWithLifecycle()
+
+    BackHandler(onBack = onBack)
+
+    LaunchedEffect(uiState.conversationDeleted) {
+        if (uiState.conversationDeleted) {
+            onBack()
+        }
+    }
+
+    if (viewModel.isPrivate) {
+        LaunchedEffect(isPrivateUnlocked) {
+            if (!isPrivateUnlocked) {
+                onPrivateLockedOut()
+            }
+        }
+    }
 
     val context = LocalContext.current
     val listState = rememberLazyListState()
+    val menuController = rememberConversationMenuController()
 
     var selectedMessageForDetails by remember { mutableStateOf<Message?>(null) }
     var dangerousFileConfirmMessage by remember { mutableStateOf<Message?>(null) }
     var showAttachmentMenu by remember { mutableStateOf(false) }
-    var showSafetyMenu by remember { mutableStateOf(false) }
+    var showConversationMenu by remember { mutableStateOf(false) }
     var showMicRationale by remember { mutableStateOf(false) }
     var previewCaption by remember { mutableStateOf("") }
+
+    val menuCallbacks = remember(viewModel) {
+        ConversationMenuCallbacks(
+            onViewPeerProfile = { viewModel.viewPeerProfile() },
+            onSetMute = { _, untilMs -> viewModel.setMutedUntil(untilMs) },
+            onSetCustomSound = { _, uri, label -> viewModel.setCustomSound(uri, label) },
+            onTogglePin = { conv -> viewModel.togglePin(conv.isPinned) },
+            onToggleMarkUnread = { conv -> viewModel.toggleMarkUnread(conv.unreadCount > 0 || conv.markedUnread) },
+            onToggleArchive = { conv -> viewModel.toggleArchive(conv.isArchived) },
+            onClearChat = { viewModel.clearChat() },
+            onToggleBlock = { conv -> viewModel.toggleBlockPeer(conv.isBlockedByMe) },
+            onReportUser = { _, reason, details -> viewModel.report(null, reason, details) },
+            onDeleteChat = { viewModel.deleteChat() }
+        )
+    }
+
+    ConversationActionModals(
+        controller = menuController,
+        callbacks = menuCallbacks,
+        peerProfileState = uiState.peerProfileModal,
+        onDismissPeerProfile = viewModel::dismissPeerProfile,
+        networkModule = networkModule,
+        language = language
+    )
 
     // Zero-permission Android Photo Picker for Images & Videos
     val imagePicker = rememberLauncherForActivityResult(
@@ -313,6 +363,16 @@ fun ChatDetailScreen(
     val hasBlockedMe = conversation?.hasBlockedMe == true
 
     Scaffold(
+        modifier = Modifier.pointerInput(viewModel.isPrivate) {
+            if (viewModel.isPrivate) {
+                awaitPointerEventScope {
+                    while (true) {
+                        awaitPointerEvent()
+                        viewModel.touchPrivateActivity()
+                    }
+                }
+            }
+        },
         topBar = {
             TopAppBar(
                 navigationIcon = {
@@ -334,13 +394,26 @@ fun ChatDetailScreen(
                         )
                         Spacer(modifier = Modifier.width(10.dp))
                         Column {
-                            Text(
-                                text = peerName,
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.SemiBold,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                if (viewModel.isPrivate) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Lock,
+                                        contentDescription = stringResource(R.string.private_chat_title),
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(15.dp)
+                                    )
+                                }
+                                Text(
+                                    text = peerName,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.SemiBold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
                             val subtitle = when {
                                 uiState.isPeerTyping -> stringResource(R.string.status_typing)
                                 conversation?.peerIsOnline == true -> stringResource(R.string.status_online)
@@ -371,51 +444,57 @@ fun ChatDetailScreen(
                     }
                 },
                 actions = {
-                    IconButton(
-                        onClick = onStartAudioCall,
-                        enabled = !isBlockedByMe && !hasBlockedMe,
-                        modifier = Modifier.testTag("chat_audio_call_button")
-                    ) {
-                        Icon(Icons.Rounded.Call, contentDescription = stringResource(R.string.call_audio))
-                    }
-                    IconButton(
-                        onClick = onStartVideoCall,
-                        enabled = !isBlockedByMe && !hasBlockedMe,
-                        modifier = Modifier.testTag("chat_video_call_button")
-                    ) {
-                        Icon(Icons.Rounded.Videocam, contentDescription = stringResource(R.string.call_video))
+                    if (!viewModel.isPrivate) {
+                        IconButton(
+                            onClick = onStartAudioCall,
+                            enabled = !isBlockedByMe && !hasBlockedMe,
+                            modifier = Modifier.testTag("chat_audio_call_button")
+                        ) {
+                            Icon(Icons.Rounded.Call, contentDescription = stringResource(R.string.call_audio))
+                        }
+                        IconButton(
+                            onClick = onStartVideoCall,
+                            enabled = !isBlockedByMe && !hasBlockedMe,
+                            modifier = Modifier.testTag("chat_video_call_button")
+                        ) {
+                            Icon(Icons.Rounded.Videocam, contentDescription = stringResource(R.string.call_video))
+                        }
                     }
                     Box {
                         IconButton(
-                            onClick = { showSafetyMenu = true },
+                            onClick = { showConversationMenu = true },
                             modifier = Modifier.testTag("chat_safety_menu_button")
                         ) {
                             Icon(Icons.Rounded.MoreVert, contentDescription = "Options")
                         }
-                        DropdownMenu(
-                            expanded = showSafetyMenu,
-                            onDismissRequest = { showSafetyMenu = false }
-                        ) {
-                            DropdownMenuItem(
-                                text = {
-                                    Text(
-                                        if (isBlockedByMe) stringResource(R.string.action_unblock_user)
-                                        else stringResource(R.string.action_block_user)
-                                    )
-                                },
-                                onClick = {
-                                    showSafetyMenu = false
-                                    viewModel.toggleBlockPeer(isBlockedByMe)
-                                }
-                            )
-                            DropdownMenuItem(
-                                text = { Text(stringResource(R.string.action_report_user)) },
-                                onClick = {
-                                    showSafetyMenu = false
-                                    viewModel.report(null, "abusive_user")
-                                }
-                            )
-                        }
+                        val activeConv = conversation ?: com.mychattingpro.domain.models.Conversation(
+                            id = viewModel.conversationId,
+                            type = "direct",
+                            peerUserId = viewModel.peerUserId,
+                            peerDisplayName = peerName,
+                            peerAvatarMediaId = null,
+                            peerAbout = "",
+                            peerIsOnline = false,
+                            peerLastSeenMs = null,
+                            isBlockedByMe = false,
+                            hasBlockedMe = false,
+                            lastMessageId = null,
+                            lastMessagePreview = null,
+                            lastMessageType = null,
+                            lastMessageSenderId = null,
+                            lastMessageAtMs = null,
+                            unreadCount = 0,
+                            updatedAtMs = 0L,
+                            isPrivate = viewModel.isPrivate
+                        )
+                        ConversationActionsDropdownMenu(
+                            expanded = showConversationMenu,
+                            conversation = activeConv,
+                            controller = menuController,
+                            callbacks = menuCallbacks,
+                            onDismiss = { showConversationMenu = false },
+                            isPrivate = viewModel.isPrivate
+                        )
                     }
                 }
             )

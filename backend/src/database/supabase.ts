@@ -24,6 +24,22 @@ export interface UserAccountRow {
   failed_login_count: number;
   locked_until_ms: number | null;
   account_status: string;
+  recovery_code_hash?: string | null;
+  recovery_code_updated_at_ms?: number | null;
+  recovery_failed_count?: number;
+  recovery_locked_until_ms?: number | null;
+}
+
+export interface UserPrivatePinRow {
+  id: string;
+  pin_hash: string;
+  failed_login_count: number;
+  locked_until_ms: number | null;
+  account_status: string;
+  private_pin_hash: string | null;
+  private_pin_failed_count: number;
+  private_pin_locked_until_ms: number | null;
+  private_pin_updated_at_ms: number | null;
 }
 
 export interface UserProfileBasicRow {
@@ -88,6 +104,39 @@ export interface ConversationQueryRow {
   peer_last_seen_ms: number | null;
   blocked_by_me: boolean;
   blocked_me: boolean;
+  is_pinned?: boolean;
+  pinned_at_ms?: number | null;
+  is_archived?: boolean;
+  archived_at_ms?: number | null;
+  muted_until_ms?: number | null;
+  custom_sound_uri?: string | null;
+  custom_sound_label?: string | null;
+  marked_unread?: boolean;
+}
+
+export interface CallHistoryQueryRow {
+  call_id: string;
+  conversation_id: string;
+  caller_id: string;
+  peer_user_id: string;
+  peer_display_name: string;
+  peer_avatar_media_id: string | null;
+  call_type: 'audio' | 'video';
+  status: 'ringing' | 'accepted' | 'rejected' | 'missed' | 'ended' | 'failed';
+  direction: 'incoming' | 'outgoing';
+  started_at_ms: number;
+  answered_at_ms: number | null;
+  ended_at_ms: number | null;
+  duration_seconds: number;
+}
+
+export interface NotificationEndpointRow {
+  id: string;
+  user_id: string;
+  device_id: string;
+  transport: string;
+  endpoint_url: string | null;
+  updated_at_ms: number;
 }
 
 export interface MessageQueryRow {
@@ -218,6 +267,17 @@ export interface DatabaseClient {
   ): Promise<void>;
   listActiveUserSessions(userId: string, nowMs: number): Promise<ActiveSessionRow[]>;
   findSessionForRevoke(sessionId: string, userId: string): Promise<{ id: string } | null>;
+  revokeAllUserSessions(userId: string, exceptSessionId: string | null, nowMs: number): Promise<void>;
+  updateUserLoginPin(userId: string, pinHash: string, nowMs: number): Promise<void>;
+  findUserRecoveryByPhone(phoneE164: string): Promise<UserAccountRow | null>;
+  setRecoveryCodeHash(userId: string, recoveryCodeHash: string, nowMs: number): Promise<void>;
+  recordFailedRecoveryAttempt(
+    userId: string,
+    failedCount: number,
+    lockedUntilMs: number | null,
+    nowMs: number
+  ): Promise<void>;
+  completeLoginPinRecovery(userId: string, newPinHash: string, nowMs: number): Promise<void>;
 
   searchPublicUserByPhone(
     requesterId: string,
@@ -242,23 +302,56 @@ export interface DatabaseClient {
   deleteUserAccountTx(userId: string, nowMs: number): Promise<void>;
 
   listUserConversations(userId: string): Promise<ConversationQueryRow[]>;
+  listUserPrivateConversations(userId: string): Promise<ConversationQueryRow[]>;
+  isConversationPrivate(conversationId: string): Promise<boolean | null>;
   isActiveUserExists(userId: string): Promise<boolean>;
   getOrCreateDirectConversation(
     currentUserId: string,
     targetUserId: string,
     newConvId: string,
     directKey: string,
-    nowMs: number
+    nowMs: number,
+    isPrivate?: boolean
   ): Promise<string>;
   listConversationMemberIds(conversationId: string): Promise<string[]>;
   isBlockedBetween(userA: string, userB: string): Promise<boolean>;
+
+  getUserPrivatePinState(userId: string): Promise<UserPrivatePinRow | null>;
+  setPrivatePinHash(userId: string, privatePinHash: string, updatedAtMs: number): Promise<void>;
+  recordFailedPrivatePinAttempt(
+    userId: string,
+    failedCount: number,
+    lockedUntilMs: number | null,
+    nowMs: number
+  ): Promise<void>;
+  clearPrivatePinLockout(userId: string, nowMs: number): Promise<void>;
 
   listConversationMessages(
     conversationId: string,
     beforeTs: number | null,
     beforeId: string | null,
-    limit: number
+    limit: number,
+    userId?: string | null
   ): Promise<MessageQueryRow[]>;
+  upsertUserConversationSettings(input: {
+    userId: string;
+    conversationId: string;
+    nowMs: number;
+    isPinned?: boolean;
+    pinnedAtMs?: number | null;
+    isArchived?: boolean;
+    archivedAtMs?: number | null;
+    mutedUntilMs?: number | null;
+    customSoundUri?: string | null;
+    customSoundLabel?: string | null;
+    markedUnread?: boolean;
+    clearedAtMs?: number | null;
+    deletedAtMs?: number | null;
+  }): Promise<void>;
+  getConversationPeerProfile(
+    conversationId: string,
+    viewerUserId: string
+  ): Promise<(PublicUserSearchRow & { blocked_by_me: boolean; blocked_me: boolean }) | null>;
   getSingleMessageDetail(messageId: string): Promise<MessageQueryRow | null>;
   findMessageByClientId(senderId: string, clientMessageId: string): Promise<{ id: string } | null>;
   findCompletedConversationMedia(
@@ -334,6 +427,8 @@ export interface DatabaseClient {
     endedAtMs: number,
     durationSeconds: number
   ): Promise<void>;
+  listCallParticipantIds(callId: string): Promise<string[]>;
+  listUserCalls(userId: string, filter: string, limit: number): Promise<CallHistoryQueryRow[]>;
 
   listBlockedUsers(userId: string): Promise<BlockedUserRow[]>;
   blockUser(blockerId: string, targetUserId: string, nowMs: number): Promise<void>;
@@ -355,6 +450,8 @@ export interface DatabaseClient {
     endpointUrl: string | null;
     updatedAtMs: number;
   }): Promise<void>;
+  listNotificationEndpointsForUser(userId: string): Promise<NotificationEndpointRow[]>;
+  deleteNotificationEndpoint(userId: string, deviceId: string): Promise<void>;
 
   updateUserPresence(userId: string, isOnline: boolean, lastSeenMs: number): Promise<void>;
   checkConversationPair(conversationId: string, userId: string, targetUserId: string): Promise<boolean>;
@@ -400,12 +497,16 @@ export class SupabaseDatabase implements DatabaseClient {
   }
 
   private headers(extra?: Record<string, string>): HeadersInit {
-    return {
-      apikey: this.serviceRoleKey,
-      Authorization: `Bearer ${this.serviceRoleKey}`,
+    const key = this.serviceRoleKey.trim();
+    const base: Record<string, string> = {
+      apikey: key,
       'Content-Type': 'application/json',
       ...extra,
     };
+    if (key.split('.').length === 3) {
+      base['Authorization'] = `Bearer ${key}`;
+    }
+    return base;
   }
 
   private async requestJson<T>(path: string, init: RequestInit): Promise<T> {
@@ -614,6 +715,94 @@ export class SupabaseDatabase implements DatabaseClient {
     return rows[0] ?? null;
   }
 
+  async revokeAllUserSessions(
+    userId: string,
+    exceptSessionId: string | null,
+    nowMs: number
+  ): Promise<void> {
+    const exceptFilter = exceptSessionId ? `&id=neq.${this.enc(exceptSessionId)}` : '';
+    await this.requestJson<unknown>(
+      `/sessions?user_id=eq.${this.enc(userId)}&revoked_at_ms=is.null${exceptFilter}`,
+      {
+        method: 'PATCH',
+        headers: this.headers({ Prefer: 'return=minimal' }),
+        body: JSON.stringify({ revoked_at_ms: nowMs }),
+      }
+    );
+  }
+
+  async updateUserLoginPin(userId: string, pinHash: string, nowMs: number): Promise<void> {
+    await this.requestJson<unknown>(`/users?id=eq.${this.enc(userId)}`, {
+      method: 'PATCH',
+      headers: this.headers({ Prefer: 'return=minimal' }),
+      body: JSON.stringify({
+        pin_hash: pinHash,
+        pin_algo: 'pbkdf2_sha512_v1',
+        pin_updated_at_ms: nowMs,
+        failed_login_count: 0,
+        locked_until_ms: null,
+        updated_at_ms: nowMs,
+      }),
+    });
+  }
+
+  async findUserRecoveryByPhone(phoneE164: string): Promise<UserAccountRow | null> {
+    const rows = await this.requestJson<UserAccountRow[]>(
+      `/users?select=id,phone_e164,country_iso2,calling_code,pin_hash,role,failed_login_count,locked_until_ms,account_status,recovery_code_hash,recovery_code_updated_at_ms,recovery_failed_count,recovery_locked_until_ms&phone_e164=eq.${this.enc(phoneE164)}&account_status=eq.active&limit=1`,
+      { method: 'GET', headers: this.headers() }
+    );
+    return rows[0] ?? null;
+  }
+
+  async setRecoveryCodeHash(userId: string, recoveryCodeHash: string, nowMs: number): Promise<void> {
+    await this.requestJson<unknown>(`/users?id=eq.${this.enc(userId)}`, {
+      method: 'PATCH',
+      headers: this.headers({ Prefer: 'return=minimal' }),
+      body: JSON.stringify({
+        recovery_code_hash: recoveryCodeHash,
+        recovery_code_algo: 'pbkdf2_sha512_v1',
+        recovery_code_updated_at_ms: nowMs,
+        recovery_failed_count: 0,
+        recovery_locked_until_ms: null,
+        updated_at_ms: nowMs,
+      }),
+    });
+  }
+
+  async recordFailedRecoveryAttempt(
+    userId: string,
+    failedCount: number,
+    lockedUntilMs: number | null,
+    nowMs: number
+  ): Promise<void> {
+    await this.requestJson<unknown>(`/users?id=eq.${this.enc(userId)}`, {
+      method: 'PATCH',
+      headers: this.headers({ Prefer: 'return=minimal' }),
+      body: JSON.stringify({
+        recovery_failed_count: failedCount,
+        recovery_locked_until_ms: lockedUntilMs,
+        updated_at_ms: nowMs,
+      }),
+    });
+  }
+
+  async completeLoginPinRecovery(userId: string, newPinHash: string, nowMs: number): Promise<void> {
+    await this.requestJson<unknown>(`/users?id=eq.${this.enc(userId)}`, {
+      method: 'PATCH',
+      headers: this.headers({ Prefer: 'return=minimal' }),
+      body: JSON.stringify({
+        pin_hash: newPinHash,
+        pin_algo: 'pbkdf2_sha512_v1',
+        pin_updated_at_ms: nowMs,
+        failed_login_count: 0,
+        locked_until_ms: null,
+        recovery_failed_count: 0,
+        recovery_locked_until_ms: null,
+        updated_at_ms: nowMs,
+      }),
+    });
+  }
+
   async searchPublicUserByPhone(
     requesterId: string,
     phoneE164: string,
@@ -639,9 +828,34 @@ export class SupabaseDatabase implements DatabaseClient {
       { method: 'GET', headers: this.headers() }
     );
     const u = rows[0];
-    if (!u || !u.user_profiles) return null;
+    if (!u) return null;
     const prof = Array.isArray(u.user_profiles) ? u.user_profiles[0] : u.user_profiles;
-    if (!prof) return null;
+    if (!prof) {
+      const now = Date.now();
+      const defaultName = `User ${u.phone_e164.slice(-4)}`;
+      const defaultAbout = 'Available on MY CHATTING PRO';
+      await this.requestJson<unknown>('/user_profiles?on_conflict=user_id', {
+        method: 'POST',
+        headers: this.headers({ Prefer: 'resolution=ignore-duplicates,return=minimal' }),
+        body: JSON.stringify({
+          user_id: u.id,
+          display_name: defaultName,
+          about_text: defaultAbout,
+          is_online: false,
+          last_seen_ms: now,
+          updated_at_ms: now,
+        }),
+      }).catch(() => undefined);
+      return {
+        id: u.id,
+        phone_e164: u.phone_e164,
+        display_name: defaultName,
+        about_text: defaultAbout,
+        avatar_media_id: null,
+        is_online: false,
+        last_seen_ms: now,
+      };
+    }
     return {
       id: u.id,
       phone_e164: u.phone_e164,
@@ -708,6 +922,19 @@ export class SupabaseDatabase implements DatabaseClient {
     return this.rpc<ConversationQueryRow[]>('list_user_conversations', { p_user_id: userId });
   }
 
+  async listUserPrivateConversations(userId: string): Promise<ConversationQueryRow[]> {
+    return this.rpc<ConversationQueryRow[]>('list_user_private_conversations', { p_user_id: userId });
+  }
+
+  async isConversationPrivate(conversationId: string): Promise<boolean | null> {
+    const rows = await this.requestJson<Array<{ is_private?: boolean }>>(
+      `/conversations?select=is_private&id=eq.${this.enc(conversationId)}&limit=1`,
+      { method: 'GET', headers: this.headers() }
+    );
+    if (!rows[0]) return null;
+    return Boolean(rows[0].is_private);
+  }
+
   async isActiveUserExists(userId: string): Promise<boolean> {
     const rows = await this.requestJson<Array<{ id: string }>>(
       `/users?select=id&id=eq.${this.enc(userId)}&account_status=eq.active&limit=1`,
@@ -721,7 +948,8 @@ export class SupabaseDatabase implements DatabaseClient {
     targetUserId: string,
     newConvId: string,
     directKey: string,
-    nowMs: number
+    nowMs: number,
+    isPrivate = false
   ): Promise<string> {
     return this.rpc<string>('get_or_create_direct_conversation', {
       p_current_user_id: currentUserId,
@@ -729,6 +957,59 @@ export class SupabaseDatabase implements DatabaseClient {
       p_new_conv_id: newConvId,
       p_direct_key: directKey,
       p_now_ms: nowMs,
+      p_is_private: isPrivate,
+    });
+  }
+
+  async getUserPrivatePinState(userId: string): Promise<UserPrivatePinRow | null> {
+    const rows = await this.requestJson<UserPrivatePinRow[]>(
+      `/users?select=id,pin_hash,failed_login_count,locked_until_ms,account_status,private_pin_hash,private_pin_failed_count,private_pin_locked_until_ms,private_pin_updated_at_ms&id=eq.${this.enc(userId)}&account_status=eq.active&limit=1`,
+      { method: 'GET', headers: this.headers() }
+    );
+    return rows[0] ?? null;
+  }
+
+  async setPrivatePinHash(userId: string, privatePinHash: string, updatedAtMs: number): Promise<void> {
+    await this.requestJson<unknown>(`/users?id=eq.${this.enc(userId)}`, {
+      method: 'PATCH',
+      headers: this.headers({ Prefer: 'return=minimal' }),
+      body: JSON.stringify({
+        private_pin_hash: privatePinHash,
+        private_pin_algo: 'pbkdf2_sha512_v1',
+        private_pin_failed_count: 0,
+        private_pin_locked_until_ms: null,
+        private_pin_updated_at_ms: updatedAtMs,
+        updated_at_ms: updatedAtMs,
+      }),
+    });
+  }
+
+  async recordFailedPrivatePinAttempt(
+    userId: string,
+    failedCount: number,
+    lockedUntilMs: number | null,
+    nowMs: number
+  ): Promise<void> {
+    await this.requestJson<unknown>(`/users?id=eq.${this.enc(userId)}`, {
+      method: 'PATCH',
+      headers: this.headers({ Prefer: 'return=minimal' }),
+      body: JSON.stringify({
+        private_pin_failed_count: failedCount,
+        private_pin_locked_until_ms: lockedUntilMs,
+        updated_at_ms: nowMs,
+      }),
+    });
+  }
+
+  async clearPrivatePinLockout(userId: string, nowMs: number): Promise<void> {
+    await this.requestJson<unknown>(`/users?id=eq.${this.enc(userId)}`, {
+      method: 'PATCH',
+      headers: this.headers({ Prefer: 'return=minimal' }),
+      body: JSON.stringify({
+        private_pin_failed_count: 0,
+        private_pin_locked_until_ms: null,
+        updated_at_ms: nowMs,
+      }),
     });
   }
 
@@ -754,14 +1035,120 @@ export class SupabaseDatabase implements DatabaseClient {
     conversationId: string,
     beforeTs: number | null,
     beforeId: string | null,
-    limit: number
+    limit: number,
+    userId: string | null = null
   ): Promise<MessageQueryRow[]> {
     return this.rpc<MessageQueryRow[]>('list_conversation_messages', {
       p_conversation_id: conversationId,
       p_before_ts: beforeTs,
       p_before_id: beforeId,
       p_limit: limit,
+      p_user_id: userId,
     });
+  }
+
+  async upsertUserConversationSettings(input: {
+    userId: string;
+    conversationId: string;
+    nowMs: number;
+    isPinned?: boolean;
+    pinnedAtMs?: number | null;
+    isArchived?: boolean;
+    archivedAtMs?: number | null;
+    mutedUntilMs?: number | null;
+    customSoundUri?: string | null;
+    customSoundLabel?: string | null;
+    markedUnread?: boolean;
+    clearedAtMs?: number | null;
+    deletedAtMs?: number | null;
+  }): Promise<void> {
+    const existingRows = await this.requestJson<Array<Record<string, unknown>>>(
+      `/user_conversation_settings?user_id=eq.${this.enc(input.userId)}&conversation_id=eq.${this.enc(input.conversationId)}&limit=1`,
+      { method: 'GET', headers: this.headers() }
+    );
+    const existing = existingRows[0] ?? {};
+    const merged: Record<string, unknown> = {
+      user_id: input.userId,
+      conversation_id: input.conversationId,
+      is_pinned: input.isPinned !== undefined ? input.isPinned : Boolean(existing.is_pinned),
+      pinned_at_ms: input.pinnedAtMs !== undefined ? input.pinnedAtMs : (existing.pinned_at_ms ?? null),
+      is_archived: input.isArchived !== undefined ? input.isArchived : Boolean(existing.is_archived),
+      archived_at_ms:
+        input.archivedAtMs !== undefined ? input.archivedAtMs : (existing.archived_at_ms ?? null),
+      muted_until_ms:
+        input.mutedUntilMs !== undefined ? input.mutedUntilMs : (existing.muted_until_ms ?? null),
+      custom_sound_uri:
+        input.customSoundUri !== undefined
+          ? input.customSoundUri
+          : (existing.custom_sound_uri ?? null),
+      custom_sound_label:
+        input.customSoundLabel !== undefined
+          ? input.customSoundLabel
+          : (existing.custom_sound_label ?? null),
+      marked_unread:
+        input.markedUnread !== undefined ? input.markedUnread : Boolean(existing.marked_unread),
+      cleared_at_ms:
+        input.clearedAtMs !== undefined ? input.clearedAtMs : (existing.cleared_at_ms ?? null),
+      deleted_at_ms:
+        input.deletedAtMs !== undefined ? input.deletedAtMs : (existing.deleted_at_ms ?? null),
+      updated_at_ms: input.nowMs,
+    };
+
+    await this.requestJson<unknown>(
+      '/user_conversation_settings?on_conflict=user_id,conversation_id',
+      {
+        method: 'POST',
+        headers: this.headers({ Prefer: 'resolution=merge-duplicates,return=minimal' }),
+        body: JSON.stringify(merged),
+      }
+    );
+
+    if (input.markedUnread === false) {
+      await this.requestJson<unknown>(
+        `/conversation_members?conversation_id=eq.${this.enc(input.conversationId)}&user_id=eq.${this.enc(input.userId)}`,
+        {
+          method: 'PATCH',
+          headers: this.headers({ Prefer: 'return=minimal' }),
+          body: JSON.stringify({ unread_count: 0 }),
+        }
+      );
+    }
+  }
+
+  async getConversationPeerProfile(
+    conversationId: string,
+    viewerUserId: string
+  ): Promise<(PublicUserSearchRow & { blocked_by_me: boolean; blocked_me: boolean }) | null> {
+    const members = await this.listConversationMemberIds(conversationId);
+    if (!members.includes(viewerUserId)) return null;
+    const peerId = members.find((m) => m !== viewerUserId);
+    if (!peerId) return null;
+
+    const users = await this.requestJson<
+      Array<{
+        id: string;
+        account_status: string;
+        user_profiles: PublicUserSearchRow | PublicUserSearchRow[] | null;
+      }>
+    >(
+      `/users?select=id,account_status,user_profiles(display_name,about_text,avatar_media_id,is_online,last_seen_ms)&id=eq.${this.enc(peerId)}&account_status=eq.active&limit=1`,
+      { method: 'GET', headers: this.headers() }
+    );
+    const u = users[0];
+    if (!u) return null;
+    const p = Array.isArray(u.user_profiles) ? u.user_profiles[0] : u.user_profiles;
+    const blockedByMe = await this.isUserBlockedBy(viewerUserId, peerId);
+    const blockedMe = await this.isUserBlockedBy(peerId, viewerUserId);
+    return {
+      id: peerId,
+      display_name: p?.display_name ?? 'MY CHATTING PRO User',
+      about_text: blockedMe ? '' : (p?.about_text ?? ''),
+      avatar_media_id: blockedMe ? null : (p?.avatar_media_id ?? null),
+      is_online: blockedMe ? false : Boolean(p?.is_online),
+      last_seen_ms: blockedMe ? null : (p?.last_seen_ms ?? null),
+      blocked_by_me: blockedByMe,
+      blocked_me: blockedMe,
+    };
   }
 
   async getSingleMessageDetail(messageId: string): Promise<MessageQueryRow | null> {
@@ -1006,6 +1393,22 @@ export class SupabaseDatabase implements DatabaseClient {
     );
   }
 
+  async listCallParticipantIds(callId: string): Promise<string[]> {
+    const rows = await this.requestJson<Array<{ user_id: string }>>(
+      `/call_participants?select=user_id&call_id=eq.${this.enc(callId)}`,
+      { method: 'GET', headers: this.headers() }
+    );
+    return rows.map((r) => r.user_id);
+  }
+
+  async listUserCalls(userId: string, filter: string, limit: number): Promise<CallHistoryQueryRow[]> {
+    return this.rpc<CallHistoryQueryRow[]>('list_user_calls', {
+      p_user_id: userId,
+      p_filter: filter,
+      p_limit: limit,
+    });
+  }
+
   async listBlockedUsers(userId: string): Promise<BlockedUserRow[]> {
     return this.rpc<BlockedUserRow[]>('list_blocked_users_for_user', { p_user_id: userId });
   }
@@ -1077,6 +1480,23 @@ export class SupabaseDatabase implements DatabaseClient {
         updated_at_ms: input.updatedAtMs,
       }),
     });
+  }
+
+  async listNotificationEndpointsForUser(userId: string): Promise<NotificationEndpointRow[]> {
+    return this.requestJson<NotificationEndpointRow[]>(
+      `/notification_endpoints?select=id,user_id,device_id,transport,endpoint_url,updated_at_ms&user_id=eq.${this.enc(userId)}`,
+      { method: 'GET', headers: this.headers() }
+    );
+  }
+
+  async deleteNotificationEndpoint(userId: string, deviceId: string): Promise<void> {
+    await this.requestJson<unknown>(
+      `/notification_endpoints?user_id=eq.${this.enc(userId)}&device_id=eq.${this.enc(deviceId)}`,
+      {
+        method: 'DELETE',
+        headers: this.headers({ Prefer: 'return=minimal' }),
+      }
+    );
   }
 
   async updateUserPresence(userId: string, isOnline: boolean, lastSeenMs: number): Promise<void> {

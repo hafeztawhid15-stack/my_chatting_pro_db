@@ -30,6 +30,18 @@ interface CloudflareApiService {
     @POST("v1/auth/logout")
     suspend fun logout()
 
+    @POST("v1/auth/logout-all")
+    suspend fun logoutAllDevices(@Body body: LogoutAllRequestDto): LogoutAllResponseDto
+
+    @POST("v1/auth/pin/change")
+    suspend fun changeLoginPin(@Body body: ChangeLoginPinRequestDto): ChangeLoginPinResponseDto
+
+    @POST("v1/auth/recovery-code/generate")
+    suspend fun generateRecoveryCode(@Body body: GenerateRecoveryCodeRequestDto): GenerateRecoveryCodeResponseDto
+
+    @POST("v1/auth/pin/reset")
+    suspend fun resetLoginPinWithRecoveryCode(@Body body: ResetLoginPinRequestDto): AuthResponseDto
+
     @GET("v1/profiles/me")
     suspend fun getMyProfile(): ProfileDto
 
@@ -50,6 +62,21 @@ interface CloudflareApiService {
 
     @POST("v1/conversations/direct")
     suspend fun createOrGetDirectConversation(@Body body: DirectConversationRequestDto): SingleConversationResponseDto
+
+    @PATCH("v1/conversations/{conversationId}/preferences")
+    suspend fun updateConversationPreferences(
+        @Path("conversationId") conversationId: String,
+        @Body body: Map<String, @JvmSuppressWildcards Any?>
+    )
+
+    @POST("v1/conversations/{conversationId}/clear")
+    suspend fun clearConversation(@Path("conversationId") conversationId: String): ClearConversationResponseDto
+
+    @DELETE("v1/conversations/{conversationId}")
+    suspend fun deleteConversation(@Path("conversationId") conversationId: String): DeleteConversationResponseDto
+
+    @GET("v1/conversations/{conversationId}/peer-profile")
+    suspend fun getConversationPeerProfile(@Path("conversationId") conversationId: String): PeerProfileResponseDto
 
     @GET("v1/messages/{conversationId}")
     suspend fun listMessages(
@@ -92,6 +119,18 @@ interface CloudflareApiService {
         @Body body: UpdateCallStateRequestDto
     )
 
+    @GET("v1/calls/history")
+    suspend fun getCallHistory(
+        @Query("filter") filter: String? = null,
+        @Query("limit") limit: Int = 60
+    ): CallHistoryResponseDto
+
+    @POST("v1/notifications/endpoints")
+    suspend fun registerNotificationEndpoint(@Body body: NotificationEndpointRequestDto)
+
+    @DELETE("v1/notifications/endpoints")
+    suspend fun unregisterNotificationEndpoint()
+
     @GET("v1/privacy/blocked")
     suspend fun getBlockedUsers(): BlockedUsersResponseDto
 
@@ -117,4 +156,63 @@ interface CloudflareApiService {
         @Query("page") page: Int = 1,
         @Query("limit") limit: Int = 20
     ): OwnerActivityResponseDto
+
+    @GET("v1/private-chat/pin/status")
+    suspend fun getPrivatePinStatus(): PrivatePinStatusResponseDto
+
+    @POST("v1/private-chat/pin/setup")
+    suspend fun setupPrivatePin(@Body body: PrivatePinSetupRequestDto): PrivatePinUnlockResponseDto
+
+    @POST("v1/private-chat/pin/unlock")
+    suspend fun unlockPrivateChat(@Body body: PrivatePinUnlockRequestDto): PrivatePinUnlockResponseDto
+
+    @POST("v1/private-chat/pin/change")
+    suspend fun changePrivatePin(@Body body: PrivatePinChangeRequestDto): PrivatePinUnlockResponseDto
+
+    @POST("v1/private-chat/pin/reset")
+    suspend fun resetPrivatePin(@Body body: PrivatePinResetRequestDto): PrivatePinUnlockResponseDto
+
+    @GET("v1/private-chat/conversations")
+    suspend fun listPrivateConversations(): ConversationsListResponseDto
+
+    @POST("v1/private-chat/conversations/direct")
+    suspend fun createOrGetPrivateDirectConversation(@Body body: DirectConversationRequestDto): SingleConversationResponseDto
+
+    @PATCH("v1/private-chat/conversations/{conversationId}/preferences")
+    suspend fun updatePrivateConversationPreferences(
+        @Path("conversationId") conversationId: String,
+        @Body body: Map<String, @JvmSuppressWildcards Any?>
+    )
+
+    @POST("v1/private-chat/conversations/{conversationId}/clear")
+    suspend fun clearPrivateConversation(@Path("conversationId") conversationId: String): ClearConversationResponseDto
+
+    @DELETE("v1/private-chat/conversations/{conversationId}")
+    suspend fun deletePrivateConversation(@Path("conversationId") conversationId: String): DeleteConversationResponseDto
+
+    @GET("v1/private-chat/conversations/{conversationId}/peer-profile")
+    suspend fun getPrivateConversationPeerProfile(@Path("conversationId") conversationId: String): PeerProfileResponseDto
+
+    @GET("v1/private-chat/users/search")
+    suspend fun searchUsersForPrivateChat(
+        @Query("phone") phone: String,
+        @Query("name") name: String? = null
+    ): UserSearchResponseDto
+
+    @GET("v1/private-chat/messages/{conversationId}")
+    suspend fun listPrivateMessages(
+        @Path("conversationId") conversationId: String,
+        @Query("beforeTs") beforeTs: Long? = null,
+        @Query("beforeId") beforeId: String? = null,
+        @Query("limit") limit: Int = 40
+    ): MessagesPageResponseDto
+
+    @POST("v1/private-chat/messages")
+    suspend fun sendPrivateMessage(@Body body: SendMessageRequestDto): SendMessageResponseDto
+
+    @POST("v1/private-chat/messages/receipts")
+    suspend fun markPrivateReceipts(@Body body: ReceiptsRequestDto)
+
+    @DELETE("v1/private-chat/messages/{messageId}")
+    suspend fun deletePrivateMessage(@Path("messageId") messageId: String)
 }

@@ -3,6 +3,7 @@ import { DatabaseClient } from '../../database/supabase';
 import { ApiError } from '../../middleware/errorHandler';
 import { RealtimeEnvelope } from '../../websocket/events';
 import { ConversationsService } from '../conversations/conversations.service';
+import { dispatchUserEventAndPush } from '../notifications/pushDispatcher';
 
 export interface IceServerDto {
   urls: string[];
@@ -67,7 +68,7 @@ export class CallsService {
     input: { conversationId: string; calleeId: string; callType: 'audio' | 'video' }
   ) {
     const convService = new ConversationsService(this.db);
-    const members = await convService.assertMember(input.conversationId, callerId);
+    const members = await convService.assertMember(input.conversationId, callerId, false);
     if (!members.includes(input.calleeId) || input.calleeId === callerId) {
       throw new ApiError(400, 'invalid_callee', 'Callee must be another member of the conversation.');
     }
@@ -104,11 +105,13 @@ export class CallsService {
       },
     };
 
-    const calleeStub = this.env.USER_COORDINATOR.get(this.env.USER_COORDINATOR.idFromName(input.calleeId));
-    await calleeStub.fetch('https://do.internal/internal/push', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(inviteEnvelope),
+    await dispatchUserEventAndPush(this.env, this.db, input.calleeId, inviteEnvelope, {
+      category: 'call',
+      title: input.callType === 'video' ? 'Incoming Video Call' : 'Incoming Audio Call',
+      body: `${callerProfile?.display_name ?? 'Someone'} is calling you`,
+      eventId: inviteEnvelope.eventId,
+      conversationId: input.conversationId,
+      callId,
     });
 
     return {
@@ -136,8 +139,20 @@ export class CallsService {
     }
 
     const now = Date.now();
+    const participants = await this.db.listCallParticipantIds(callId);
+    const otherParticipants = participants.filter((pid) => pid !== userId);
+
     if (action === 'accept') {
       await this.db.acceptCallTx(callId, userId, now);
+      const envelope: RealtimeEnvelope = {
+        eventId: `call_state:${callId}:accepted:${now}`,
+        type: 'call.state',
+        timestampMs: now,
+        payload: { callId, status: 'accepted', byUserId: userId },
+      };
+      await Promise.allSettled(
+        otherParticipants.map((pid) => dispatchUserEventAndPush(this.env, this.db, pid, envelope))
+      );
       return { callId, status: 'accepted', answeredAtMs: call.answered_at_ms ?? now };
     }
 
@@ -150,6 +165,61 @@ export class CallsService {
 
     await this.db.finishCallTx(callId, userId, nextStatus, participantState, now, durationSeconds);
 
+    const callerProfile = await this.db.getUserProfileBasic(userId);
+    const envelope: RealtimeEnvelope = {
+      eventId: `call_state:${callId}:${nextStatus}:${now}`,
+      type: action === 'missed' ? 'call.missed' : 'call.state',
+      timestampMs: now,
+      payload: {
+        callId,
+        status: nextStatus,
+        byUserId: userId,
+        peerName: callerProfile?.display_name ?? 'MY CHATTING PRO User',
+        durationSeconds,
+      },
+    };
+    await Promise.allSettled(
+      otherParticipants.map((pid) =>
+        dispatchUserEventAndPush(
+          this.env,
+          this.db,
+          pid,
+          envelope,
+          action === 'missed'
+            ? {
+                category: 'call',
+                title: 'Missed Call',
+                body: `Missed call from ${callerProfile?.display_name ?? 'a contact'}`,
+                eventId: envelope.eventId,
+                callId,
+              }
+            : undefined
+        )
+      )
+    );
+
     return { callId, status: nextStatus, endedAtMs: now, durationSeconds };
+  }
+
+  async getCallHistory(userId: string, filterRaw?: string, limitRaw?: number) {
+    const allowedFilters = new Set(['all', 'incoming', 'outgoing', 'missed', 'rejected']);
+    const filter = filterRaw && allowedFilters.has(filterRaw) ? filterRaw : 'all';
+    const limit = Math.min(Math.max(limitRaw ?? 60, 1), 120);
+    const rows = await this.db.listUserCalls(userId, filter, limit);
+    return rows.map((r) => ({
+      callId: r.call_id,
+      conversationId: r.conversation_id,
+      callerId: r.caller_id,
+      peerUserId: r.peer_user_id,
+      peerDisplayName: r.peer_display_name,
+      peerAvatarMediaId: r.peer_avatar_media_id,
+      callType: r.call_type,
+      status: r.status,
+      direction: r.direction,
+      startedAtMs: r.started_at_ms,
+      answeredAtMs: r.answered_at_ms,
+      endedAtMs: r.ended_at_ms,
+      durationSeconds: r.duration_seconds,
+    }));
   }
 }

@@ -2,6 +2,8 @@ package com.mychattingpro.features.calls
 
 import android.content.Context
 import android.media.AudioManager
+import android.os.Handler
+import android.os.Looper
 import com.mychattingpro.core.network.RealtimeSocketManager
 import com.mychattingpro.core.security.SafeLogger
 import com.mychattingpro.domain.models.IceServerConfig
@@ -36,11 +38,12 @@ enum class WebRtcConnectionStage {
  * Genuine WebRTC Audio & Video Call Engine powered by Stream WebRTC Android (`org.webrtc.*`)
  * and Cloudflare Durable Objects WebSocket signaling.
  */
-class WebRtcCallManager(
+open class WebRtcCallManager(
     private val context: Context,
     private val socketManager: RealtimeSocketManager
 ) {
-    val eglBase: EglBase = EglBase.create()
+    val eglBase: EglBase by lazy { EglBase.create() }
+    private val mainHandler = Handler(Looper.getMainLooper())
 
     private var factory: PeerConnectionFactory? = null
     private var peerConnection: PeerConnection? = null
@@ -48,6 +51,7 @@ class WebRtcCallManager(
     private var localAudioTrack: AudioTrack? = null
     private var videoSource: VideoSource? = null
     private var localVideoTrack: VideoTrack? = null
+    private var remoteVideoTrack: VideoTrack? = null
     private var videoCapturer: CameraVideoCapturer? = null
     private var surfaceTextureHelper: SurfaceTextureHelper? = null
 
@@ -64,13 +68,18 @@ class WebRtcCallManager(
 
     private val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
 
-    fun attachVideoSinks(local: VideoSink?, remote: VideoSink?) {
-        localSink = local
-        remoteSink = remote
-        local?.let { localVideoTrack?.addSink(it) }
+    open fun attachVideoSinks(local: VideoSink?, remote: VideoSink?) {
+        mainHandler.post {
+            localSink?.let { old -> runCatching { localVideoTrack?.removeSink(old) } }
+            remoteSink?.let { old -> runCatching { remoteVideoTrack?.removeSink(old) } }
+            localSink = local
+            remoteSink = remote
+            local?.let { runCatching { localVideoTrack?.addSink(it) } }
+            remote?.let { runCatching { remoteVideoTrack?.addSink(it) } }
+        }
     }
 
-    fun startSession(
+    open fun startSession(
         callId: String,
         conversationId: String,
         peerUserId: String,
@@ -132,14 +141,14 @@ class WebRtcCallManager(
                 override fun onTrack(transceiver: org.webrtc.RtpTransceiver?) {
                     val track = transceiver?.receiver?.track()
                     if (track is VideoTrack) {
-                        remoteSink?.let { track.addSink(it) }
+                        bindRemoteVideoTrack(track)
                     }
                 }
 
                 override fun onAddTrack(receiver: RtpReceiver?, streams: Array<out MediaStream>?) {
                     val track = receiver?.track()
                     if (track is VideoTrack) {
-                        remoteSink?.let { track.addSink(it) }
+                        bindRemoteVideoTrack(track)
                     }
                 }
 
@@ -157,7 +166,20 @@ class WebRtcCallManager(
         setupLocalMediaTracks(isVideo)
     }
 
-    fun createAndSendOffer() {
+    private fun bindRemoteVideoTrack(track: VideoTrack) {
+        mainHandler.post {
+            remoteSink?.let { oldSink ->
+                runCatching { remoteVideoTrack?.removeSink(oldSink) }
+            }
+            remoteVideoTrack = track
+            track.setEnabled(true)
+            remoteSink?.let { sink ->
+                runCatching { track.addSink(sink) }
+            }
+        }
+    }
+
+    open fun createAndSendOffer() {
         val pc = peerConnection ?: return
         val constraints = MediaConstraints().apply {
             mandatory.add(MediaConstraints.KeyValuePair("OfferToReceiveAudio", "true"))
@@ -177,7 +199,7 @@ class WebRtcCallManager(
         }, constraints)
     }
 
-    fun handleRemoteOfferAndSendAnswer(sdpText: String) {
+    open fun handleRemoteOfferAndSendAnswer(sdpText: String) {
         val pc = peerConnection ?: return
         val remoteDesc = SessionDescription(SessionDescription.Type.OFFER, sdpText)
         pc.setRemoteDescription(object : SdpObserverAdapter() {
@@ -204,7 +226,7 @@ class WebRtcCallManager(
         }, remoteDesc)
     }
 
-    fun handleRemoteAnswer(sdpText: String) {
+    open fun handleRemoteAnswer(sdpText: String) {
         val pc = peerConnection ?: return
         val remoteDesc = SessionDescription(SessionDescription.Type.ANSWER, sdpText)
         pc.setRemoteDescription(object : SdpObserverAdapter() {
@@ -215,7 +237,7 @@ class WebRtcCallManager(
         }, remoteDesc)
     }
 
-    fun handleRemoteIceCandidate(sdpMid: String, sdpMLineIndex: Int, candidateSdp: String) {
+    open fun handleRemoteIceCandidate(sdpMid: String, sdpMLineIndex: Int, candidateSdp: String) {
         val candidate = IceCandidate(sdpMid, sdpMLineIndex, candidateSdp)
         if (hasRemoteDescription) {
             peerConnection?.addIceCandidate(candidate)
@@ -224,26 +246,26 @@ class WebRtcCallManager(
         }
     }
 
-    fun setMicEnabled(enabled: Boolean) {
+    open fun setMicEnabled(enabled: Boolean) {
         localAudioTrack?.setEnabled(enabled)
     }
 
-    fun setCameraEnabled(enabled: Boolean) {
+    open fun setCameraEnabled(enabled: Boolean) {
         localVideoTrack?.setEnabled(enabled)
     }
 
-    fun switchCamera() {
+    open fun switchCamera() {
         videoCapturer?.switchCamera(null)
     }
 
-    fun configureAudioRouting(speakerOn: Boolean) {
+    open fun configureAudioRouting(speakerOn: Boolean) {
         runCatching {
             audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
             audioManager.isSpeakerphoneOn = speakerOn
         }
     }
 
-    fun endSession() {
+    open fun endSession() {
         runCatching { videoCapturer?.stopCapture() }
         runCatching { videoCapturer?.dispose() }
         videoCapturer = null
@@ -251,7 +273,10 @@ class WebRtcCallManager(
         runCatching { surfaceTextureHelper?.dispose() }
         surfaceTextureHelper = null
 
-        localSink?.let { runCatching { localVideoTrack?.removeSink(it) } }
+        remoteSink?.let { sink -> runCatching { remoteVideoTrack?.removeSink(sink) } }
+        remoteVideoTrack = null
+
+        localSink?.let { sink -> runCatching { localVideoTrack?.removeSink(sink) } }
         localVideoTrack?.dispose()
         localVideoTrack = null
         videoSource?.dispose()
@@ -272,7 +297,7 @@ class WebRtcCallManager(
         }
     }
 
-    fun release() {
+    open fun release() {
         endSession()
         factory?.dispose()
         factory = null
@@ -319,7 +344,9 @@ class WebRtcCallManager(
 
                     val vTrack = f.createVideoTrack("MCP_VIDEO_0", vSource)
                     vTrack.setEnabled(true)
-                    localSink?.let { vTrack.addSink(it) }
+                    mainHandler.post {
+                        localSink?.let { runCatching { vTrack.addSink(it) } }
+                    }
                     pc.addTrack(vTrack, listOf("MCP_STREAM"))
 
                     videoCapturer = capturer

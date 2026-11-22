@@ -30,6 +30,7 @@ export interface MessageDto {
   createdAtMs: number;
   deliveredAtMs: number | null;
   readAtMs: number | null;
+  isPrivate?: boolean;
 }
 
 export class MessagesService {
@@ -42,17 +43,19 @@ export class MessagesService {
   async listMessages(
     conversationId: string,
     userId: string,
-    cursor?: { beforeTs?: number; beforeId?: string; limit?: number }
+    cursor?: { beforeTs?: number; beforeId?: string; limit?: number },
+    isPrivateScope = false
   ): Promise<{ messages: MessageDto[]; hasMore: boolean; nextCursorTs: number | null; nextCursorId: string | null }> {
     const convService = new ConversationsService(this.db);
-    await convService.assertMember(conversationId, userId);
+    await convService.assertMember(conversationId, userId, isPrivateScope);
 
     const limit = Math.min(Math.max(cursor?.limit ?? DEFAULT_PAGE_LIMIT, 1), MAX_PAGE_LIMIT);
     const rows = await this.db.listConversationMessages(
       conversationId,
       cursor?.beforeTs ?? null,
       cursor?.beforeId ?? null,
-      limit + 1
+      limit + 1,
+      userId
     );
 
     const hasMore = rows.length > limit;
@@ -77,10 +80,11 @@ export class MessagesService {
       bodyText?: string | null;
       mediaId?: string | null;
       replyToMessageId?: string | null;
-    }
+    },
+    isPrivateScope = false
   ): Promise<MessageDto> {
     const convService = new ConversationsService(this.db);
-    const memberIds = await convService.assertMember(input.conversationId, senderId);
+    const memberIds = await convService.assertMember(input.conversationId, senderId, isPrivateScope);
     const recipientIds = memberIds.filter((id) => id !== senderId);
 
     for (const rid of recipientIds) {
@@ -132,16 +136,17 @@ export class MessagesService {
       nowMs: serverTimestampMs,
     });
 
-    const dto = await this.getSingleMessage(messageId);
-    if (!dto) {
+    const rawDto = await this.getSingleMessage(messageId);
+    if (!rawDto) {
       throw new ApiError(500, 'message_persist_failed', 'Message failed to persist.');
     }
+    const dto: MessageDto = { ...rawDto, isPrivate: isPrivateScope };
 
     const envelope: RealtimeEnvelope = {
       eventId: `msg:${messageId}`,
       type: 'message.new',
       timestampMs: serverTimestampMs,
-      payload: { message: dto },
+      payload: { message: dto, isPrivate: isPrivateScope },
     };
     const convStub = this.env.CONVERSATION_COORDINATOR.get(
       this.env.CONVERSATION_COORDINATOR.idFromName(input.conversationId)
@@ -152,16 +157,48 @@ export class MessagesService {
       body: JSON.stringify({ memberIds, envelope }),
     });
 
+    // Best-effort UnifiedPush fallback for recipients with registered external endpoints
+    if (typeof this.db.listNotificationEndpointsForUser === 'function') {
+      await Promise.allSettled(
+        recipientIds.map(async (rid) => {
+          const eps = await this.db.listNotificationEndpointsForUser(rid);
+          const targets = eps.filter(
+            (e) => e.transport === 'unified_push' && e.endpoint_url?.startsWith('https://')
+          );
+          if (targets.length === 0) return;
+          const payload = JSON.stringify({
+            eventId: envelope.eventId,
+            category: 'message',
+            title: isPrivateScope ? 'MY CHATTING PRO' : 'New Message',
+            body: isPrivateScope ? 'New encrypted private message' : preview,
+            conversationId: isPrivateScope ? undefined : input.conversationId,
+            isPrivate: isPrivateScope,
+            timestampMs: serverTimestampMs,
+          });
+          await Promise.allSettled(
+            targets.map((ep) =>
+              fetch(ep.endpoint_url!, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: payload,
+              })
+            )
+          );
+        })
+      ).catch(() => undefined);
+    }
+
     return dto;
   }
 
   async markReceipts(
     userId: string,
-    input: { conversationId: string; messageIds: string[]; type: 'delivered' | 'read' }
+    input: { conversationId: string; messageIds: string[]; type: 'delivered' | 'read' },
+    isPrivateScope = false
   ): Promise<void> {
     if (input.messageIds.length === 0) return;
     const convService = new ConversationsService(this.db);
-    const memberIds = await convService.assertMember(input.conversationId, userId);
+    const memberIds = await convService.assertMember(input.conversationId, userId, isPrivateScope);
 
     const now = Date.now();
     const boundedIds = input.messageIds.slice(0, 100);
@@ -176,6 +213,7 @@ export class MessagesService {
         recipientId: userId,
         messageIds: boundedIds,
         atMs: now,
+        isPrivate: isPrivateScope,
       },
     };
     const convStub = this.env.CONVERSATION_COORDINATOR.get(
@@ -188,7 +226,7 @@ export class MessagesService {
     });
   }
 
-  async deleteOwnMessage(userId: string, messageId: string): Promise<void> {
+  async deleteOwnMessage(userId: string, messageId: string, isPrivateScope = false): Promise<void> {
     const msg = await this.db.findMessageForDelete(messageId);
     if (!msg) {
       throw new ApiError(404, 'message_not_found', 'Message not found.');
@@ -198,7 +236,7 @@ export class MessagesService {
     }
 
     const convService = new ConversationsService(this.db);
-    const memberIds = await convService.assertMember(msg.conversation_id, userId);
+    const memberIds = await convService.assertMember(msg.conversation_id, userId, isPrivateScope);
 
     const now = Date.now();
     const media = msg.media_id ? await this.db.findMediaObjectById(msg.media_id) : null;
@@ -217,6 +255,7 @@ export class MessagesService {
         conversationId: msg.conversation_id,
         messageId,
         deletedAtMs: now,
+        isPrivate: isPrivateScope,
       },
     };
     const convStub = this.env.CONVERSATION_COORDINATOR.get(

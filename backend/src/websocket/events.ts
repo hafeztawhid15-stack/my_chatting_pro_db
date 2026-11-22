@@ -17,7 +17,11 @@ export type RealtimeEventType =
   | 'call.offer'
   | 'call.answer'
   | 'call.ice'
-  | 'call.end';
+  | 'call.end'
+  | 'call.missed'
+  | 'call.state'
+  | 'security.alert'
+  | 'conversation.updated';
 
 export interface RealtimeEnvelope<T = Record<string, unknown>> {
   eventId: string;

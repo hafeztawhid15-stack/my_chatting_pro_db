@@ -113,3 +113,86 @@ authRoutes.delete('/sessions/:sessionId', authMiddleware, async (c) => {
   }
   return c.json({ ok: true, revokedSessionId: targetSessionId });
 });
+
+authRoutes.post('/logout-all', authMiddleware, async (c) => {
+  const auth = c.get('auth');
+  const body = await c.req.json<{ keepCurrent?: boolean }>().catch(() => ({ keepCurrent: false }));
+  const service = new AuthService(c.env, c.get('db'));
+  const result = await service.logoutAllDevices(
+    auth.userId,
+    auth.sessionId,
+    auth.deviceId,
+    Boolean(body.keepCurrent),
+    c.req.header('CF-Connecting-IP')
+  );
+  return c.json(result, 200);
+});
+
+authRoutes.post(
+  '/pin/change',
+  authMiddleware,
+  rateLimitMiddleware({ prefix: 'auth_pin_change', maxRequests: 10, windowMs: 300_000, blockMs: 300_000, keyScope: 'ip_and_user' }),
+  async (c) => {
+    const auth = c.get('auth');
+    const body = await c.req.json<{
+      currentPin?: string;
+      newPin?: string;
+      confirmNewPin?: string;
+    }>();
+    const service = new AuthService(c.env, c.get('db'));
+    const result = await service.changeLoginPin(
+      auth.userId,
+      auth.sessionId,
+      {
+        currentPin: body.currentPin ?? '',
+        newPin: body.newPin ?? '',
+        confirmNewPin: body.confirmNewPin ?? '',
+      },
+      c.req.header('CF-Connecting-IP')
+    );
+    return c.json(result, 200);
+  }
+);
+
+authRoutes.post(
+  '/recovery-code/generate',
+  authMiddleware,
+  rateLimitMiddleware({ prefix: 'auth_recovery_gen', maxRequests: 8, windowMs: 300_000, blockMs: 300_000, keyScope: 'ip_and_user' }),
+  async (c) => {
+    const auth = c.get('auth');
+    const body = await c.req.json<{ currentPin?: string }>();
+    const service = new AuthService(c.env, c.get('db'));
+    const result = await service.generateRecoveryCode(
+      auth.userId,
+      body.currentPin ?? '',
+      c.req.header('CF-Connecting-IP')
+    );
+    return c.json(result, 200);
+  }
+);
+
+authRoutes.post(
+  '/pin/reset',
+  rateLimitMiddleware({ prefix: 'auth_pin_reset', maxRequests: 10, windowMs: 300_000, blockMs: 600_000 }),
+  async (c) => {
+    const body = await c.req.json<{
+      phone?: string;
+      recoveryCode?: string;
+      newPin?: string;
+      confirmNewPin?: string;
+      deviceName?: string;
+      appVersion?: string;
+    }>();
+    const service = new AuthService(c.env, createSupabaseDb(c.env));
+    const result = await service.resetLoginPinWithRecoveryCode({
+      phone: body.phone ?? '',
+      recoveryCode: body.recoveryCode ?? '',
+      newPin: body.newPin ?? '',
+      confirmNewPin: body.confirmNewPin ?? '',
+      deviceName: body.deviceName,
+      appVersion: body.appVersion,
+      clientIp: c.req.header('CF-Connecting-IP'),
+    });
+    return c.json(result, 200);
+  }
+);

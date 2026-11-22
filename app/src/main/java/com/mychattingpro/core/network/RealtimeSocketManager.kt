@@ -23,7 +23,6 @@ import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 import org.json.JSONObject
 import java.util.Collections
-import java.util.LinkedHashSet
 
 enum class SocketConnectionState {
     DISCONNECTED, CONNECTING, CONNECTED, RECONNECTING
@@ -31,9 +30,9 @@ enum class SocketConnectionState {
 
 sealed interface RealtimeEvent {
     data class MessageNew(val message: MessageDto) : RealtimeEvent
-    data class MessageDelivered(val conversationId: String, val messageIds: List<String>, val atMs: Long) : RealtimeEvent
-    data class MessageRead(val conversationId: String, val messageIds: List<String>, val atMs: Long) : RealtimeEvent
-    data class MessageDeleted(val conversationId: String, val messageId: String, val deletedAtMs: Long) : RealtimeEvent
+    data class MessageDelivered(val conversationId: String, val messageIds: List<String>, val atMs: Long, val isPrivate: Boolean = false) : RealtimeEvent
+    data class MessageRead(val conversationId: String, val messageIds: List<String>, val atMs: Long, val isPrivate: Boolean = false) : RealtimeEvent
+    data class MessageDeleted(val conversationId: String, val messageId: String, val deletedAtMs: Long, val isPrivate: Boolean = false) : RealtimeEvent
     data class TypingChanged(val conversationId: String, val fromUserId: String, val isTyping: Boolean) : RealtimeEvent
     data class PresenceChanged(val userId: String, val isOnline: Boolean, val lastSeenMs: Long?) : RealtimeEvent
     data class CallInvite(
@@ -50,6 +49,21 @@ sealed interface RealtimeEvent {
         val conversationId: String,
         val fromUserId: String,
         val payload: JSONObject
+    ) : RealtimeEvent
+    data class CallMissed(
+        val callId: String,
+        val peerName: String
+    ) : RealtimeEvent
+    data class CallStateChanged(
+        val callId: String,
+        val status: String,
+        val durationSeconds: Int
+    ) : RealtimeEvent
+    data class SecurityAlert(
+        val alertType: String,
+        val title: String,
+        val body: String,
+        val eventId: String
     ) : RealtimeEvent
 }
 
@@ -68,11 +82,28 @@ class RealtimeSocketManager(
     private val _events = MutableSharedFlow<RealtimeEvent>(extraBufferCapacity = 64)
     val events: SharedFlow<RealtimeEvent> = _events.asSharedFlow()
 
+    @Volatile
     private var activeSocket: WebSocket? = null
     private var heartbeatJob: Job? = null
     private var reconnectJob: Job? = null
+    @Volatile
     private var shouldStayConnected = false
     private var backoffAttempt = 0
+    private val pendingOutboundSignals = Collections.synchronizedList(mutableListOf<String>())
+
+    init {
+        scope.launch {
+            var previousOnline = networkMonitor.isOnline.value
+            networkMonitor.isOnline.collect { online ->
+                if (online && !previousOnline && shouldStayConnected) {
+                    backoffAttempt = 0
+                    reconnectJob?.cancel()
+                    connectIfNeeded()
+                }
+                previousOnline = online
+            }
+        }
+    }
 
     // Bounded LRU set for idempotent deduplication of incoming Durable Object eventIds
     private val seenEventIds: MutableSet<String> = Collections.synchronizedSet(
@@ -93,18 +124,30 @@ class RealtimeSocketManager(
         shouldStayConnected = false
         reconnectJob?.cancel()
         heartbeatJob?.cancel()
+        pendingOutboundSignals.clear()
         activeSocket?.close(1000, "User stopped")
         activeSocket = null
         _connectionState.value = SocketConnectionState.DISCONNECTED
     }
 
     fun sendSignaling(type: String, payload: JSONObject) {
-        val ws = activeSocket ?: return
         val envelope = JSONObject().apply {
             put("type", type)
             put("payload", payload)
+        }.toString()
+        val ws = activeSocket
+        if (ws != null && _connectionState.value == SocketConnectionState.CONNECTED) {
+            if (ws.send(envelope)) return
         }
-        ws.send(envelope.toString())
+        if (type.startsWith("call.") && shouldStayConnected) {
+            synchronized(pendingOutboundSignals) {
+                if (pendingOutboundSignals.size >= 32) {
+                    pendingOutboundSignals.removeAt(0)
+                }
+                pendingOutboundSignals.add(envelope)
+            }
+            connectIfNeeded()
+        }
     }
 
     fun sendTyping(conversationId: String, targetUserId: String, isTyping: Boolean) {
@@ -151,6 +194,7 @@ class RealtimeSocketManager(
                 override fun onOpen(webSocket: WebSocket, response: Response) {
                     backoffAttempt = 0
                     _connectionState.value = SocketConnectionState.CONNECTED
+                    flushPendingSignals(webSocket)
                     startHeartbeat(webSocket)
                     SafeLogger.d("RealtimeWS", "Connected to Cloudflare Durable Object")
                 }
@@ -172,6 +216,18 @@ class RealtimeSocketManager(
                     cleanupSocketAndReconnect()
                 }
             })
+        }
+    }
+
+    private fun flushPendingSignals(webSocket: WebSocket) {
+        val snapshot: List<String>
+        synchronized(pendingOutboundSignals) {
+            if (pendingOutboundSignals.isEmpty()) return
+            snapshot = pendingOutboundSignals.toList()
+            pendingOutboundSignals.clear()
+        }
+        snapshot.forEach { frame ->
+            webSocket.send(frame)
         }
     }
 
@@ -232,6 +288,7 @@ class RealtimeSocketManager(
                 "message.new" -> {
                     val msgObj = payload.optJSONObject("message") ?: return
                     val mediaObj = msgObj.optJSONObject("media")
+                    val isPrivate = msgObj.optBoolean("isPrivate", payload.optBoolean("isPrivate", false))
                     val dto = MessageDto(
                         id = msgObj.getString("id"),
                         conversationId = msgObj.getString("conversationId"),
@@ -251,7 +308,8 @@ class RealtimeSocketManager(
                         },
                         createdAtMs = msgObj.getLong("createdAtMs"),
                         deliveredAtMs = if (msgObj.isNull("deliveredAtMs")) null else msgObj.optLong("deliveredAtMs"),
-                        readAtMs = if (msgObj.isNull("readAtMs")) null else msgObj.optLong("readAtMs")
+                        readAtMs = if (msgObj.isNull("readAtMs")) null else msgObj.optLong("readAtMs"),
+                        isPrivate = isPrivate
                     )
                     _events.tryEmit(RealtimeEvent.MessageNew(dto))
                 }
@@ -260,10 +318,11 @@ class RealtimeSocketManager(
                     val arr = payload.optJSONArray("messageIds") ?: return
                     val ids = (0 until arr.length()).map { arr.getString(it) }
                     val atMs = payload.optLong("atMs", System.currentTimeMillis())
+                    val isPrivate = payload.optBoolean("isPrivate", false)
                     if (type == "message.delivered") {
-                        _events.tryEmit(RealtimeEvent.MessageDelivered(convId, ids, atMs))
+                        _events.tryEmit(RealtimeEvent.MessageDelivered(convId, ids, atMs, isPrivate))
                     } else {
-                        _events.tryEmit(RealtimeEvent.MessageRead(convId, ids, atMs))
+                        _events.tryEmit(RealtimeEvent.MessageRead(convId, ids, atMs, isPrivate))
                     }
                 }
                 "message.deleted" -> {
@@ -271,7 +330,8 @@ class RealtimeSocketManager(
                         RealtimeEvent.MessageDeleted(
                             conversationId = payload.optString("conversationId"),
                             messageId = payload.optString("messageId"),
-                            deletedAtMs = payload.optLong("deletedAtMs", System.currentTimeMillis())
+                            deletedAtMs = payload.optLong("deletedAtMs", System.currentTimeMillis()),
+                            isPrivate = payload.optBoolean("isPrivate", false)
                         )
                     )
                 }
@@ -305,6 +365,23 @@ class RealtimeSocketManager(
                         )
                     )
                 }
+                "call.missed" -> {
+                    _events.tryEmit(
+                        RealtimeEvent.CallMissed(
+                            callId = payload.optString("callId"),
+                            peerName = payload.optString("peerName", "MY CHATTING PRO")
+                        )
+                    )
+                }
+                "call.state" -> {
+                    _events.tryEmit(
+                        RealtimeEvent.CallStateChanged(
+                            callId = payload.optString("callId"),
+                            status = payload.optString("status"),
+                            durationSeconds = payload.optInt("durationSeconds", 0)
+                        )
+                    )
+                }
                 "call.ringing", "call.accept", "call.reject", "call.offer", "call.answer", "call.ice", "call.end" -> {
                     _events.tryEmit(
                         RealtimeEvent.CallSignal(
@@ -313,6 +390,16 @@ class RealtimeSocketManager(
                             conversationId = payload.optString("conversationId"),
                             fromUserId = payload.optString("fromUserId"),
                             payload = payload
+                        )
+                    )
+                }
+                "security.alert" -> {
+                    _events.tryEmit(
+                        RealtimeEvent.SecurityAlert(
+                            alertType = payload.optString("alertType", "security"),
+                            title = payload.optString("title", "Account Security Alert"),
+                            body = payload.optString("body", "Security activity detected on your account."),
+                            eventId = eventId
                         )
                     )
                 }

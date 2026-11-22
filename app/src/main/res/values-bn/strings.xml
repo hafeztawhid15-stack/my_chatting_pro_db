@@ -52,7 +52,8 @@
     <string name="nav_settings">সেটিংস</string>
 
     <string name="menu_clear_cache">ক্যাশ পরিষ্কার করুন</string>
-    <string name="menu_website">ওয়েবসাইট</string>
+    <string name="menu_website">Details</string>
+    <string name="menu_private_chat">Private Chat</string>
     <string name="clear_cache_confirm_title">ক্যাশ পরিষ্কার</string>
     <string name="clear_cache_confirm_message">Temporary cache পরিষ্কার করবেন? আপনার মেসেজ, ছবি, ভিডিও, ফাইল বা অ্যাকাউন্ট মুছে যাবে না।</string>
     <string name="clear_cache_success">Temporary cache cleared.</string>
@@ -163,7 +164,7 @@
     <string name="err_invalid_pin">পিন অবশ্যই ৫ সংখ্যার হতে হবে।</string>
     <string name="err_pin_mismatch">দুটি পিন একরকম নয়।</string>
     <string name="err_wrong_pin">ভুল পিন। অনুগ্রহ করে আবার চেষ্টা করুন।</string>
-    <string name="err_account_not_found">এই নম্বরে কোনো অ্যাকাউন্ট পাওয়া যায়নি।</string>
+    <string name="err_account_not_found">এই নম্বরে কোনো অ্যাকাউন্ট পাওয়া যায়নি। লগইন করার আগে নতুন অ্যাকাউন্ট তৈরি করুন।</string>
     <string name="err_duplicate_account">এই ফোন নম্বর দিয়ে ইতিমধ্যে একটি অ্যাকাউন্ট তৈরি করা আছে। একই নম্বর দিয়ে দ্বিতীয়বার অ্যাকাউন্ট তৈরি করা যাবে না।</string>
     <string name="err_rate_limit">অনেকবার ভুল চেষ্টা। অনুগ্রহ করে %1$d সেকেন্ড অপেক্ষা করুন।</string>
     <string name="err_network">ইন্টারনেট সংযোগ নেই।</string>
@@ -195,4 +196,196 @@
     <string name="owner_search_hint">নাম, দেশ বা নম্বর খুঁজুন</string>
     <string name="owner_load_more">আরও দেখুন</string>
     <string name="owner_showing_count">%1$d / %2$d</string>
+
+    <string name="profile_updated_success">প্রোফাইল আপডেট হয়েছে</string>
+    <string name="profile_load_failed">প্রোফাইল লোড করা যায়নি। আবার চেষ্টা করুন।</string>
+
+    <string name="private_chat_title">Private Chat</string>
+    <string name="private_chat_empty_title">এখনও কোনো Private Chat নেই</string>
+    <string name="private_chat_empty_subtitle">আপনার Private Chat সাধারণ চ্যাট থেকে সম্পূর্ণ আলাদা থাকবে এবং ৫-সংখ্যার Private PIN দিয়ে সুরক্ষিত থাকবে।</string>
+    <string name="private_chat_add_btn">নতুন Private Chat</string>
+    <string name="private_chat_lock_now">লক করুন</string>
+    <string name="private_chat_locked_notice">নিরাপত্তার জন্য Private Chat লক করা হয়েছে।</string>
+
+    <string name="private_pin_setup_title">Private PIN তৈরি করুন</string>
+    <string name="private_pin_setup_subtitle">Private Chat-এর জন্য আলাদা ৫-সংখ্যার PIN তৈরি করুন। এটি আপনার Login PIN থেকে আলাদা রাখুন।</string>
+    <string name="private_pin_confirm_title">Private PIN নিশ্চিত করুন</string>
+    <string name="private_pin_confirm_subtitle">সেটআপ সম্পন্ন করতে আপনার ৫-সংখ্যার Private PIN আবার লিখুন।</string>
+    <string name="private_pin_unlock_title">Private Chat আনলক করুন</string>
+    <string name="private_pin_unlock_subtitle">আপনার ব্যক্তিগত চ্যাট দেখতে ৫-সংখ্যার Private PIN লিখুন।</string>
+    <string name="private_pin_forgot_btn">Private PIN ভুলে গেছেন?</string>
+    <string name="private_pin_reset_title">Private PIN রিসেট করুন</string>
+    <string name="private_pin_reset_subtitle">প্রথমে আপনার অ্যাকাউন্টের সাধারণ ৫-সংখ্যার Login PIN যাচাই করুন, তারপর নতুন ৫-সংখ্যার Private PIN সেট করুন।</string>
+    <string name="private_pin_enter_account_login_pin">অ্যাকাউন্ট Login PIN (৫ সংখ্যা)</string>
+    <string name="private_pin_new_label">নতুন Private PIN (৫ সংখ্যা)</string>
+    <string name="private_pin_confirm_label">নতুন Private PIN নিশ্চিত করুন</string>
+    <string name="private_pin_reset_success">Private PIN রিসেট ও আনলক হয়েছে।</string>
+
+    <string name="settings_private_pin">Private Chat PIN</string>
+    <string name="settings_private_pin_desc">আপনার ৫-সংখ্যার Private Chat PIN পরিবর্তন বা রিসেট করুন</string>
+    <string name="settings_private_pin_not_set_desc">Private Chat-এর জন্য আলাদা ৫-সংখ্যার PIN সেট করুন</string>
+    <string name="private_pin_change_title">Private PIN পরিবর্তন করুন</string>
+    <string name="private_pin_old_label">বর্তমান Private PIN (৫ সংখ্যা)</string>
+    <string name="private_pin_change_success">Private PIN সফলভাবে আপডেট হয়েছে।</string>
+    <string name="private_pin_setup_success">Private PIN সফলভাবে সেট হয়েছে।</string>
+    <string name="notif_private_message_body">নতুন সুরক্ষিত মেসেজ এসেছে</string>
+
+    <string name="err_wrong_private_pin">Private PIN সঠিক নয়। আবার চেষ্টা করুন।</string>
+    <string name="err_private_pin_locked">অনেকবার ভুল Private PIN দেওয়া হয়েছে। %1$d সেকেন্ড পর আবার চেষ্টা করুন।</string>
+    <string name="err_private_pin_not_set">এখনও কোনো Private PIN তৈরি করা হয়নি।</string>
+    <string name="err_private_pin_already_set">Private PIN ইতিমধ্যেই সেট করা আছে।</string>
+    <string name="err_private_chat_locked">Private Chat লক আছে। চালিয়ে যেতে Private PIN দিন।</string>
+
+    <string name="sim_verify_card_title">SIM কার্ড যাচাইকরণ</string>
+    <string name="sim_verify_required_desc">নতুন অ্যাকাউন্ট তৈরি করতে এই ডিভাইসে সক্রিয় SIM কার্ড যাচাই করা আবশ্যক। তবে আগের অ্যাকাউন্টে SIM ছাড়াই লগইন করা যাবে।</string>
+    <string name="sim_verify_grant_btn">SIM যাচাই করুন</string>
+    <string name="sim_verify_detected_number">যাচাইকৃত SIM: %1$s</string>
+    <string name="sim_verify_carrier_only">সক্রিয় SIM পাওয়া গেছে (%1$s)। এই SIM-এর %2$s ফোন নম্বরটি লিখুন।</string>
+    <string name="sim_verify_use_number">%1$s ব্যবহার করুন</string>
+    <string name="sim_verify_no_sim">কোনো সক্রিয় SIM কার্ড পাওয়া যায়নি। নতুন অ্যাকাউন্ট তৈরি করতে ফোনে SIM কার্ড থাকতে হবে।</string>
+    <string name="sim_verify_no_otp_note">ডিভাইসের SIM কার্ড দিয়ে যাচাই করা হয় (কোনো OTP লাগে না)। আগের অ্যাকাউন্টে SIM ছাড়াই লগইন করা যাবে।</string>
+
+    <string name="err_sim_required">সক্রিয় SIM কার্ড প্রয়োজন। SIM ছাড়া নতুন অ্যাকাউন্ট তৈরি করা যাবে না।</string>
+    <string name="err_sim_permission_required">নতুন অ্যাকাউন্ট খোলার আগে SIM-যুক্ত নম্বর যাচাই করতে অনুমতি দিন।</string>
+    <string name="err_sim_number_mismatch">আপনার দেওয়া ফোন নম্বরটি ফোনে থাকা সক্রিয় SIM কার্ডের সাথে মিলছে না।</string>
+    <string name="err_self_search">এটি আপনার নিজের ফোন নম্বর। চ্যাট করতে অন্য নিবন্ধিত ব্যবহারকারীর নম্বর লিখুন।</string>
+    <string name="add_chat_search_wait">%1$d সেকেন্ড অপেক্ষা</string>
+    <string name="add_chat_profile_verified">MY CHATTING PRO অ্যাকাউন্ট</string>
+
+    <string name="err_timeout">অনুরোধের সময় শেষ হয়েছে। সার্ভার থেকে উত্তর আসতে দেরি হচ্ছে।</string>
+    <string name="err_storage_permission_denied">স্টোরেজ অনুমতি অথবা Cloudflare/Supabase অ্যাক্সেস প্রত্যাখ্যাত হয়েছে।</string>
+    <string name="err_storage_bucket_missing">Supabase প্রাইভেট মিডিয়া বাকেট সেট করা নেই।</string>
+    <string name="err_unsupported_media_type">এই মিডিয়া বা ফাইল ফরম্যাটটি সমর্থিত নয়।</string>
+    <string name="err_empty_media_file">নির্বাচিত বা রেকর্ড করা ফাইলটি খালি বা পড়া যাচ্ছে না।</string>
+    <string name="err_invalid_recovery_code">রিকভারি কোডটি সঠিক নয়। যাচাই করে আবার দিন।</string>
+    <string name="err_recovery_code_not_set">এই অ্যাকাউন্টের জন্য এখনও কোনো রিকভারি কোড তৈরি করা হয়নি।</string>
+    <string name="err_invalid_delete_confirmation">অ্যাকাউন্ট মুছতে বড় হাতের অক্ষরে DELETE লিখুন।</string>
+    <string name="err_duplicate_report">আপনি ইতিমধ্যেই সম্প্রতি এই বিষয়ে রিপোর্ট করেছেন।</string>
+    <string name="err_session_revoked">অন্য ডিভাইস থেকে লগআউট করা হয়েছে বা সেশনের মেয়াদ শেষ হয়েছে।</string>
+    <string name="err_user_blocked">ব্যবহারকারী ব্লক থাকায় এই কাজটি করা যাচ্ছে না।</string>
+    <string name="err_no_browser">এই লিংকটি খোলার জন্য কোনো ব্রাউজার পাওয়া যায়নি।</string>
+
+    <string name="notif_channel_security">নিরাপত্তা সতর্কতা</string>
+    <string name="notif_channel_account">অ্যাকাউন্ট ও ডিভাইস</string>
+    <string name="settings_notifications_title">নোটিফিকেশন সেটিংস</string>
+    <string name="settings_notifications_desc">চ্যাট, প্রাইভেট চ্যাট, কল এবং UnifiedPush-এর ১৪টি কন্ট্রোল</string>
+    <string name="notif_section_general">সাধারণ নোটিফিকেশন</string>
+    <string name="notif_section_sound_alerts">সাউন্ড ও সতর্কতা</string>
+    <string name="notif_section_calls_security">কল ও নিরাপত্তা</string>
+    <string name="notif_section_delivery">ব্যাকগ্রাউন্ড সিঙ্ক ও UnifiedPush</string>
+    <string name="notif_master_label">সকল নোটিফিকেশন</string>
+    <string name="notif_master_desc">সব লোকাল নোটিফিকেশনের মূল সুইচ</string>
+    <string name="notif_messages_label">মেসেজ নোটিফিকেশন</string>
+    <string name="notif_messages_desc">সাধারণ চ্যাটের নতুন মেসেজ সতর্কতা দেখান</string>
+    <string name="notif_private_messages_label">Private Chat নোটিফিকেশন</string>
+    <string name="notif_private_messages_desc">লক থাকলে মেসেজের লেখা গোপন থাকবে</string>
+    <string name="notif_preview_label">মেসেজ প্রিভিউ</string>
+    <string name="notif_preview_desc">নোটিফিকেশনে প্রেরকের লেখা দেখান</string>
+    <string name="notif_sound_label">মেসেজ সাউন্ড</string>
+    <string name="notif_vibration_label">মেসেজ ভাইব্রেশন</string>
+    <string name="notif_in_app_alerts_label">অ্যাপের ভেতরের সতর্কতা</string>
+    <string name="notif_calls_label">ইনকামিং কল সতর্কতা</string>
+    <string name="notif_missed_calls_label">মিসড কল সতর্কতা</string>
+    <string name="notif_call_vibrate_label">কল রিং ভাইব্রেশন</string>
+    <string name="notif_security_alerts_label">নিরাপত্তা সতর্কতা</string>
+    <string name="notif_account_alerts_label">অ্যাকাউন্ট ও ডিভাইস সতর্কতা</string>
+    <string name="notif_unified_push_label">UnifiedPush এন্ডপয়েন্ট</string>
+    <string name="notif_unified_push_desc">Firebase ছাড়াই ntfy / UnifiedPush দিয়ে ব্যাকগ্রাউন্ড ওয়েকআপ পান</string>
+    <string name="notif_unified_push_url_label">UnifiedPush এন্ডপয়েন্ট URL</string>
+    <string name="notif_sync_push_btn">সংরক্ষণ ও সিঙ্ক করুন</string>
+    <string name="notif_push_synced">নোটিফিকেশন এন্ডপয়েন্ট সিঙ্ক হয়েছে</string>
+    <string name="notif_open_system_settings">অ্যান্ড্রয়েড নোটিফিকেশন সেটিংস খুলুন</string>
+    <string name="notif_battery_optimization_btn">ব্যাকগ্রাউন্ড ব্যাটারি অনুমতি দিন</string>
+
+    <string name="call_history_title">কল হিস্টোরি</string>
+    <string name="call_filter_all">সব</string>
+    <string name="call_filter_incoming">ইনকামিং</string>
+    <string name="call_filter_outgoing">আউটগোয়িং</string>
+    <string name="call_filter_missed">মিসড</string>
+    <string name="call_filter_rejected">বাতিল</string>
+    <string name="call_history_empty_title">এখনও কোনো কল নেই</string>
+    <string name="call_history_empty_subtitle">আপনার অডিও এবং ভিডিও কলের ইতিহাস এখানে দেখা যাবে।</string>
+
+    <string name="chat_menu_view_profile">প্রোফাইল দেখুন</string>
+    <string name="chat_menu_mute">নোটিফিকেশন মিউট</string>
+    <string name="chat_menu_unmute">মিউট বন্ধ করুন</string>
+    <string name="chat_menu_mute_title">চ্যাট মিউট করুন</string>
+    <string name="mute_1_hour">১ ঘণ্টা</string>
+    <string name="mute_8_hours">৮ ঘণ্টা</string>
+    <string name="mute_1_week">১ সপ্তাহ</string>
+    <string name="mute_always">সর্বদা</string>
+    <string name="chat_menu_custom_sound">কাস্টম নোটিফিকেশন সাউন্ড</string>
+    <string name="custom_sound_current">বর্তমান টোন: %1$s</string>
+    <string name="custom_sound_default">ডিফল্ট সিস্টেম টোন</string>
+    <string name="custom_sound_choose">রিংটোন নির্বাচন করুন</string>
+    <string name="custom_sound_reset">ডিফল্টে রিসেট</string>
+    <string name="chat_menu_pin">চ্যাট পিন করুন</string>
+    <string name="chat_menu_unpin">আনপিন করুন</string>
+    <string name="chat_menu_mark_unread">অপঠিত চিহ্নিত করুন</string>
+    <string name="chat_menu_mark_read">পঠিত চিহ্নিত করুন</string>
+    <string name="chat_menu_archive">আর্কাইভ করুন</string>
+    <string name="chat_menu_unarchive">আর্কাইভ সরান</string>
+    <string name="archived_chats_header">আর্কাইভ করা চ্যাট (%1$d)</string>
+    <string name="chat_menu_clear_chat">চ্যাট ক্লিয়ার করুন</string>
+    <string name="chat_clear_confirm_message">এই কথোপকথনের সব মেসেজ আপনার ভিউ থেকে পরিষ্কার করবেন?</string>
+    <string name="chat_menu_delete_chat">চ্যাট ডিলিট করুন</string>
+    <string name="chat_menu_delete_private_chat">প্রাইভেট চ্যাট ডিলিট করুন</string>
+    <string name="chat_delete_confirm_message">আপনার তালিকা থেকে এই কথোপকথনটি মুছে ফেলবেন?</string>
+    <string name="report_reason_label">কারণ</string>
+    <string name="report_details_hint">বিস্তারিত তথ্য (ঐচ্ছিক)</string>
+    <string name="report_submit">রিপোর্ট জমা দিন</string>
+
+    <string name="profile_title">আমার প্রোফাইল</string>
+    <string name="action_edit_profile">প্রোফাইল এডিট</string>
+    <string name="action_change_photo">ছবি পরিবর্তন</string>
+    <string name="action_save_image">ছবি সেভ করুন</string>
+    <string name="media_saved_to_gallery">ছবি গ্যালারিতে সেভ হয়েছে</string>
+    <string name="media_save_failed">ছবি সেভ করা যায়নি</string>
+
+    <string name="settings_section_security">অ্যাকাউন্ট নিরাপত্তা</string>
+    <string name="settings_section_app_info">অ্যাপ তথ্য ও আপডেট</string>
+    <string name="change_login_pin_title">লগইন পিন পরিবর্তন</string>
+    <string name="change_login_pin_subtitle">আপনার ৫-সংখ্যার অ্যাকাউন্ট লগইন পিন পরিবর্তন করুন।</string>
+    <string name="change_login_pin_current">বর্তমান লগইন পিন</string>
+    <string name="change_login_pin_new">নতুন ৫-সংখ্যার লগইন পিন</string>
+    <string name="change_login_pin_confirm">নতুন লগইন পিন নিশ্চিত করুন</string>
+    <string name="login_pin_changed_success">লগইন পিন সফলভাবে পরিবর্তিত হয়েছে।</string>
+
+    <string name="recovery_code_title">রিকভারি কোড</string>
+    <string name="recovery_code_status_active">রিকভারি কোড সক্রিয়</string>
+    <string name="recovery_code_status_missing">রিকভারি কোড তৈরি হয়নি</string>
+    <string name="recovery_code_warning_desc">এই রিকভারি কোডটি নিরাপদে সংরক্ষণ করুন। লগইন পিন ভুলে গেলে OTP ছাড়াই এটি দিয়ে পিন রিসেট করতে পারবেন।</string>
+    <string name="recovery_code_your_code">আপনার রিকভারি কোড</string>
+    <string name="recovery_code_copied">রিকভারি কোড কপি হয়েছে</string>
+    <string name="recovery_code_copy_btn">কোড কপি করুন</string>
+    <string name="recovery_code_enter_pin_label">বর্তমান ৫-সংখ্যার লগইন পিন লিখুন</string>
+    <string name="recovery_code_generate_btn">রিকভারি কোড তৈরি করুন</string>
+    <string name="recovery_code_regenerate_btn">নতুন রিকভারি কোড তৈরি করুন</string>
+    <string name="recovery_code_generated_notice">নতুন রিকভারি কোড তৈরি হয়েছে। নিরাপদে সংরক্ষণ করুন!</string>
+
+    <string name="forgot_login_pin_title">লগইন পিন ভুলে গেছেন / রিসেট</string>
+    <string name="forgot_login_pin_subtitle">আপনার ফোন নম্বর ও সংরক্ষিত রিকভারি কোড দিয়ে ৫-সংখ্যার লগইন পিন রিসেট করুন (OTP লাগবে না)।</string>
+    <string name="recovery_code_input_label">রিকভারি কোড</string>
+    <string name="forgot_login_pin_submit">লগইন পিন রিসেট করুন</string>
+    <string name="login_pin_reset_success">লগইন পিন সফলভাবে রিসেট হয়েছে। নতুন পিন দিয়ে লগইন করুন।</string>
+    <string name="login_forgot_pin_link">লগইন পিন ভুলে গেছেন? রিকভারি কোড দিয়ে রিসেট করুন</string>
+
+    <string name="logout_all_devices_title">সব ডিভাইস থেকে লগআউট</string>
+    <string name="logout_all_devices_desc">অন্য সব ডিভাইস অথবা এই ফোনসহ সব সক্রিয় সেশন বন্ধ করুন।</string>
+    <string name="logout_other_devices_btn">শুধু অন্য ডিভাইস</string>
+    <string name="logout_all_devices_including_this">এই ডিভাইসসহ সব</string>
+    <string name="logout_other_devices_success">অন্য সব ডিভাইস লগআউট হয়েছে।</string>
+    <string name="logout_all_devices_success">সব ডিভাইস লগআউট হয়েছে।</string>
+    <string name="delete_account_confirm_word_hint">নিশ্চিত করতে DELETE লিখুন</string>
+
+    <string name="check_for_updates">আপডেট চেক করুন</string>
+    <string name="checking_updates">Google Play-তে আপডেট খোঁজা হচ্ছে…</string>
+    <string name="update_available_title">নতুন আপডেট পাওয়া গেছে</string>
+    <string name="update_available_message">Google Play-তে নতুন ভার্সন (%1$s) পাওয়া যাচ্ছে।</string>
+    <string name="update_up_to_date">আপনি সর্বশেষ ভার্সন (%1$s) ব্যবহার করছেন।</string>
+    <string name="update_check_failed">এই মুহূর্তে আপডেট চেক করা যায়নি।</string>
+    <string name="update_download_btn">Play Store-এ আপডেট করুন</string>
+    <string name="rate_this_app">অ্যাপে রেটিং দিন</string>
+    <string name="share_app">অ্যাপ শেয়ার করুন</string>
+    <string name="share_app_message">MY CHATTING PRO-তে নিরাপদে চ্যাট ও স্পষ্ট কল করুন! ডাউনলোড করুন: %1$s</string>
 </resources>

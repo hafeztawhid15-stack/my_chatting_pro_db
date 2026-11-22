@@ -5,6 +5,7 @@ import { recordAuditLog } from '../../security/audit';
 import { sanitizeAboutText, sanitizeDisplayName } from '../../security/validation';
 import { resolveStorageBucket, StorageClient } from '../../storage/supabaseStorage';
 import { verifyPin } from '../auth/pin.crypto';
+import { dispatchSecurityAlert } from '../notifications/pushDispatcher';
 
 export class ProfilesService {
   constructor(
@@ -63,7 +64,20 @@ export class ProfilesService {
    * 2. Deletes all private Supabase Storage objects owned by user.
    * 3. Atomically revokes sessions and deletes user, profile, devices, blocks, and media metadata in Supabase PostgreSQL.
    */
-  async deleteAccountPermanently(userId: string, pin: string, clientIp?: string | null) {
+  async deleteAccountPermanently(
+    userId: string,
+    pin: string,
+    confirmText: string,
+    clientIp?: string | null
+  ) {
+    if (confirmText.trim() !== 'DELETE') {
+      throw new ApiError(
+        400,
+        'invalid_delete_confirmation',
+        'Please type DELETE in uppercase to confirm permanent account deletion.'
+      );
+    }
+
     const user = await this.db.findActiveUserPinHash(userId);
     if (!user) {
       throw new ApiError(404, 'account_not_found', 'Account not found.');
@@ -72,6 +86,8 @@ export class ProfilesService {
     if (!pinValid) {
       throw new ApiError(401, 'wrong_pin', 'Incorrect PIN. Account deletion aborted.');
     }
+
+    await dispatchSecurityAlert(this.env, this.db, userId, 'account_deleted');
 
     const userMedia = await this.db.listUserMediaPaths(userId);
     if (this.storage && userMedia.length > 0) {

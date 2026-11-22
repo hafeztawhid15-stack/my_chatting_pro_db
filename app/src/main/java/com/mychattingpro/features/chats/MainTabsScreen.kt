@@ -46,6 +46,12 @@ fun MainTabsScreen(
     onOpenBlockedUsers: () -> Unit,
     onOpenActiveDevices: () -> Unit,
     onOpenOwnerMonitor: () -> Unit,
+    onOpenPrivateChat: () -> Unit = {},
+    onOpenCallHistory: () -> Unit = {},
+    onOpenNotificationSettings: () -> Unit = {},
+    onOpenChangeLoginPin: () -> Unit = {},
+    onOpenRecoveryCode: () -> Unit = {},
+    onOpenForgotLoginPin: () -> Unit = {},
     onLoggedOutOrDeleted: () -> Unit
 ) {
     // Strictly ONLY 3 options: 1. Chats, 2. Add Chat, 3. Settings
@@ -114,7 +120,10 @@ fun MainTabsScreen(
                         viewModel = chatsViewModel,
                         networkModule = networkModule,
                         onOpenProfile = onOpenProfile,
-                        onOpenConversation = onOpenConversation
+                        onOpenConversation = onOpenConversation,
+                        onOpenPrivateChat = onOpenPrivateChat,
+                        onOpenOwnerMonitor = onOpenOwnerMonitor,
+                        onOpenCallHistory = onOpenCallHistory
                     )
                     1 -> AddChatScreen(
                         viewModel = chatsViewModel,
@@ -126,9 +135,12 @@ fun MainTabsScreen(
                         networkModule = networkModule,
                         interstitialAdManager = interstitialAdManager,
                         onOpenProfile = onOpenProfile,
+                        onOpenNotificationSettings = onOpenNotificationSettings,
                         onOpenBlockedUsers = onOpenBlockedUsers,
                         onOpenActiveDevices = onOpenActiveDevices,
-                        onOpenOwnerMonitor = onOpenOwnerMonitor,
+                        onOpenChangeLoginPin = onOpenChangeLoginPin,
+                        onOpenRecoveryCode = onOpenRecoveryCode,
+                        onOpenForgotLoginPin = onOpenForgotLoginPin,
                         onLoggedOutOrDeleted = onLoggedOutOrDeleted
                     )
                 }

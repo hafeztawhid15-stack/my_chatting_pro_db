@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -21,6 +22,7 @@ import androidx.compose.material.icons.rounded.ArrowDropDown
 import androidx.compose.material.icons.rounded.ChatBubbleOutline
 import androidx.compose.material.icons.rounded.PersonSearch
 import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.VerifiedUser
 import androidx.compose.material3.Button
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -44,10 +46,12 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.R
+import com.mychattingpro.core.localization.DateTimeFormatters
 import com.mychattingpro.core.network.NetworkModule
 import com.mychattingpro.domain.models.Conversation
 import com.mychattingpro.features.auth.CountryPickerSheet
@@ -62,6 +66,7 @@ fun AddChatScreen(
 ) {
     val state by viewModel.addChatState.collectAsStateWithLifecycle()
     val recentIsos by viewModel.recentCountryIsos.collectAsStateWithLifecycle()
+    val language by viewModel.language.collectAsStateWithLifecycle()
     val context = LocalContext.current
     var showCountryPicker by remember { mutableStateOf(false) }
 
@@ -135,7 +140,13 @@ fun AddChatScreen(
                     label = { Text(stringResource(R.string.label_phone_number)) },
                     placeholder = { Text(stringResource(R.string.hint_phone_number)) },
                     prefix = { Text("${state.selectedCountry.callingCode} ", fontWeight = FontWeight.SemiBold) },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Phone,
+                        imeAction = ImeAction.Search
+                    ),
+                    keyboardActions = KeyboardActions(
+                        onSearch = { viewModel.searchUser() }
+                    ),
                     singleLine = true,
                     modifier = Modifier
                         .fillMaxWidth()
@@ -144,7 +155,7 @@ fun AddChatScreen(
 
                 Button(
                     onClick = viewModel::searchUser,
-                    enabled = !state.isSearching,
+                    enabled = !state.isSearching && state.rateLimitSecondsRemaining == 0,
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(52.dp)
@@ -157,6 +168,8 @@ fun AddChatScreen(
                             strokeWidth = 2.dp,
                             color = MaterialTheme.colorScheme.onPrimary
                         )
+                    } else if (state.rateLimitSecondsRemaining > 0) {
+                        Text(stringResource(R.string.add_chat_search_wait, state.rateLimitSecondsRemaining))
                     } else {
                         Icon(Icons.Rounded.Search, contentDescription = null)
                         Spacer(modifier = Modifier.width(8.dp))
@@ -204,7 +217,9 @@ fun AddChatScreen(
 
                 state.foundUser?.let { user ->
                     ElevatedCard(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("add_chat_found_profile_card"),
                         shape = RoundedCornerShape(20.dp),
                         elevation = CardDefaults.elevatedCardElevation(defaultElevation = 3.dp)
                     ) {
@@ -214,12 +229,30 @@ fun AddChatScreen(
                                 .padding(18.dp),
                             verticalArrangement = Arrangement.spacedBy(14.dp)
                         ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.VerifiedUser,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Text(
+                                    text = stringResource(R.string.add_chat_profile_verified),
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 UserAvatar(
                                     displayName = user.displayName,
                                     avatarMediaId = user.avatarMediaId,
                                     networkModule = networkModule,
-                                    size = 60.dp,
+                                    size = 64.dp,
                                     isOnline = user.isOnline
                                 )
                                 Spacer(modifier = Modifier.width(14.dp))
@@ -229,12 +262,34 @@ fun AddChatScreen(
                                         style = MaterialTheme.typography.titleMedium,
                                         fontWeight = FontWeight.Bold
                                     )
-                                    Spacer(modifier = Modifier.height(2.dp))
-                                    Text(
-                                        text = user.about,
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
+                                    val statusLabel = when {
+                                        user.isOnline -> stringResource(R.string.status_online)
+                                        user.lastSeenMs != null -> DateTimeFormatters.formatChatListTime(
+                                            context,
+                                            user.lastSeenMs,
+                                            language
+                                        )
+                                        else -> ""
+                                    }
+                                    if (statusLabel.isNotBlank()) {
+                                        Text(
+                                            text = statusLabel,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = if (user.isOnline) {
+                                                MaterialTheme.colorScheme.primary
+                                            } else {
+                                                MaterialTheme.colorScheme.onSurfaceVariant
+                                            }
+                                        )
+                                    }
+                                    if (user.about.isNotBlank()) {
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        Text(
+                                            text = user.about,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
                                 }
                             }
 

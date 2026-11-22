@@ -56,6 +56,8 @@ mediaRoutes.post(
     const service = new MediaService(c.env, c.get('db'), createSupabaseStorage(c.env));
     const uploaded = await service.uploadMedia({
       userId: auth.userId,
+      sessionId: auth.sessionId,
+      privateUnlockToken: c.req.header('X-Private-Unlock-Token'),
       category,
       conversationId,
       filename: file.name || 'upload.bin',
@@ -74,7 +76,10 @@ mediaRoutes.get('/:mediaId/signed-url', authMiddleware, async (c) => {
   const auth = c.get('auth');
   const mediaId = c.req.param('mediaId') ?? '';
   const service = new MediaService(c.env, c.get('db'), createSupabaseStorage(c.env));
-  const result = await service.issueSignedDownloadUrl(mediaId, auth.userId);
+  const result = await service.issueSignedDownloadUrl(mediaId, auth.userId, {
+    sessionId: auth.sessionId,
+    privateUnlockToken: c.req.header('X-Private-Unlock-Token'),
+  });
   return c.json(result);
 });
 
@@ -96,12 +101,17 @@ mediaRoutes.get('/:mediaId/content', async (c) => {
     if (!session || session.revoked_at_ms !== null || session.account_status !== 'active') {
       return c.json({ error: 'session_revoked', message: 'Session is no longer active.' }, 401);
     }
-    return service.streamMedia(mediaId, payload.sub, undefined, c.req.header('Range') ?? null);
+    return service.streamMedia(mediaId, payload.sub, undefined, c.req.header('Range') ?? null, {
+      sessionId: payload.sid,
+      privateUnlockToken: c.req.header('X-Private-Unlock-Token'),
+    });
   }
 
   if (!token || !uidQuery) {
     return c.json({ error: 'unauthorized', message: 'Missing authorization or signed token.' }, 401);
   }
 
-  return service.streamMedia(mediaId, uidQuery, token, c.req.header('Range') ?? null);
+  return service.streamMedia(mediaId, uidQuery, token, c.req.header('Range') ?? null, {
+    privateUnlockToken: c.req.header('X-Private-Unlock-Token'),
+  });
 });

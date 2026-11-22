@@ -1,6 +1,7 @@
 package com.mychattingpro.core.network
 
 import com.mychattingpro.core.security.EncryptedTokenStore
+import com.mychattingpro.core.security.PrivateChatLockManager
 import com.squareup.moshi.Moshi
 import kotlinx.coroutines.runBlocking
 import okhttp3.Authenticator
@@ -13,7 +14,8 @@ import okhttp3.Response
 import okhttp3.Route
 
 class AuthInterceptor(
-    private val tokenStore: EncryptedTokenStore
+    private val tokenStore: EncryptedTokenStore,
+    private val privateChatLockManager: PrivateChatLockManager? = null
 ) : Interceptor {
     override fun intercept(chain: Interceptor.Chain): Response {
         val original = chain.request()
@@ -26,14 +28,25 @@ class AuthInterceptor(
         }
 
         val token = runBlocking { tokenStore.getSession()?.accessToken }
-        val request = if (!token.isNullOrBlank()) {
-            original.newBuilder()
-                .header("Authorization", "Bearer $token")
-                .build()
-        } else {
-            original
+        val builder = original.newBuilder()
+        if (!token.isNullOrBlank()) {
+            builder.header("Authorization", "Bearer $token")
         }
-        return chain.proceed(request)
+        val needsPrivateUnlock = path.contains("/v1/private-chat/") || path.contains("/v1/media/")
+        if (needsPrivateUnlock && !path.contains("/v1/private-chat/pin/")) {
+            val unlockToken = privateChatLockManager?.currentTokenOrNull()
+            if (!unlockToken.isNullOrBlank()) {
+                builder.header("X-Private-Unlock-Token", unlockToken)
+            }
+        }
+        val response = chain.proceed(builder.build())
+        if (response.code == 403 && path.contains("/v1/private-chat/")) {
+            val peek = runCatching { response.peekBody(512).string() }.getOrNull()
+            if (peek?.contains("private_chat_locked") == true) {
+                privateChatLockManager?.lock()
+            }
+        }
+        return response
     }
 }
 

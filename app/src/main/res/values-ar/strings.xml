@@ -52,7 +52,8 @@
     <string name="nav_settings">الإعدادات</string>
 
     <string name="menu_clear_cache">مسح ذاكرة التخزين المؤقت</string>
-    <string name="menu_website">الموقع الإلكتروني</string>
+    <string name="menu_website">Details</string>
+    <string name="menu_private_chat">Private Chat</string>
     <string name="clear_cache_confirm_title">مسح التخزين المؤقت</string>
     <string name="clear_cache_confirm_message">Temporary cache পরিষ্কার করবেন? لن يتم حذف الرسائل أو الصور أو الفيديو أو الملفات أو حسابك.</string>
     <string name="clear_cache_success">Temporary cache cleared.</string>
@@ -163,7 +164,7 @@
     <string name="err_invalid_pin">يجب أن يتكون رمز PIN من 5 أرقام بالضبط.</string>
     <string name="err_pin_mismatch">رمزا PIN غير متطابقين.</string>
     <string name="err_wrong_pin">رمز PIN غير صحيح. يرجى المحاولة مرة أخرى.</string>
-    <string name="err_account_not_found">لا يوجد حساب لهذا الرقم.</string>
+    <string name="err_account_not_found">لا يوجد حساب مسجل بهذا الرقم. يرجى إنشاء حساب جديد أولاً.</string>
     <string name="err_duplicate_account">يوجد حساب مسجل بهذا الرقم بالفعل. لا يمكنك إنشاء حساب ثانٍ بنفس الرقم.</string>
     <string name="err_rate_limit">محاولات كثيرة جداً. يرجى الانتظار %1$d ثانية.</string>
     <string name="err_network">لا يوجد اتصال بالإنترنت.</string>
@@ -195,4 +196,196 @@
     <string name="owner_search_hint">ابحث بالاسم أو الدولة أو الرقم</string>
     <string name="owner_load_more">تحميل المزيد</string>
     <string name="owner_showing_count">%1$d من %2$d</string>
+
+    <string name="profile_updated_success">تم تحديث الملف الشخصي</string>
+    <string name="profile_load_failed">تعذر تحميل ملفك الشخصي. يرجى إعادة المحاولة.</string>
+
+    <string name="private_chat_title">Private Chat</string>
+    <string name="private_chat_empty_title">لا توجد محادثات خاصة بعد</string>
+    <string name="private_chat_empty_subtitle">تبقى محادثات Private Chat منفصلة عن المحادثات العادية ومحمية برمز PIN الخاص المكون من 5 أرقام.</string>
+    <string name="private_chat_add_btn">محادثة خاصة جديدة</string>
+    <string name="private_chat_lock_now">قفل</string>
+    <string name="private_chat_locked_notice">تم قفل Private Chat لحمايتك.</string>
+
+    <string name="private_pin_setup_title">إنشاء رمز Private PIN</string>
+    <string name="private_pin_setup_subtitle">اختر رمز PIN منفصل من 5 أرقام لقسم Private Chat ولا تكرر رمز تسجيل الدخول.</string>
+    <string name="private_pin_confirm_title">تأكيد رمز Private PIN</string>
+    <string name="private_pin_confirm_subtitle">أعد إدخال رمز Private PIN المكون من 5 أرقام لإتمام الإعداد.</string>
+    <string name="private_pin_unlock_title">فتح Private Chat</string>
+    <string name="private_pin_unlock_subtitle">أدخل رمز Private PIN المكون من 5 أرقام للوصول إلى محادثاتك الخاصة.</string>
+    <string name="private_pin_forgot_btn">نسيت رمز Private PIN؟</string>
+    <string name="private_pin_reset_title">إعادة تعيين Private PIN</string>
+    <string name="private_pin_reset_subtitle">تحقق من حسابك برمز PIN الخاص بتسجيل الدخول أولاً، ثم أنشئ رمز Private PIN جديد من 5 أرقام.</string>
+    <string name="private_pin_enter_account_login_pin">رمز PIN لتسجيل دخول الحساب (5 أرقام)</string>
+    <string name="private_pin_new_label">رمز Private PIN الجديد (5 أرقام)</string>
+    <string name="private_pin_confirm_label">تأكيد رمز Private PIN الجديد</string>
+    <string name="private_pin_reset_success">تمت إعادة تعيين رمز Private PIN وفتحه.</string>
+
+    <string name="settings_private_pin">رمز PIN للمحادثة الخاصة</string>
+    <string name="settings_private_pin_desc">تغيير أو إعادة تعيين رمز Private PIN المكون من 5 أرقام</string>
+    <string name="settings_private_pin_not_set_desc">إعداد رمز PIN منفصل من 5 أرقام لقسم Private Chat</string>
+    <string name="private_pin_change_title">تغيير رمز Private PIN</string>
+    <string name="private_pin_old_label">رمز Private PIN الحالي (5 أرقام)</string>
+    <string name="private_pin_change_success">تم تحديث رمز Private PIN بنجاح.</string>
+    <string name="private_pin_setup_success">تم إنشاء رمز Private PIN بنجاح.</string>
+    <string name="notif_private_message_body">لديك رسالة محمية جديدة</string>
+
+    <string name="err_wrong_private_pin">رمز Private PIN غير صحيح. حاول مرة أخرى.</string>
+    <string name="err_private_pin_locked">محاولات خاطئة كثيرة. يرجى الانتظار %1$d ثانية.</string>
+    <string name="err_private_pin_not_set">لم يتم إنشاء رمز Private PIN بعد.</string>
+    <string name="err_private_pin_already_set">رمز Private PIN مضبوط بالفعل.</string>
+    <string name="err_private_chat_locked">قسم Private Chat مقفل. أدخل رمز Private PIN للمتابعة.</string>
+
+    <string name="sim_verify_card_title">التحقق من بطاقة SIM</string>
+    <string name="sim_verify_required_desc">يلزم وجود بطاقة SIM نشطة لإنشاء حساب جديد. يمكن للحسابات الحالية تسجيل الدخول بدون بطاقة SIM.</string>
+    <string name="sim_verify_grant_btn">التحقق من SIM</string>
+    <string name="sim_verify_detected_number">بطاقة SIM مؤكدة: %1$s</string>
+    <string name="sim_verify_carrier_only">تم اكتشاف شريحة نشطة (%1$s). أدخل رقم الهاتف المطابق (%2$s).</string>
+    <string name="sim_verify_use_number">استخدام %1$s</string>
+    <string name="sim_verify_no_sim">لم يتم العثور على شريحة SIM نشطة. أدخل شريحة لإنشاء حساب جديد.</string>
+    <string name="sim_verify_no_otp_note">يتم التحقق عبر بطاقة SIM بالجهاز دون رمز OTP. يمكن للحسابات الحالية تسجيل الدخول بدون SIM.</string>
+
+    <string name="err_sim_required">تتطلب عملية التسجيل شريحة SIM نشطة. لا يمكن إنشاء حساب جديد بدون شريحة.</string>
+    <string name="err_sim_permission_required">يلزم منح إذن التحقق من بطاقة SIM لتأكيد رقمك قبل التسجيل.</string>
+    <string name="err_sim_number_mismatch">رقم الهاتف الذي أدخلته لا يتطابق مع شريحة SIM النشطة في جهازك.</string>
+    <string name="err_self_search">هذا رقم هاتفك الشخصي. ابحث عن رقم مستخدم مسجل آخر لبدء الدردشة.</string>
+    <string name="add_chat_search_wait">انتظر %1$d ث</string>
+    <string name="add_chat_profile_verified">حساب MY CHATTING PRO</string>
+
+    <string name="err_timeout">انتهت مهلة الطلب. استغرق الخادم وقتاً طويلاً للاستجابة.</string>
+    <string name="err_storage_permission_denied">تم رفض إذن التخزين أو الوصول إلى Cloudflare/Supabase.</string>
+    <string name="err_storage_bucket_missing">مساحة تخزين الوسائط الخاصة في Supabase غير مهيأة.</string>
+    <string name="err_unsupported_media_type">تنسيق الوسائط أو الملف غير مدعوم.</string>
+    <string name="err_empty_media_file">الملف المحدد أو المسجل فارغ أو لا يمكن قراءته.</string>
+    <string name="err_invalid_recovery_code">رمز الاسترداد غير صحيح. يرجى التحقق والمحاولة مرة أخرى.</string>
+    <string name="err_recovery_code_not_set">لم يتم إنشاء رمز استرداد لهذا الحساب بعد.</string>
+    <string name="err_invalid_delete_confirmation">اكتب DELETE بأحرف كبيرة لتأكيد حذف الحساب.</string>
+    <string name="err_duplicate_report">لقد أرسلت بلاغاً حديثاً لهذا العنصر بالفعل.</string>
+    <string name="err_session_revoked">تم تسجيل خروج جلستك من جهاز آخر أو انتهت صلاحيتها.</string>
+    <string name="err_user_blocked">تعذر الإجراء بسبب وجود حظر بين المستخدمين.</string>
+    <string name="err_no_browser">لم يتم العثور على متصفح ويب لفتح هذا الرابط.</string>
+
+    <string name="notif_channel_security">تنبيهات الأمان</string>
+    <string name="notif_channel_account">الحساب والأجهزة</string>
+    <string name="settings_notifications_title">إعدادات الإشعارات</string>
+    <string name="settings_notifications_desc">14 خياراً للمحادثات والمكالمات وUnifiedPush</string>
+    <string name="notif_section_general">الإشعارات العامة</string>
+    <string name="notif_section_sound_alerts">الصوت والتنبيهات</string>
+    <string name="notif_section_calls_security">المكالمات والأمان</string>
+    <string name="notif_section_delivery">المزامنة بالخلفية وUnifiedPush</string>
+    <string name="notif_master_label">جميع الإشعارات</string>
+    <string name="notif_master_desc">التحكم الرئيسي لجميع التنبيهات المحلية</string>
+    <string name="notif_messages_label">إشعارات الرسائل</string>
+    <string name="notif_messages_desc">عرض إشعارات المحادثات العادية</string>
+    <string name="notif_private_messages_label">إشعارات Private Chat</string>
+    <string name="notif_private_messages_desc">إخفاء معاينة المحتوى عند القفل</string>
+    <string name="notif_preview_label">معاينة الرسالة</string>
+    <string name="notif_preview_desc">إظهار نص المرسل في شريط الإشعارات</string>
+    <string name="notif_sound_label">صوت الرسائل</string>
+    <string name="notif_vibration_label">اهتزاز الرسائل</string>
+    <string name="notif_in_app_alerts_label">تنبيهات داخل التطبيق</string>
+    <string name="notif_calls_label">تنبيهات المكالمات الواردة</string>
+    <string name="notif_missed_calls_label">تنبيهات المكالمات الفائتة</string>
+    <string name="notif_call_vibrate_label">اهتزاز رنين المكالمة</string>
+    <string name="notif_security_alerts_label">تنبيهات الأمان</string>
+    <string name="notif_account_alerts_label">تنبيهات الحساب والأجهزة</string>
+    <string name="notif_unified_push_label">نقطة UnifiedPush</string>
+    <string name="notif_unified_push_desc">استلام التنبيهات عبر ntfy / UnifiedPush بدون Firebase</string>
+    <string name="notif_unified_push_url_label">رابط نقطة UnifiedPush</string>
+    <string name="notif_sync_push_btn">حفظ ومزامنة إعدادات الإشعارات</string>
+    <string name="notif_push_synced">تم حفظ ومزامنة نقطة الإشعارات</string>
+    <string name="notif_open_system_settings">فتح إعدادات إشعارات Android</string>
+    <string name="notif_battery_optimization_btn">السماح باستخدام البطارية بالخلفية</string>
+
+    <string name="call_history_title">سجل المكالمات</string>
+    <string name="call_filter_all">الكل</string>
+    <string name="call_filter_incoming">واردة</string>
+    <string name="call_filter_outgoing">صادرة</string>
+    <string name="call_filter_missed">فائتة</string>
+    <string name="call_filter_rejected">مرفوضة</string>
+    <string name="call_history_empty_title">لا توجد مكالمات بعد</string>
+    <string name="call_history_empty_subtitle">سيظهر هنا سجل مكالمات الصوت والفيديو الخاصة بك.</string>
+
+    <string name="chat_menu_view_profile">عرض الملف الشخصي</string>
+    <string name="chat_menu_mute">كتم الإشعارات</string>
+    <string name="chat_menu_unmute">إلغاء كتم الإشعارات</string>
+    <string name="chat_menu_mute_title">كتم المحادثة</string>
+    <string name="mute_1_hour">ساعة واحدة</string>
+    <string name="mute_8_hours">8 ساعات</string>
+    <string name="mute_1_week">أسبوع واحد</string>
+    <string name="mute_always">دائماً</string>
+    <string name="chat_menu_custom_sound">نغمة إشعار مخصصة</string>
+    <string name="custom_sound_current">النغمة الحالية: %1$s</string>
+    <string name="custom_sound_default">نغمة النظام الافتراضية</string>
+    <string name="custom_sound_choose">اختيار نغمة من النظام</string>
+    <string name="custom_sound_reset">استعادة الافتراضي</string>
+    <string name="chat_menu_pin">تثبيت المحادثة</string>
+    <string name="chat_menu_unpin">إلغاء التثبيت</string>
+    <string name="chat_menu_mark_unread">تحديد كغير مقروء</string>
+    <string name="chat_menu_mark_read">تحديد كمقروء</string>
+    <string name="chat_menu_archive">أرشفة المحادثة</string>
+    <string name="chat_menu_unarchive">إلغاء الأرشفة</string>
+    <string name="archived_chats_header">المحادثات المؤرشفة (%1$d)</string>
+    <string name="chat_menu_clear_chat">مسح المحادثة</string>
+    <string name="chat_clear_confirm_message">مسح جميع الرسائل في هذه المحادثة من عرضك المحلي؟</string>
+    <string name="chat_menu_delete_chat">حذف المحادثة</string>
+    <string name="chat_menu_delete_private_chat">حذف المحادثة الخاصة</string>
+    <string name="chat_delete_confirm_message">حذف هذه المحادثة من قائمتك؟</string>
+    <string name="report_reason_label">السبب</string>
+    <string name="report_details_hint">تفاصيل إضافية (اختياري)</string>
+    <string name="report_submit">إرسال البلاغ</string>
+
+    <string name="profile_title">ملفي الشخصي</string>
+    <string name="action_edit_profile">تعديل الملف الشخصي</string>
+    <string name="action_change_photo">تغيير الصورة</string>
+    <string name="action_save_image">حفظ الصورة</string>
+    <string name="media_saved_to_gallery">تم حفظ الصورة في المعرض</string>
+    <string name="media_save_failed">تعذر حفظ الصورة</string>
+
+    <string name="settings_section_security">أمان الحساب</string>
+    <string name="settings_section_app_info">معلومات التطبيق والتحديثات</string>
+    <string name="change_login_pin_title">تغيير رمز PIN للدخول</string>
+    <string name="change_login_pin_subtitle">تحديث رمز PIN المكون من 5 أرقام لتسجيل الدخول.</string>
+    <string name="change_login_pin_current">رمز PIN الحالي</string>
+    <string name="change_login_pin_new">رمز PIN الجديد (5 أرقام)</string>
+    <string name="change_login_pin_confirm">تأكيد رمز PIN الجديد</string>
+    <string name="login_pin_changed_success">تم تحديث رمز PIN بنجاح.</string>
+
+    <string name="recovery_code_title">رمز الاسترداد</string>
+    <string name="recovery_code_status_active">رمز الاسترداد مفعل</string>
+    <string name="recovery_code_status_missing">لم يتم إنشاء رمز استرداد</string>
+    <string name="recovery_code_warning_desc">احفظ رمز الاسترداد بأمان. يمكنك استخدامه لإعادة تعيين رمز PIN بدون رمز OTP إذا نسيته.</string>
+    <string name="recovery_code_your_code">رمز الاسترداد الخاص بك</string>
+    <string name="recovery_code_copied">تم نسخ رمز الاسترداد</string>
+    <string name="recovery_code_copy_btn">نسخ الرمز</string>
+    <string name="recovery_code_enter_pin_label">أدخل رمز PIN الحالي (5 أرقام)</string>
+    <string name="recovery_code_generate_btn">إنشاء رمز استرداد</string>
+    <string name="recovery_code_regenerate_btn">إعادة إنشاء رمز استرداد</string>
+    <string name="recovery_code_generated_notice">تم إنشاء رمز استرداد جديد. احفظه بأمان!</string>
+
+    <string name="forgot_login_pin_title">نسيت / إعادة تعيين رمز PIN</string>
+    <string name="forgot_login_pin_subtitle">أعد تعيين رمز PIN المكون من 5 أرقام باستخدام رقم هاتفك ورمز الاسترداد المحفوظ (بدون OTP).</string>
+    <string name="recovery_code_input_label">رمز الاسترداد</string>
+    <string name="forgot_login_pin_submit">إعادة تعيين رمز PIN</string>
+    <string name="login_pin_reset_success">تمت إعادة تعيين رمز PIN بنجاح. يمكنك تسجيل الدخول بالرمز الجديد.</string>
+    <string name="login_forgot_pin_link">نسيت رمز PIN؟ أعد التعيين برمز الاسترداد</string>
+
+    <string name="logout_all_devices_title">تسجيل الخروج من جميع الأجهزة</string>
+    <string name="logout_all_devices_desc">تسجيل خروج الأجهزة الأخرى أو إنهاء جميع الجلسات بما فيها هذا الجهاز.</string>
+    <string name="logout_other_devices_btn">الأجهزة الأخرى فقط</string>
+    <string name="logout_all_devices_including_this">الكل بما فيها هذا الجهاز</string>
+    <string name="logout_other_devices_success">تم تسجيل الخروج من جميع الأجهزة الأخرى.</string>
+    <string name="logout_all_devices_success">تم تسجيل الخروج من جميع الأجهزة.</string>
+    <string name="delete_account_confirm_word_hint">اكتب DELETE للتأكيد</string>
+
+    <string name="check_for_updates">التحقق من التحديثات</string>
+    <string name="checking_updates">جارٍ التحقق من Google Play…</string>
+    <string name="update_available_title">تحديث متوفر</string>
+    <string name="update_available_message">يتوفر إصدار أحدث (%1$s) على Google Play.</string>
+    <string name="update_up_to_date">لديك أحدث إصدار (%1$s).</string>
+    <string name="update_check_failed">تعذر التحقق من التحديثات الآن.</string>
+    <string name="update_download_btn">التحديث من Play Store</string>
+    <string name="rate_this_app">تقييم التطبيق</string>
+    <string name="share_app">مشاركة التطبيق</string>
+    <string name="share_app_message">استمتع بالمراسلة الخاصة والمكالمات الواضحة على MY CHATTING PRO! حمّله من هنا: %1$s</string>
 </resources>

@@ -1,6 +1,10 @@
 package com.mychattingpro
 
+import android.content.Intent
+import android.os.Build
 import android.os.Bundle
+import android.view.WindowManager
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -8,7 +12,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
@@ -18,6 +24,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
+import com.example.R
 import com.mychattingpro.core.datastore.AppPreferences
 import com.mychattingpro.core.localization.ProvideAppLocalization
 import com.mychattingpro.core.navigation.AppRoute
@@ -28,6 +35,8 @@ import com.mychattingpro.features.auth.CreateAccountScreen
 import com.mychattingpro.features.auth.LoginScreen
 import com.mychattingpro.features.auth.SplashScreen
 import com.mychattingpro.features.auth.WelcomeScreen
+import com.mychattingpro.features.calls.CallHistoryScreen
+import com.mychattingpro.features.calls.CallHistoryViewModel
 import com.mychattingpro.features.calls.CallScreen
 import com.mychattingpro.features.calls.CallViewModel
 import com.mychattingpro.features.chats.ChatsViewModel
@@ -35,22 +44,43 @@ import com.mychattingpro.features.chats.MainTabsScreen
 import com.mychattingpro.features.messages.ChatDetailScreen
 import com.mychattingpro.features.messages.ChatDetailViewModel
 import com.mychattingpro.features.messages.MediaViewerScreen
+import com.mychattingpro.features.notifications.AppNotificationManager
 import com.mychattingpro.features.notifications.RealtimeSyncService
+import com.mychattingpro.features.privatechat.PrivateChatViewModel
+import com.mychattingpro.features.privatechat.PrivateChatsScreen
+import com.mychattingpro.features.privatechat.PrivatePinScreen
 import com.mychattingpro.features.profile.ProfileScreen
 import com.mychattingpro.features.profile.ProfileViewModel
 import com.mychattingpro.features.settings.ActiveDevicesScreen
 import com.mychattingpro.features.settings.BlockedUsersScreen
+import com.mychattingpro.features.settings.ChangeLoginPinScreen
+import com.mychattingpro.features.settings.ForgotLoginPinScreen
+import com.mychattingpro.features.settings.NotificationSettingsScreen
 import com.mychattingpro.features.settings.OwnerActivityScreen
+import com.mychattingpro.features.settings.RecoveryCodeScreen
 import com.mychattingpro.features.settings.SettingsViewModel
 import java.util.UUID
 
+private data class PendingCallLaunch(
+    val callId: String,
+    val conversationId: String,
+    val peerUserId: String,
+    val peerName: String,
+    val peerAvatarMediaId: String?,
+    val isVideo: Boolean,
+    val autoAccept: Boolean
+)
+
 class MainActivity : ComponentActivity() {
+    private var pendingCallLaunch by mutableStateOf<PendingCallLaunch?>(null)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
         val app = application as MyChattingProApp
         val container = app.container
+        handleCallLaunchIntent(intent, container)
 
         setContent {
             val prefs by container.prefsStore.preferencesFlow.collectAsStateWithLifecycle(
@@ -70,21 +100,103 @@ class MainActivity : ComponentActivity() {
 
             ProvideAppLocalization(language = prefs.language) {
                 MyChattingProTheme(themePreference = prefs.themePreference) {
-                    MyChattingProNavRoot(container = container)
+                    MyChattingProNavRoot(
+                        container = container,
+                        pendingCallLaunch = pendingCallLaunch,
+                        onCallLaunchConsumed = { pendingCallLaunch = null }
+                    )
                 }
             }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        val container = (application as? MyChattingProApp)?.container ?: return
+        handleCallLaunchIntent(intent, container)
+    }
+
+    private fun handleCallLaunchIntent(intent: Intent?, container: AppContainer) {
+        if (intent == null) return
+        val callId = intent.getStringExtra(AppNotificationManager.EXTRA_CALL_ID).orEmpty()
+        if (callId.isBlank()) return
+
+        val actionMode = intent.getStringExtra(AppNotificationManager.EXTRA_CALL_ACTION)
+        val autoAccept = actionMode == AppNotificationManager.CALL_ACTION_ANSWER
+        if (autoAccept) {
+            container.stopIncomingCallAlert(callId)
+        }
+
+        val currentPrompt = container.incomingCall.value
+        val conversationId = intent.getStringExtra(AppNotificationManager.EXTRA_CONVERSATION_ID)
+            ?.takeIf { it.isNotBlank() }
+            ?: currentPrompt?.conversationId.orEmpty()
+        val callerId = intent.getStringExtra(AppNotificationManager.EXTRA_CALLER_ID)
+            ?.takeIf { it.isNotBlank() }
+            ?: currentPrompt?.callerId.orEmpty()
+        val callerName = intent.getStringExtra(AppNotificationManager.EXTRA_CALLER_NAME)
+            ?.takeIf { it.isNotBlank() }
+            ?: currentPrompt?.callerName
+            ?: getString(R.string.app_name)
+        val callerAvatar = intent.getStringExtra(AppNotificationManager.EXTRA_CALLER_AVATAR)
+            ?: currentPrompt?.callerAvatarMediaId
+        val isVideo = intent.getBooleanExtra(
+            AppNotificationManager.EXTRA_IS_VIDEO,
+            currentPrompt?.isVideo ?: false
+        )
+
+        container.consumeIncomingCallPrompt()
+        pendingCallLaunch = PendingCallLaunch(
+            callId = callId,
+            conversationId = conversationId,
+            peerUserId = callerId,
+            peerName = callerName,
+            peerAvatarMediaId = callerAvatar,
+            isVideo = isVideo,
+            autoAccept = autoAccept
+        )
+    }
+
+    override fun onStop() {
+        super.onStop()
+        if (!isChangingConfigurations) {
+            (application as? MyChattingProApp)?.container?.privateChatLockManager?.lock()
         }
     }
 }
 
 @Composable
-private fun MyChattingProNavRoot(container: AppContainer) {
+private fun MyChattingProNavRoot(
+    container: AppContainer,
+    pendingCallLaunch: PendingCallLaunch?,
+    onCallLaunchConsumed: () -> Unit
+) {
     val navController = rememberNavController()
+    val context = LocalContext.current
     val incomingCall by container.incomingCall.collectAsStateWithLifecycle()
+
+    LaunchedEffect(Unit) {
+        container.securityAlerts.collect { alert ->
+            if (alert.alertType == "account_deleted" ||
+                alert.alertType == "session_revoked" ||
+                alert.alertType == "logout_all_devices"
+            ) {
+                val msg = alert.body.ifBlank { alert.title }.ifBlank {
+                    context.getString(R.string.err_session_revoked)
+                }
+                Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+                navController.navigate(AppRoute.Welcome) {
+                    popUpTo(0) { inclusive = true }
+                }
+            }
+        }
+    }
 
     LaunchedEffect(incomingCall) {
         val invite = incomingCall ?: return@LaunchedEffect
-        container.clearIncomingCall()
+        // Consume navigation prompt ONLY — ringtone keeps playing until Accept, Reject, or Disconnect
+        container.consumeIncomingCallPrompt()
         navController.navigate(
             AppRoute.Call(
                 callId = invite.callId,
@@ -93,14 +205,40 @@ private fun MyChattingProNavRoot(container: AppContainer) {
                 peerName = invite.callerName,
                 peerAvatarMediaId = invite.callerAvatarMediaId,
                 isVideo = invite.isVideo,
-                isIncoming = true
+                isIncoming = true,
+                autoAccept = false
             )
-        )
+        ) {
+            launchSingleTop = true
+        }
+    }
+
+    LaunchedEffect(pendingCallLaunch) {
+        val launch = pendingCallLaunch ?: return@LaunchedEffect
+        onCallLaunchConsumed()
+        navController.navigate(
+            AppRoute.Call(
+                callId = launch.callId,
+                conversationId = launch.conversationId,
+                peerUserId = launch.peerUserId,
+                peerName = launch.peerName,
+                peerAvatarMediaId = launch.peerAvatarMediaId,
+                isVideo = launch.isVideo,
+                isIncoming = true,
+                autoAccept = launch.autoAccept
+            )
+        ) {
+            launchSingleTop = true
+        }
     }
 
     val authVm: AuthViewModel = viewModel(
         factory = singleVmFactory {
-            AuthViewModel(container.authRepository, container.prefsStore)
+            AuthViewModel(
+                authRepository = container.authRepository,
+                prefsStore = container.prefsStore,
+                simVerifier = container.simVerificationProvider
+            )
         }
     )
 
@@ -156,6 +294,15 @@ private fun MyChattingProNavRoot(container: AppContainer) {
                     navController.navigate(AppRoute.CreateAccount) {
                         popUpTo(AppRoute.Login) { inclusive = true }
                     }
+                },
+                onCreateAccountWithPhone = {
+                    authVm.prepareCreateFromLogin()
+                    navController.navigate(AppRoute.CreateAccount) {
+                        popUpTo(AppRoute.Login) { inclusive = true }
+                    }
+                },
+                onForgotPin = {
+                    navController.navigate(AppRoute.ForgotLoginPin)
                 }
             )
         }
@@ -186,7 +333,8 @@ private fun MyChattingProNavRoot(container: AppContainer) {
                         tokenStore = container.tokenStore,
                         prefsStore = container.prefsStore,
                         networkMonitor = container.networkModule.networkMonitor,
-                        socketManager = container.networkModule.realtimeSocketManager
+                        socketManager = container.networkModule.realtimeSocketManager,
+                        safetyRepository = container.safetyRepository
                     )
                 }
             )
@@ -198,7 +346,9 @@ private fun MyChattingProNavRoot(container: AppContainer) {
                         tokenStore = container.tokenStore,
                         authRepository = container.authRepository,
                         safetyRepository = container.safetyRepository,
-                        ownerRepository = container.ownerRepository
+                        ownerRepository = container.ownerRepository,
+                        privateChatRepository = container.privateChatRepository,
+                        appUpdateChecker = container.appUpdateChecker
                     )
                 }
             )
@@ -214,13 +364,20 @@ private fun MyChattingProNavRoot(container: AppContainer) {
                         AppRoute.ChatDetail(
                             conversationId = conv.id,
                             peerUserId = conv.peerUserId,
-                            peerName = conv.peerDisplayName
+                            peerName = conv.peerDisplayName,
+                            isPrivate = false
                         )
                     )
                 },
                 onOpenBlockedUsers = { navController.navigate(AppRoute.BlockedUsers) },
                 onOpenActiveDevices = { navController.navigate(AppRoute.ActiveDevices) },
                 onOpenOwnerMonitor = { navController.navigate(AppRoute.OwnerActivity) },
+                onOpenPrivateChat = { navController.navigate(AppRoute.PrivatePin) },
+                onOpenCallHistory = { navController.navigate(AppRoute.CallHistory) },
+                onOpenNotificationSettings = { navController.navigate(AppRoute.NotificationSettings) },
+                onOpenChangeLoginPin = { navController.navigate(AppRoute.ChangeLoginPin) },
+                onOpenRecoveryCode = { navController.navigate(AppRoute.RecoveryCode) },
+                onOpenForgotLoginPin = { navController.navigate(AppRoute.ForgotLoginPin) },
                 onLoggedOutOrDeleted = {
                     navController.navigate(AppRoute.Welcome) {
                         popUpTo(0) { inclusive = true }
@@ -241,7 +398,7 @@ private fun MyChattingProNavRoot(container: AppContainer) {
             }
 
             val detailVm: ChatDetailViewModel = viewModel(
-                key = "chat_detail_${route.conversationId}",
+                key = "chat_detail_${route.conversationId}_${route.isPrivate}",
                 factory = singleVmFactory {
                     ChatDetailViewModel(
                         context = container.appContext,
@@ -254,7 +411,9 @@ private fun MyChattingProNavRoot(container: AppContainer) {
                         prefsStore = container.prefsStore,
                         socketManager = container.networkModule.realtimeSocketManager,
                         okHttpClient = container.networkModule.okHttpClient,
-                        networkMonitor = container.networkModule.networkMonitor
+                        networkMonitor = container.networkModule.networkMonitor,
+                        isPrivate = route.isPrivate,
+                        privateChatRepository = container.privateChatRepository
                     )
                 }
             )
@@ -301,6 +460,75 @@ private fun MyChattingProNavRoot(container: AppContainer) {
                             isVideo = isVideo
                         )
                     )
+                },
+                onPrivateLockedOut = {
+                    navController.navigate(AppRoute.PrivatePin) {
+                        launchSingleTop = true
+                        popUpTo(AppRoute.MainTabs) { inclusive = false }
+                    }
+                }
+            )
+        }
+
+        composable<AppRoute.PrivatePin> {
+            val privateVm: PrivateChatViewModel = viewModel(
+                factory = singleVmFactory {
+                    PrivateChatViewModel(
+                        privateChatRepository = container.privateChatRepository,
+                        tokenStore = container.tokenStore,
+                        prefsStore = container.prefsStore,
+                        networkMonitor = container.networkModule.networkMonitor,
+                        socketManager = container.networkModule.realtimeSocketManager,
+                        safetyRepository = container.safetyRepository
+                    )
+                }
+            )
+            PrivatePinScreen(
+                viewModel = privateVm,
+                onBack = { navController.popBackStack() },
+                onUnlocked = {
+                    navController.navigate(AppRoute.PrivateChats) {
+                        popUpTo(AppRoute.PrivatePin) { inclusive = true }
+                    }
+                }
+            )
+        }
+
+        composable<AppRoute.PrivateChats> {
+            val privateVm: PrivateChatViewModel = viewModel(
+                factory = singleVmFactory {
+                    PrivateChatViewModel(
+                        privateChatRepository = container.privateChatRepository,
+                        tokenStore = container.tokenStore,
+                        prefsStore = container.prefsStore,
+                        networkMonitor = container.networkModule.networkMonitor,
+                        socketManager = container.networkModule.realtimeSocketManager,
+                        safetyRepository = container.safetyRepository
+                    )
+                }
+            )
+            PrivateChatsScreen(
+                viewModel = privateVm,
+                networkModule = container.networkModule,
+                onBackAndLock = {
+                    privateVm.lockNow()
+                    navController.popBackStack()
+                },
+                onLockedOut = {
+                    navController.navigate(AppRoute.PrivatePin) {
+                        launchSingleTop = true
+                        popUpTo(AppRoute.MainTabs) { inclusive = false }
+                    }
+                },
+                onOpenPrivateConversation = { conv ->
+                    navController.navigate(
+                        AppRoute.ChatDetail(
+                            conversationId = conv.id,
+                            peerUserId = conv.peerUserId,
+                            peerName = conv.peerDisplayName,
+                            isPrivate = true
+                        )
+                    )
                 }
             )
         }
@@ -318,19 +546,67 @@ private fun MyChattingProNavRoot(container: AppContainer) {
             )
         }
 
-        composable<AppRoute.BlockedUsers> {
-            val settingsVm: SettingsViewModel = viewModel(
+        composable<AppRoute.CallHistory> {
+            val callHistoryVm: CallHistoryViewModel = viewModel(
                 factory = singleVmFactory {
-                    SettingsViewModel(
-                        appContext = container.appContext,
-                        prefsStore = container.prefsStore,
-                        tokenStore = container.tokenStore,
-                        authRepository = container.authRepository,
-                        safetyRepository = container.safetyRepository,
-                        ownerRepository = container.ownerRepository
+                    CallHistoryViewModel(container.callRepository)
+                }
+            )
+            CallHistoryScreen(
+                viewModel = callHistoryVm,
+                networkModule = container.networkModule,
+                onBack = { navController.popBackStack() },
+                onStartCallback = { item, isVideo ->
+                    navController.navigate(
+                        AppRoute.Call(
+                            callId = UUID.randomUUID().toString(),
+                            conversationId = item.conversationId,
+                            peerUserId = item.peerUserId,
+                            peerName = item.peerDisplayName,
+                            peerAvatarMediaId = item.peerAvatarMediaId,
+                            isVideo = isVideo,
+                            isIncoming = false
+                        )
                     )
                 }
             )
+        }
+
+        composable<AppRoute.NotificationSettings> {
+            val settingsVm = rememberSettingsVm(container)
+            NotificationSettingsScreen(
+                viewModel = settingsVm,
+                onBack = { navController.popBackStack() }
+            )
+        }
+
+        composable<AppRoute.ChangeLoginPin> {
+            val settingsVm = rememberSettingsVm(container)
+            ChangeLoginPinScreen(
+                viewModel = settingsVm,
+                onBack = { navController.popBackStack() }
+            )
+        }
+
+        composable<AppRoute.RecoveryCode> {
+            val settingsVm = rememberSettingsVm(container)
+            RecoveryCodeScreen(
+                viewModel = settingsVm,
+                onBack = { navController.popBackStack() }
+            )
+        }
+
+        composable<AppRoute.ForgotLoginPin> {
+            val settingsVm = rememberSettingsVm(container)
+            ForgotLoginPinScreen(
+                viewModel = settingsVm,
+                onBack = { navController.popBackStack() },
+                onResetSuccess = { navController.popBackStack() }
+            )
+        }
+
+        composable<AppRoute.BlockedUsers> {
+            val settingsVm = rememberSettingsVm(container)
             BlockedUsersScreen(
                 viewModel = settingsVm,
                 networkModule = container.networkModule,
@@ -339,37 +615,20 @@ private fun MyChattingProNavRoot(container: AppContainer) {
         }
 
         composable<AppRoute.ActiveDevices> {
-            val settingsVm: SettingsViewModel = viewModel(
-                factory = singleVmFactory {
-                    SettingsViewModel(
-                        appContext = container.appContext,
-                        prefsStore = container.prefsStore,
-                        tokenStore = container.tokenStore,
-                        authRepository = container.authRepository,
-                        safetyRepository = container.safetyRepository,
-                        ownerRepository = container.ownerRepository
-                    )
-                }
-            )
+            val settingsVm = rememberSettingsVm(container)
             ActiveDevicesScreen(
                 viewModel = settingsVm,
-                onBack = { navController.popBackStack() }
+                onBack = { navController.popBackStack() },
+                onLoggedOutAllDevices = {
+                    navController.navigate(AppRoute.Welcome) {
+                        popUpTo(0) { inclusive = true }
+                    }
+                }
             )
         }
 
         composable<AppRoute.OwnerActivity> {
-            val settingsVm: SettingsViewModel = viewModel(
-                factory = singleVmFactory {
-                    SettingsViewModel(
-                        appContext = container.appContext,
-                        prefsStore = container.prefsStore,
-                        tokenStore = container.tokenStore,
-                        authRepository = container.authRepository,
-                        safetyRepository = container.safetyRepository,
-                        ownerRepository = container.ownerRepository
-                    )
-                }
-            )
+            val settingsVm = rememberSettingsVm(container)
             OwnerActivityScreen(
                 viewModel = settingsVm,
                 onBack = { navController.popBackStack() }
@@ -378,13 +637,41 @@ private fun MyChattingProNavRoot(container: AppContainer) {
 
         composable<AppRoute.Call> { backStackEntry ->
             val route = backStackEntry.toRoute<AppRoute.Call>()
-            val context = LocalContext.current
-            val activity = remember(context) { context.findActivity() }
+            val callContext = LocalContext.current
+            val activity = remember(callContext) { callContext.findActivity() }
+            DisposableEffect(activity) {
+                if (activity != null) {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+                        activity.setShowWhenLocked(true)
+                        activity.setTurnScreenOn(true)
+                    } else {
+                        @Suppress("DEPRECATION")
+                        activity.window.addFlags(
+                            WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
+                                WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
+                        )
+                    }
+                }
+                onDispose {
+                    if (activity != null) {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+                            activity.setShowWhenLocked(false)
+                            activity.setTurnScreenOn(false)
+                        } else {
+                            @Suppress("DEPRECATION")
+                            activity.window.clearFlags(
+                                WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
+                                    WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
+                            )
+                        }
+                    }
+                }
+            }
             LaunchedEffect(Unit) {
                 container.interstitialAdManager.preload()
             }
             val callVm: CallViewModel = viewModel(
-                key = "call_${route.callId}_${route.isIncoming}",
+                key = "call_${route.callId}_${route.isIncoming}_${route.autoAccept}",
                 factory = singleVmFactory {
                     CallViewModel(
                         context = container.appContext,
@@ -394,7 +681,12 @@ private fun MyChattingProNavRoot(container: AppContainer) {
                         isVideo = route.isVideo,
                         isIncoming = route.isIncoming,
                         callRepository = container.callRepository,
-                        socketManager = container.networkModule.realtimeSocketManager
+                        socketManager = container.networkModule.realtimeSocketManager,
+                        networkMonitor = container.networkModule.networkMonitor,
+                        autoAccept = route.autoAccept,
+                        onStopIncomingAlert = { cid ->
+                            container.stopIncomingCallAlert(cid.ifBlank { route.callId })
+                        }
                     )
                 }
             )
@@ -404,6 +696,7 @@ private fun MyChattingProNavRoot(container: AppContainer) {
                 peerAvatarMediaId = route.peerAvatarMediaId,
                 networkModule = container.networkModule,
                 onExitCall = {
+                    container.stopIncomingCallAlert(route.callId)
                     container.interstitialAdManager.showThen(activity) {
                         navController.popBackStack()
                     }
@@ -423,6 +716,24 @@ private fun MyChattingProNavRoot(container: AppContainer) {
             )
         }
     }
+}
+
+@Composable
+private fun rememberSettingsVm(container: AppContainer): SettingsViewModel {
+    return viewModel(
+        factory = singleVmFactory {
+            SettingsViewModel(
+                appContext = container.appContext,
+                prefsStore = container.prefsStore,
+                tokenStore = container.tokenStore,
+                authRepository = container.authRepository,
+                safetyRepository = container.safetyRepository,
+                ownerRepository = container.ownerRepository,
+                privateChatRepository = container.privateChatRepository,
+                appUpdateChecker = container.appUpdateChecker
+            )
+        }
+    )
 }
 
 @Composable

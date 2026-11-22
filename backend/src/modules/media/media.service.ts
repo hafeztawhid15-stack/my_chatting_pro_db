@@ -1,5 +1,6 @@
 import { Env, getIntEnv } from '../../config/env';
 import { DatabaseClient } from '../../database/supabase';
+import { verifyPrivateUnlockToken } from '../../middleware/auth';
 import { ApiError } from '../../middleware/errorHandler';
 import { sanitizeFilename } from '../../security/validation';
 import {
@@ -22,6 +23,8 @@ export class MediaService {
 
   async uploadMedia(input: {
     userId: string;
+    sessionId?: string;
+    privateUnlockToken?: string | null;
     category: MediaCategory;
     conversationId: string | null;
     filename: string;
@@ -35,8 +38,21 @@ export class MediaService {
       if (!input.conversationId) {
         throw new ApiError(400, 'missing_conversation_id', 'Conversation ID is required for chat media.');
       }
+      const isPrivate = await this.db.isConversationPrivate(input.conversationId);
+      if (isPrivate === null) {
+        throw new ApiError(404, 'conversation_not_found', 'Conversation not found.');
+      }
+      if (isPrivate) {
+        const unlocked = await verifyPrivateUnlockToken(input.privateUnlockToken, this.env, this.db, {
+          userId: input.userId,
+          sessionId: input.sessionId,
+        });
+        if (!unlocked) {
+          throw new ApiError(403, 'private_chat_locked', 'Private Chat PIN verification is required.');
+        }
+      }
       const convService = new ConversationsService(this.db);
-      await convService.assertMember(input.conversationId, input.userId);
+      await convService.assertMember(input.conversationId, input.userId, isPrivate);
     }
 
     const validation = validateMediaConstraints(
@@ -46,7 +62,8 @@ export class MediaService {
       input.bytes.byteLength
     );
     if (!validation.ok) {
-      throw new ApiError(400, 'invalid_media', validation.error);
+      const status = validation.code === 'media_too_large' ? 413 : 400;
+      throw new ApiError(status, validation.code, validation.error);
     }
 
     const mediaId = crypto.randomUUID();
@@ -94,8 +111,12 @@ export class MediaService {
    * Generates a short-lived private Supabase Storage signed download URL after verifying
    * conversation/block authorization.
    */
-  async issueSignedDownloadUrl(mediaId: string, viewerUserId: string) {
-    const media = await this.assertMediaAccess(mediaId, viewerUserId);
+  async issueSignedDownloadUrl(
+    mediaId: string,
+    viewerUserId: string,
+    options?: { sessionId?: string; privateUnlockToken?: string | null }
+  ) {
+    const media = await this.assertMediaAccess(mediaId, viewerUserId, options);
     const ttlSec = getIntEnv(this.env.MEDIA_URL_TTL_SECONDS, 300);
     const bucket = media.storage_bucket || resolveStorageBucket(this.env);
 
@@ -119,7 +140,8 @@ export class MediaService {
     mediaId: string,
     viewerUserId: string,
     signedToken: string | undefined,
-    rangeHeader: string | null
+    rangeHeader: string | null,
+    options?: { sessionId?: string; privateUnlockToken?: string | null }
   ): Promise<Response> {
     if (signedToken) {
       const ok = await verifySignedMediaAccessToken(this.env, mediaId, viewerUserId, signedToken);
@@ -128,7 +150,7 @@ export class MediaService {
       }
     }
 
-    const media = await this.assertMediaAccess(mediaId, viewerUserId);
+    const media = await this.assertMediaAccess(mediaId, viewerUserId, options);
     const bucket = media.storage_bucket || resolveStorageBucket(this.env);
     const upstream = await this.storage.downloadObject(bucket, media.storage_path, rangeHeader);
 
@@ -153,7 +175,11 @@ export class MediaService {
     });
   }
 
-  private async assertMediaAccess(mediaId: string, viewerUserId: string) {
+  private async assertMediaAccess(
+    mediaId: string,
+    viewerUserId: string,
+    options?: { sessionId?: string; privateUnlockToken?: string | null }
+  ) {
     const media = await this.db.findMediaObjectById(mediaId);
     if (!media || media.upload_status !== 'completed') {
       throw new ApiError(404, 'media_not_found', 'Media not found.');
@@ -169,12 +195,24 @@ export class MediaService {
       return media;
     }
 
-    if (media.owner_user_id === viewerUserId) {
-      return media;
+    if (!media.conversation_id) {
+      if (media.owner_user_id === viewerUserId) return media;
+      throw new ApiError(403, 'forbidden_media', 'Access denied.');
     }
 
-    if (!media.conversation_id) {
-      throw new ApiError(403, 'forbidden_media', 'Access denied.');
+    const isPrivate = await this.db.isConversationPrivate(media.conversation_id);
+    if (isPrivate) {
+      const unlocked = await verifyPrivateUnlockToken(options?.privateUnlockToken, this.env, this.db, {
+        userId: viewerUserId,
+        sessionId: options?.sessionId,
+      });
+      if (!unlocked) {
+        throw new ApiError(403, 'private_chat_locked', 'Private Chat PIN verification is required.');
+      }
+    }
+
+    if (media.owner_user_id === viewerUserId) {
+      return media;
     }
 
     const members = await this.db.listConversationMemberIds(media.conversation_id);

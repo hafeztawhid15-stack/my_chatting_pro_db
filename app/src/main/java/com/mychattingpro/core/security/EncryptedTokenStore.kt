@@ -43,9 +43,9 @@ open class EncryptedTokenStore(private val context: Context) {
         decryptSession(encoded)
     }
 
-    suspend fun getSession(): StoredSession? = sessionFlow.first()
+    open suspend fun getSession(): StoredSession? = sessionFlow.first()
 
-    suspend fun saveSession(session: StoredSession) {
+    open suspend fun saveSession(session: StoredSession) {
         val raw = listOf(
             session.userId,
             session.phoneE164,
@@ -67,7 +67,7 @@ open class EncryptedTokenStore(private val context: Context) {
         saveSession(current.copy(accessToken = accessToken, refreshToken = refreshToken))
     }
 
-    suspend fun updateUserProfile(displayName: String, about: String, avatarMediaId: String?) {
+    open suspend fun updateUserProfile(displayName: String, about: String, avatarMediaId: String?) {
         val current = getSession() ?: return
         saveSession(
             current.copy(
@@ -94,15 +94,29 @@ open class EncryptedTokenStore(private val context: Context) {
         return decryptPlainString(encoded)
     }
 
-    suspend fun clearSession() {
+    open suspend fun clearSession() {
         context.tokenDataStore.edit { it.clear() }
     }
 
     private fun getOrCreateKey(): SecretKey {
-        val keyStore = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
-        val existing = keyStore.getKey(keyAlias, null) as? SecretKey
-        if (existing != null) return existing
+        return runCatching {
+            val keyStore = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+            val existing = keyStore.getKey(keyAlias, null) as? SecretKey
+            if (existing != null) return existing
+            generateKeyStoreAesKey()
+        }.getOrElse { firstErr ->
+            SafeLogger.w("EncryptedTokenStore", "KeyStore load failed, resetting alias: ${firstErr.javaClass.simpleName}")
+            runCatching {
+                val keyStore = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+                if (keyStore.containsAlias(keyAlias)) {
+                    keyStore.deleteEntry(keyAlias)
+                }
+            }
+            generateKeyStoreAesKey()
+        }
+    }
 
+    private fun generateKeyStoreAesKey(): SecretKey {
         val generator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore")
         val spec = KeyGenParameterSpec.Builder(
             keyAlias,
@@ -117,8 +131,23 @@ open class EncryptedTokenStore(private val context: Context) {
     }
 
     private fun encryptString(plain: String): String {
+        return try {
+            performAesGcmEncrypt(plain, getOrCreateKey())
+        } catch (e: Exception) {
+            SafeLogger.w("EncryptedTokenStore", "Encrypt retry after resetting key: ${e.javaClass.simpleName}")
+            runCatching {
+                val keyStore = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+                if (keyStore.containsAlias(keyAlias)) {
+                    keyStore.deleteEntry(keyAlias)
+                }
+            }
+            performAesGcmEncrypt(plain, generateKeyStoreAesKey())
+        }
+    }
+
+    private fun performAesGcmEncrypt(plain: String, key: SecretKey): String {
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-        cipher.init(Cipher.ENCRYPT_MODE, getOrCreateKey())
+        cipher.init(Cipher.ENCRYPT_MODE, key)
         val iv = cipher.iv
         val cipherBytes = cipher.doFinal(plain.toByteArray(Charsets.UTF_8))
         val ivB64 = Base64.encodeToString(iv, Base64.NO_WRAP)

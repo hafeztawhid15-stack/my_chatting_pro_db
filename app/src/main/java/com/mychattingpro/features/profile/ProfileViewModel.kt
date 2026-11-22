@@ -17,6 +17,9 @@ data class ProfileUiState(
     val about: String = "",
     val phoneE164: String = "",
     val avatarMediaId: String? = null,
+    val isEditMode: Boolean = false,
+    val isInitialLoading: Boolean = false,
+    val loadFailed: Boolean = false,
     val isLoading: Boolean = false,
     val isUploadingPhoto: Boolean = false,
     val savedSuccess: Boolean = false,
@@ -31,25 +34,72 @@ class ProfileViewModel(
     private val _uiState = MutableStateFlow(ProfileUiState())
     val uiState: StateFlow<ProfileUiState> = _uiState.asStateFlow()
 
+    private var savedSnapshotName: String = ""
+    private var savedSnapshotAbout: String = ""
+
     init {
+        loadProfile()
+    }
+
+    fun loadProfile() {
         viewModelScope.launch {
-            tokenStore.getSession()?.let { s ->
+            val cachedSession = runCatching { tokenStore.getSession() }.getOrNull()
+            if (cachedSession != null) {
+                savedSnapshotName = cachedSession.displayName
+                savedSnapshotAbout = cachedSession.about
                 _uiState.value = _uiState.value.copy(
-                    displayName = s.displayName,
-                    about = s.about,
-                    phoneE164 = s.phoneE164,
-                    avatarMediaId = s.avatarMediaId
+                    displayName = cachedSession.displayName,
+                    about = cachedSession.about,
+                    phoneE164 = cachedSession.phoneE164,
+                    avatarMediaId = cachedSession.avatarMediaId,
+                    isInitialLoading = false,
+                    loadFailed = false,
+                    error = null
+                )
+            } else {
+                _uiState.value = _uiState.value.copy(
+                    isInitialLoading = true,
+                    loadFailed = false,
+                    error = null
                 )
             }
-            profileRepository.fetchMyProfile().onSuccess { p ->
-                _uiState.value = _uiState.value.copy(
-                    displayName = p.displayName,
-                    about = p.about,
-                    phoneE164 = p.phoneE164,
-                    avatarMediaId = p.avatarMediaId
-                )
-            }
+
+            profileRepository.fetchMyProfile()
+                .onSuccess { p ->
+                    savedSnapshotName = p.displayName
+                    savedSnapshotAbout = p.about
+                    _uiState.value = _uiState.value.copy(
+                        displayName = p.displayName,
+                        about = p.about,
+                        phoneE164 = p.phoneE164,
+                        avatarMediaId = p.avatarMediaId,
+                        isInitialLoading = false,
+                        loadFailed = false,
+                        error = null
+                    )
+                }
+                .onFailure { err ->
+                    val appErr = (err as? AppException)?.appError ?: AppError.ServerError()
+                    _uiState.value = _uiState.value.copy(
+                        isInitialLoading = false,
+                        loadFailed = cachedSession == null && _uiState.value.phoneE164.isBlank(),
+                        error = appErr
+                    )
+                }
         }
+    }
+
+    fun enterEditMode() {
+        _uiState.value = _uiState.value.copy(isEditMode = true, error = null, savedSuccess = false)
+    }
+
+    fun cancelEditMode() {
+        _uiState.value = _uiState.value.copy(
+            isEditMode = false,
+            displayName = savedSnapshotName,
+            about = savedSnapshotAbout,
+            error = null
+        )
     }
 
     fun updateDisplayName(name: String) {
@@ -60,17 +110,23 @@ class ProfileViewModel(
         _uiState.value = _uiState.value.copy(about = about, savedSuccess = false, error = null)
     }
 
+    fun consumeSavedNotice() {
+        _uiState.value = _uiState.value.copy(savedSuccess = false)
+    }
+
     fun uploadNewAvatar(uri: Uri) {
-        _uiState.value = _uiState.value.copy(isUploadingPhoto = true, error = null)
+        _uiState.value = _uiState.value.copy(isUploadingPhoto = true, error = null, savedSuccess = false)
         viewModelScope.launch {
             val res = profileRepository.uploadProfilePhoto(uri)
             res.onSuccess { attachment ->
                 val updated = profileRepository.updateProfile(
-                    displayName = _uiState.value.displayName,
+                    displayName = _uiState.value.displayName.ifBlank { "MY CHATTING PRO" },
                     about = _uiState.value.about,
                     avatarMediaId = attachment.id
                 )
                 updated.onSuccess { p ->
+                    savedSnapshotName = p.displayName
+                    savedSnapshotAbout = p.about
                     _uiState.value = _uiState.value.copy(
                         avatarMediaId = p.avatarMediaId,
                         isUploadingPhoto = false,
@@ -97,10 +153,14 @@ class ProfileViewModel(
                 about = state.about.trim(),
                 avatarMediaId = state.avatarMediaId
             ).onSuccess { p ->
+                savedSnapshotName = p.displayName
+                savedSnapshotAbout = p.about
                 _uiState.value = _uiState.value.copy(
                     displayName = p.displayName,
                     about = p.about,
+                    isEditMode = false,
                     isLoading = false,
+                    loadFailed = false,
                     savedSuccess = true
                 )
             }.onFailure { err ->

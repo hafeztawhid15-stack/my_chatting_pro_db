@@ -11,6 +11,20 @@ callsRoutes.get('/ice-servers', authMiddleware, async (c) => {
   return c.json(result);
 });
 
+callsRoutes.get('/history', authMiddleware, async (c) => {
+  const auth = c.get('auth');
+  const filter = c.req.query('filter');
+  const limitRaw = c.req.query('limit');
+  const limit = limitRaw ? Number.parseInt(limitRaw, 10) : undefined;
+  const service = new CallsService(c.env, c.get('db'));
+  const calls = await service.getCallHistory(
+    auth.userId,
+    filter,
+    Number.isFinite(limit) ? limit : undefined
+  );
+  return c.json({ calls });
+});
+
 callsRoutes.post('/', authMiddleware, async (c) => {
   const auth = c.get('auth');
   const body = await c.req.json<{

@@ -159,7 +159,12 @@ class InterstitialAdManager(private val appContext: Context) {
                 }
             }
 
-            ad.show(activity)
+            runCatching {
+                ad.show(activity)
+            }.onFailure { error ->
+                SafeLogger.w(TAG, "Interstitial show threw: ${error.javaClass.simpleName}")
+                finishOnce()
+            }
         }
     }
 }

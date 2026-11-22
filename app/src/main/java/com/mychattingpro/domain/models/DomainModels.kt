@@ -66,7 +66,32 @@ data class Conversation(
     val lastMessageSenderId: String?,
     val lastMessageAtMs: Long?,
     val unreadCount: Int,
-    val updatedAtMs: Long
+    val updatedAtMs: Long,
+    val isPrivate: Boolean = false,
+    val isPinned: Boolean = false,
+    val pinnedAtMs: Long? = null,
+    val isArchived: Boolean = false,
+    val archivedAtMs: Long? = null,
+    val mutedUntilMs: Long? = null,
+    val customSoundUri: String? = null,
+    val customSoundLabel: String? = null,
+    val markedUnread: Boolean = false,
+    val clearedAtMs: Long? = null
+) {
+    fun isMutedNow(nowMs: Long = System.currentTimeMillis()): Boolean =
+        mutedUntilMs != null && mutedUntilMs > nowMs
+}
+
+data class ConversationPeerProfile(
+    val user: PublicUser,
+    val isBlockedByMe: Boolean,
+    val hasBlockedMe: Boolean
+)
+
+data class PrivatePinStatus(
+    val hasPrivatePin: Boolean,
+    val lockedUntilMs: Long? = null,
+    val retryAfterSeconds: Int = 0
 )
 
 data class MediaAttachment(
@@ -92,7 +117,8 @@ data class Message(
     val deletedForAllAtMs: Long? = null,
     val createdAtMs: Long,
     val deliveredAtMs: Long? = null,
-    val readAtMs: Long? = null
+    val readAtMs: Long? = null,
+    val isPrivate: Boolean = false
 )
 
 data class BlockedUser(
@@ -106,6 +132,30 @@ data class IceServerConfig(
     val urls: List<String>,
     val username: String? = null,
     val credential: String? = null
+)
+
+enum class CallHistoryFilter(val apiValue: String) {
+    ALL("all"),
+    INCOMING("incoming"),
+    OUTGOING("outgoing"),
+    MISSED("missed"),
+    REJECTED("rejected")
+}
+
+data class CallHistoryItem(
+    val callId: String,
+    val conversationId: String,
+    val callerId: String,
+    val peerUserId: String,
+    val peerDisplayName: String,
+    val peerAvatarMediaId: String?,
+    val isVideo: Boolean,
+    val status: String,
+    val direction: String,
+    val startedAtMs: Long,
+    val answeredAtMs: Long?,
+    val endedAtMs: Long?,
+    val durationSeconds: Int
 )
 
 data class ActiveDeviceSession(
@@ -147,4 +197,13 @@ data class OwnerActivitySnapshot(
     val page: Int = 1,
     val totalCount: Int = users.size,
     val hasMore: Boolean = false
+)
+
+data class AppUpdateInfo(
+    val currentVersionName: String,
+    val currentVersionCode: Int,
+    val storeVersionName: String? = null,
+    val isUpdateAvailable: Boolean = false,
+    val checkedOnline: Boolean = false,
+    val storeUrl: String = ""
 )

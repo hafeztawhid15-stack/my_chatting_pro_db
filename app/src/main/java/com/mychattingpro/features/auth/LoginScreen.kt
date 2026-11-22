@@ -30,6 +30,7 @@ import androidx.compose.material.icons.rounded.PhoneAndroid
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -55,6 +56,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.R
+import com.mychattingpro.core.common.AppError
 import com.mychattingpro.features.common.FiveDigitPinField
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -63,7 +65,9 @@ fun LoginScreen(
     viewModel: AuthViewModel,
     onBack: () -> Unit,
     onLoginSuccess: () -> Unit,
-    onSwitchToCreateAccount: () -> Unit = {}
+    onSwitchToCreateAccount: () -> Unit = {},
+    onCreateAccountWithPhone: () -> Unit = onSwitchToCreateAccount,
+    onForgotPin: () -> Unit = {}
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val recentIsos by viewModel.recentCountryIsos.collectAsStateWithLifecycle()
@@ -167,18 +171,44 @@ fun LoginScreen(
 
                                     AuthErrorBanner(state.error?.toLocalizedMessage(context))
 
+                                    if (state.error is AppError.AccountNotFound) {
+                                        FilledTonalButton(
+                                            onClick = onCreateAccountWithPhone,
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .height(50.dp)
+                                                .testTag("login_missing_create_account_btn"),
+                                            shape = RoundedCornerShape(16.dp)
+                                        ) {
+                                            Text(
+                                                text = stringResource(R.string.action_create_account),
+                                                style = MaterialTheme.typography.titleSmall,
+                                                fontWeight = FontWeight.SemiBold
+                                            )
+                                        }
+                                    }
+
                                     Button(
                                         onClick = viewModel::advanceLoginStep,
+                                        enabled = !state.isLoading,
                                         modifier = Modifier
                                             .fillMaxWidth()
                                             .height(54.dp)
                                             .testTag("login_step1_next"),
                                         shape = RoundedCornerShape(16.dp)
                                     ) {
-                                        Text(
-                                            text = stringResource(R.string.action_continue),
-                                            style = MaterialTheme.typography.titleMedium
-                                        )
+                                        if (state.isLoading) {
+                                            CircularProgressIndicator(
+                                                modifier = Modifier.size(22.dp),
+                                                strokeWidth = 2.dp,
+                                                color = MaterialTheme.colorScheme.onPrimary
+                                            )
+                                        } else {
+                                            Text(
+                                                text = stringResource(R.string.action_continue),
+                                                style = MaterialTheme.typography.titleMedium
+                                            )
+                                        }
                                     }
                                 }
 
@@ -233,6 +263,15 @@ fun LoginScreen(
                                                 style = MaterialTheme.typography.titleMedium
                                             )
                                         }
+                                    }
+
+                                    TextButton(
+                                        onClick = onForgotPin,
+                                        modifier = Modifier
+                                            .align(Alignment.CenterHorizontally)
+                                            .testTag("login_forgot_pin_button")
+                                    ) {
+                                        Text(stringResource(R.string.login_forgot_pin_link))
                                     }
                                 }
                             }

@@ -4,7 +4,6 @@ import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -23,11 +22,19 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Archive
+import androidx.compose.material.icons.outlined.NotificationsOff
+import androidx.compose.material.icons.outlined.PushPin
 import androidx.compose.material.icons.rounded.DoneAll
+import androidx.compose.material.icons.rounded.ExpandLess
+import androidx.compose.material.icons.rounded.ExpandMore
+import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.InsertDriveFile
+import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.MoreVert
+import androidx.compose.material.icons.rounded.Shield
 import androidx.compose.material.icons.rounded.Videocam
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CenterAlignedTopAppBar
@@ -42,6 +49,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -67,8 +75,12 @@ import com.mychattingpro.core.localization.DateTimeFormatters
 import com.mychattingpro.core.network.NetworkModule
 import com.mychattingpro.domain.models.Conversation
 import com.mychattingpro.domain.models.MessageType
+import com.mychattingpro.features.common.ConversationActionModals
+import com.mychattingpro.features.common.ConversationActionsDropdownMenu
+import com.mychattingpro.features.common.ConversationMenuCallbacks
 import com.mychattingpro.features.common.NetworkStatusBanner
 import com.mychattingpro.features.common.UserAvatar
+import com.mychattingpro.features.common.rememberConversationMenuController
 import kotlinx.coroutines.launch
 
 private const val WEBSITE_URL = "https://sites.google.com/view/you-pr/%E0%A6%B9%E0%A6%AE"
@@ -79,19 +91,65 @@ fun ChatsScreen(
     viewModel: ChatsViewModel,
     networkModule: NetworkModule,
     onOpenProfile: () -> Unit,
-    onOpenConversation: (Conversation) -> Unit
+    onOpenConversation: (Conversation) -> Unit,
+    onOpenPrivateChat: () -> Unit = {},
+    onOpenOwnerMonitor: () -> Unit = {},
+    onOpenCallHistory: () -> Unit = {}
 ) {
     val conversations by viewModel.conversations.collectAsStateWithLifecycle()
     val session by viewModel.session.collectAsStateWithLifecycle()
     val language by viewModel.language.collectAsStateWithLifecycle()
     val isOnline by viewModel.isOnline.collectAsStateWithLifecycle()
     val socketState by viewModel.socketState.collectAsStateWithLifecycle()
+    val peerProfileModal by viewModel.peerProfileModal.collectAsStateWithLifecycle()
+    val actionNotice by viewModel.actionNotice.collectAsStateWithLifecycle()
+    val actionError by viewModel.actionError.collectAsStateWithLifecycle()
 
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val menuController = rememberConversationMenuController()
 
     var menuExpanded by remember { mutableStateOf(false) }
     var showClearCacheDialog by remember { mutableStateOf(false) }
+    var showArchivedSection by remember { mutableStateOf(false) }
+
+    LaunchedEffect(actionNotice) {
+        actionNotice?.let {
+            Toast.makeText(context, it, Toast.LENGTH_SHORT).show()
+            viewModel.clearActionFeedback()
+        }
+    }
+
+    LaunchedEffect(actionError) {
+        actionError?.let {
+            Toast.makeText(context, it.toLocalizedMessage(context), Toast.LENGTH_LONG).show()
+            viewModel.clearActionFeedback()
+        }
+    }
+
+    val conversationCallbacks = remember(viewModel, context) {
+        ConversationMenuCallbacks(
+            onViewPeerProfile = { conv -> viewModel.viewPeerProfile(context, conv) },
+            onSetMute = { conv, untilMs -> viewModel.setMutedUntil(conv, untilMs) },
+            onSetCustomSound = { conv, uri, label -> viewModel.setCustomSound(conv, uri, label) },
+            onTogglePin = { conv -> viewModel.togglePin(conv) },
+            onToggleMarkUnread = { conv -> viewModel.toggleMarkUnread(conv) },
+            onToggleArchive = { conv -> viewModel.toggleArchive(conv) },
+            onClearChat = { conv -> viewModel.clearChat(conv) },
+            onToggleBlock = { conv -> viewModel.toggleBlockPeer(conv) },
+            onReportUser = { conv, reason, details -> viewModel.reportPeer(conv, reason, details) },
+            onDeleteChat = { conv -> viewModel.deleteChat(conv) }
+        )
+    }
+
+    ConversationActionModals(
+        controller = menuController,
+        callbacks = conversationCallbacks,
+        peerProfileState = peerProfileModal,
+        onDismissPeerProfile = viewModel::dismissPeerProfile,
+        networkModule = networkModule,
+        language = language
+    )
 
     if (showClearCacheDialog) {
         AlertDialog(
@@ -124,6 +182,9 @@ fun ChatsScreen(
         )
     }
 
+    val activeConversations = remember(conversations) { conversations.filterNot { it.isArchived } }
+    val archivedConversations = remember(conversations) { conversations.filter { it.isArchived } }
+
     Column(modifier = Modifier.fillMaxSize()) {
         CenterAlignedTopAppBar(
             navigationIcon = {
@@ -154,11 +215,22 @@ fun ChatsScreen(
                     Text(
                         text = stringResource(R.string.app_name),
                         style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
             },
             actions = {
+                IconButton(
+                    onClick = onOpenCallHistory,
+                    modifier = Modifier.testTag("chats_call_history_button")
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.History,
+                        contentDescription = stringResource(R.string.call_history_title)
+                    )
+                }
                 Box {
                     IconButton(
                         onClick = { menuExpanded = true },
@@ -169,7 +241,7 @@ fun ChatsScreen(
                             contentDescription = "Menu"
                         )
                     }
-                    // Strictly ONLY two options: 1. Clear Cache, 2. Website
+                    // Top-right 3-dot Menu: Clear Cache, Details, Private Chat, App Usage Monitor (Owner)
                     DropdownMenu(
                         expanded = menuExpanded,
                         onDismissRequest = { menuExpanded = false }
@@ -186,10 +258,48 @@ fun ChatsScreen(
                             text = { Text(stringResource(R.string.menu_website)) },
                             onClick = {
                                 menuExpanded = false
-                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(WEBSITE_URL))
-                                runCatching { context.startActivity(intent) }
+                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(WEBSITE_URL)).apply {
+                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                }
+                                runCatching { context.startActivity(intent) }.onFailure {
+                                    Toast.makeText(
+                                        context,
+                                        context.getString(R.string.err_network),
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                }
                             },
                             modifier = Modifier.testTag("menu_website")
+                        )
+                        DropdownMenuItem(
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Rounded.Lock,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                            },
+                            text = { Text(stringResource(R.string.menu_private_chat)) },
+                            onClick = {
+                                menuExpanded = false
+                                onOpenPrivateChat()
+                            },
+                            modifier = Modifier.testTag("menu_private_chat")
+                        )
+                        DropdownMenuItem(
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Rounded.Shield,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                            },
+                            text = { Text(stringResource(R.string.settings_owner_monitor)) },
+                            onClick = {
+                                menuExpanded = false
+                                onOpenOwnerMonitor()
+                            },
+                            modifier = Modifier.testTag("menu_owner_monitor")
                         )
                     }
                 }
@@ -234,12 +344,68 @@ fun ChatsScreen(
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(vertical = 8.dp)
             ) {
-                items(conversations, key = { it.id }) { conv ->
+                if (archivedConversations.isNotEmpty()) {
+                    item(key = "archived_header") {
+                        Surface(
+                            color = MaterialTheme.colorScheme.surfaceContainerLow,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { showArchivedSection = !showArchivedSection }
+                                .testTag("archived_chats_toggle")
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Outlined.Archive,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                                Spacer(modifier = Modifier.width(14.dp))
+                                Text(
+                                    text = stringResource(R.string.archived_chats_header, archivedConversations.size),
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.SemiBold,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                Icon(
+                                    imageVector = if (showArchivedSection) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
+                                    contentDescription = null
+                                )
+                            }
+                        }
+                        HorizontalDivider()
+                    }
+                    if (showArchivedSection) {
+                        items(archivedConversations, key = { "arch_${it.id}" }) { conv ->
+                            ConversationRow(
+                                conversation = conv,
+                                myUserId = session?.userId,
+                                language = language,
+                                networkModule = networkModule,
+                                menuController = menuController,
+                                menuCallbacks = conversationCallbacks,
+                                onClick = { onOpenConversation(conv) }
+                            )
+                            HorizontalDivider(
+                                modifier = Modifier.padding(start = 82.dp, end = 16.dp),
+                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)
+                            )
+                        }
+                    }
+                }
+
+                items(activeConversations, key = { it.id }) { conv ->
                     ConversationRow(
                         conversation = conv,
                         myUserId = session?.userId,
                         language = language,
                         networkModule = networkModule,
+                        menuController = menuController,
+                        menuCallbacks = conversationCallbacks,
                         onClick = { onOpenConversation(conv) }
                     )
                     HorizontalDivider(
@@ -258,20 +424,24 @@ private fun ConversationRow(
     myUserId: String?,
     language: AppLanguage,
     networkModule: NetworkModule,
+    menuController: com.mychattingpro.features.common.ConversationMenuController,
+    menuCallbacks: ConversationMenuCallbacks,
     onClick: () -> Unit
 ) {
     val context = LocalContext.current
+    var rowMenuExpanded by remember { mutableStateOf(false) }
     val timeText = remember(conversation.lastMessageAtMs, language) {
         conversation.lastMessageAtMs?.let {
             DateTimeFormatters.formatChatListTime(context, it, language)
         }.orEmpty()
     }
+    val hasUnread = conversation.unreadCount > 0 || conversation.markedUnread
 
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 12.dp)
+            .padding(start = 16.dp, end = 6.dp, top = 12.dp, bottom = 12.dp)
             .testTag("chat_item_${conversation.id}"),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -294,16 +464,34 @@ private fun ConversationRow(
                 Text(
                     text = conversation.peerDisplayName,
                     style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
+                    fontWeight = if (hasUnread) FontWeight.Bold else FontWeight.SemiBold,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f)
                 )
-                Spacer(modifier = Modifier.width(8.dp))
+                Spacer(modifier = Modifier.width(6.dp))
+                if (conversation.isPinned) {
+                    Icon(
+                        imageVector = Icons.Outlined.PushPin,
+                        contentDescription = stringResource(R.string.chat_menu_pin),
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(15.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                }
+                if (conversation.isMutedNow()) {
+                    Icon(
+                        imageVector = Icons.Outlined.NotificationsOff,
+                        contentDescription = stringResource(R.string.chat_menu_mute),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(15.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                }
                 Text(
                     text = timeText,
                     style = MaterialTheme.typography.labelSmall,
-                    color = if (conversation.unreadCount > 0) {
+                    color = if (hasUnread) {
                         MaterialTheme.colorScheme.primary
                     } else {
                         MaterialTheme.colorScheme.onSurfaceVariant
@@ -376,22 +564,53 @@ private fun ConversationRow(
                     modifier = Modifier.weight(1f)
                 )
 
-                if (conversation.unreadCount > 0) {
+                if (conversation.unreadCount > 0 || conversation.markedUnread) {
                     Spacer(modifier = Modifier.width(8.dp))
                     Surface(
                         shape = RoundedCornerShape(50),
                         color = MaterialTheme.colorScheme.primary
                     ) {
+                        val badgeLabel = if (conversation.unreadCount > 0) {
+                            conversation.unreadCount.coerceAtMost(99).toString()
+                        } else {
+                            " "
+                        }
                         Text(
-                            text = conversation.unreadCount.coerceAtMost(99).toString(),
+                            text = badgeLabel,
                             style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onPrimary,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                            modifier = Modifier.padding(
+                                horizontal = if (conversation.unreadCount > 0) 8.dp else 5.dp,
+                                vertical = 3.dp
+                            )
                         )
                     }
                 }
             }
+        }
+
+        Box {
+            IconButton(
+                onClick = { rowMenuExpanded = true },
+                modifier = Modifier
+                    .size(48.dp)
+                    .testTag("chat_row_menu_${conversation.id}")
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.MoreVert,
+                    contentDescription = "Chat Options",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            ConversationActionsDropdownMenu(
+                expanded = rowMenuExpanded,
+                conversation = conversation,
+                controller = menuController,
+                callbacks = menuCallbacks,
+                onDismiss = { rowMenuExpanded = false },
+                isPrivate = false
+            )
         }
     }
 }

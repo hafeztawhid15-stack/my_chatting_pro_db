@@ -7,6 +7,8 @@ import com.mychattingpro.core.common.Country
 import com.mychattingpro.core.common.CountryCatalog
 import com.mychattingpro.core.datastore.AppPreferencesDataStore
 import com.mychattingpro.core.localization.AppLanguage
+import com.mychattingpro.core.security.SimCheckResult
+import com.mychattingpro.core.security.SimVerificationProvider
 import com.mychattingpro.data.repository.AppException
 import com.mychattingpro.domain.repository.AuthRepository
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -17,6 +19,18 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
+private object FailClosedNoSimProvider : SimVerificationProvider {
+    override fun requiredPermissions(): Array<String> = arrayOf(
+        android.Manifest.permission.READ_PHONE_NUMBERS,
+        android.Manifest.permission.READ_PHONE_STATE
+    )
+    override fun hasSimPermission(): Boolean = false
+    override fun checkSimState(): SimCheckResult = SimCheckResult.NoSim
+    override fun verifyRegistrationNumber(selectedCountry: Country, phoneE164: String): AppError =
+        AppError.SimRequired
+    override fun parseCountryAndLocalNumber(e164: String): Pair<Country, String>? = null
+}
+
 data class AuthUiState(
     val selectedCountry: Country = CountryCatalog.findByIso("BD"),
     val phoneInput: String = "",
@@ -24,14 +38,20 @@ data class AuthUiState(
     val confirmPin: String = "",
     val displayName: String = "",
     val loginStep: Int = 1, // 1: Country & Phone, 2: 5-Digit PIN
-    val createStep: Int = 1, // 1: Country & Phone, 2: Display Name, 3: Create PIN, 4: Confirm PIN
+    val createStep: Int = 1, // 1: SIM + Country & Phone, 2: Display Name, 3: Create PIN, 4: Confirm PIN
     val isLoading: Boolean = false,
-    val error: AppError? = null
+    val error: AppError? = null,
+    val simStatus: SimCheckResult = SimCheckResult.PermissionRequired,
+    val hasSimPermission: Boolean = false,
+    val verifiedSimNumbers: List<String> = emptyList(),
+    val simCarriers: List<String> = emptyList(),
+    val simCountryIsos: List<String> = emptyList()
 )
 
 class AuthViewModel(
     private val authRepository: AuthRepository,
-    private val prefsStore: AppPreferencesDataStore
+    private val prefsStore: AppPreferencesDataStore,
+    private val simVerifier: SimVerificationProvider = FailClosedNoSimProvider
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(AuthUiState())
@@ -40,6 +60,64 @@ class AuthViewModel(
     val recentCountryIsos: StateFlow<List<String>> = prefsStore.preferencesFlow
         .map { it.recentCountryIsoCodes }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), listOf("BD", "US", "GB"))
+
+    fun simRequiredPermissions(): Array<String> = simVerifier.requiredPermissions()
+
+    fun refreshSimVerification(autoFillIfBlank: Boolean = true) {
+        val hasPerm = simVerifier.hasSimPermission()
+        val result = simVerifier.checkSimState()
+        val numbers = (result as? SimCheckResult.VerifiedWithNumbers)?.numbersE164.orEmpty()
+        val carriers = when (result) {
+            is SimCheckResult.VerifiedWithNumbers -> result.carriers
+            is SimCheckResult.VerifiedCarrierOnly -> result.carriers
+            else -> emptyList()
+        }
+        val isos = when (result) {
+            is SimCheckResult.VerifiedWithNumbers -> result.countryIsos
+            is SimCheckResult.VerifiedCarrierOnly -> result.countryIsos
+            else -> emptyList()
+        }
+
+        var nextState = _uiState.value.copy(
+            simStatus = result,
+            hasSimPermission = hasPerm,
+            verifiedSimNumbers = numbers,
+            simCarriers = carriers,
+            simCountryIsos = isos,
+            error = if (_uiState.value.error is AppError.SimPermissionRequired ||
+                _uiState.value.error is AppError.SimRequired
+            ) {
+                null
+            } else {
+                _uiState.value.error
+            }
+        )
+
+        if (autoFillIfBlank && nextState.phoneInput.isBlank()) {
+            if (numbers.isNotEmpty()) {
+                simVerifier.parseCountryAndLocalNumber(numbers.first())?.let { (country, local) ->
+                    nextState = nextState.copy(selectedCountry = country, phoneInput = local)
+                }
+            } else if (isos.isNotEmpty()) {
+                nextState = nextState.copy(selectedCountry = CountryCatalog.findByIso(isos.first()))
+            }
+        }
+        _uiState.value = nextState
+    }
+
+    fun selectVerifiedSimNumber(e164: String) {
+        val parsed = simVerifier.parseCountryAndLocalNumber(e164)
+        if (parsed != null) {
+            _uiState.value = _uiState.value.copy(
+                selectedCountry = parsed.first,
+                phoneInput = parsed.second,
+                error = null
+            )
+            viewModelScope.launch {
+                prefsStore.recordRecentCountry(parsed.first.iso2)
+            }
+        }
+    }
 
     fun selectCountry(country: Country) {
         _uiState.value = _uiState.value.copy(selectedCountry = country, error = null)
@@ -74,14 +152,44 @@ class AuthViewModel(
             ?: "${state.selectedCountry.callingCode} ${state.phoneInput.trim()}".trim()
     }
 
+    // Existing account login works WITHOUT SIM using Phone + 5-digit Login PIN
     fun advanceLoginStep() {
         val state = _uiState.value
+        if (state.isLoading) return
         val e164 = CountryCatalog.normalizeToE164(state.selectedCountry, state.phoneInput)
         if (e164 == null) {
             _uiState.value = state.copy(error = AppError.InvalidPhone)
             return
         }
-        _uiState.value = state.copy(loginStep = 2, error = null)
+        _uiState.value = state.copy(isLoading = true, error = null)
+        viewModelScope.launch {
+            authRepository.checkPhoneAvailable(e164)
+                .onSuccess {
+                    // Phone is unregistered -> user must create a new account first
+                    _uiState.value = _uiState.value.copy(
+                        isLoading = false,
+                        loginStep = 1,
+                        error = AppError.AccountNotFound
+                    )
+                }
+                .onFailure { throwable ->
+                    val appErr = (throwable as? AppException)?.appError ?: AppError.ServerError()
+                    if (appErr is AppError.DuplicateAccount) {
+                        // Phone already has an account -> allow proceeding to 5-digit PIN entry
+                        _uiState.value = _uiState.value.copy(
+                            isLoading = false,
+                            loginStep = 2,
+                            error = null
+                        )
+                    } else {
+                        _uiState.value = _uiState.value.copy(
+                            isLoading = false,
+                            loginStep = 1,
+                            error = appErr
+                        )
+                    }
+                }
+        }
     }
 
     fun previousLoginStep(): Boolean {
@@ -114,7 +222,11 @@ class AuthViewModel(
                 onSuccess()
             }.onFailure { throwable ->
                 val appErr = (throwable as? AppException)?.appError ?: AppError.ServerError()
-                _uiState.value = _uiState.value.copy(isLoading = false, error = appErr)
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    loginStep = if (appErr is AppError.AccountNotFound) 1 else _uiState.value.loginStep,
+                    error = appErr
+                )
             }
         }
     }
@@ -124,12 +236,26 @@ class AuthViewModel(
         if (state.isLoading) return
         when (state.createStep) {
             1 -> {
-                val e164 = CountryCatalog.normalizeToE164(state.selectedCountry, state.phoneInput)
+                refreshSimVerification(autoFillIfBlank = false)
+                val updated = _uiState.value
+                val e164 = CountryCatalog.normalizeToE164(updated.selectedCountry, updated.phoneInput)
                 if (e164 == null) {
-                    _uiState.value = state.copy(error = AppError.InvalidPhone)
+                    val simPreErr = when (updated.simStatus) {
+                        SimCheckResult.PermissionRequired -> AppError.SimPermissionRequired
+                        SimCheckResult.NoSim -> AppError.SimRequired
+                        else -> AppError.InvalidPhone
+                    }
+                    _uiState.value = updated.copy(error = simPreErr)
                     return
                 }
-                _uiState.value = state.copy(isLoading = true, error = null)
+
+                val simErr = simVerifier.verifyRegistrationNumber(updated.selectedCountry, e164)
+                if (simErr != null) {
+                    _uiState.value = updated.copy(error = simErr)
+                    return
+                }
+
+                _uiState.value = updated.copy(isLoading = true, error = null)
                 viewModelScope.launch {
                     authRepository.checkPhoneAvailable(e164)
                         .onSuccess { available ->
@@ -200,16 +326,23 @@ class AuthViewModel(
             _uiState.value = state.copy(createStep = 1, error = AppError.InvalidPhone)
             return
         }
+        // Re-verify SIM & number ownership right before backend registration (zero bypass possible)
+        refreshSimVerification(autoFillIfBlank = false)
+        val simErr = simVerifier.verifyRegistrationNumber(state.selectedCountry, e164)
+        if (simErr != null) {
+            _uiState.value = _uiState.value.copy(createStep = 1, error = simErr)
+            return
+        }
         if (state.pin.length != 5 || !state.pin.all { it.isDigit() }) {
-            _uiState.value = state.copy(createStep = 3, error = AppError.InvalidPin)
+            _uiState.value = _uiState.value.copy(createStep = 3, error = AppError.InvalidPin)
             return
         }
         if (state.pin != state.confirmPin) {
-            _uiState.value = state.copy(error = AppError.PinMismatch)
+            _uiState.value = _uiState.value.copy(error = AppError.PinMismatch)
             return
         }
 
-        _uiState.value = state.copy(isLoading = true, error = null)
+        _uiState.value = _uiState.value.copy(isLoading = true, error = null)
         viewModelScope.launch {
             val result = authRepository.register(
                 phoneE164 = e164,
@@ -230,6 +363,16 @@ class AuthViewModel(
                 )
             }
         }
+    }
+
+    fun prepareCreateFromLogin() {
+        val state = _uiState.value
+        _uiState.value = AuthUiState(
+            selectedCountry = state.selectedCountry,
+            phoneInput = state.phoneInput,
+            createStep = 1
+        )
+        refreshSimVerification(autoFillIfBlank = false)
     }
 
     fun resetFlow() {

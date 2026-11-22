@@ -19,3 +19,43 @@ conversationsRoutes.post('/direct', authMiddleware, async (c) => {
   const conversation = await service.getOrCreateDirectConversation(auth.userId, body.targetUserId ?? '');
   return c.json({ conversation }, 200);
 });
+
+conversationsRoutes.patch('/:conversationId/preferences', authMiddleware, async (c) => {
+  const auth = c.get('auth');
+  const conversationId = c.req.param('conversationId') ?? '';
+  const body = await c.req.json<{
+    isPinned?: boolean;
+    isArchived?: boolean;
+    mutedUntilMs?: number | null;
+    customSoundUri?: string | null;
+    customSoundLabel?: string | null;
+    markedUnread?: boolean;
+  }>();
+  const service = new ConversationsService(c.get('db'));
+  const result = await service.updateConversationPreferences(auth.userId, conversationId, body, false);
+  return c.json(result, 200);
+});
+
+conversationsRoutes.post('/:conversationId/clear', authMiddleware, async (c) => {
+  const auth = c.get('auth');
+  const conversationId = c.req.param('conversationId') ?? '';
+  const service = new ConversationsService(c.get('db'));
+  const result = await service.clearConversationForUser(auth.userId, conversationId, false);
+  return c.json(result, 200);
+});
+
+conversationsRoutes.delete('/:conversationId', authMiddleware, async (c) => {
+  const auth = c.get('auth');
+  const conversationId = c.req.param('conversationId') ?? '';
+  const service = new ConversationsService(c.get('db'));
+  const result = await service.deleteConversationForUser(auth.userId, conversationId, false);
+  return c.json(result, 200);
+});
+
+conversationsRoutes.get('/:conversationId/peer-profile', authMiddleware, async (c) => {
+  const auth = c.get('auth');
+  const conversationId = c.req.param('conversationId') ?? '';
+  const service = new ConversationsService(c.get('db'));
+  const result = await service.getPeerProfile(auth.userId, conversationId, false);
+  return c.json(result, 200);
+});

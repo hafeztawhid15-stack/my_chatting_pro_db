@@ -12,6 +12,7 @@ import { messagesRoutes } from './modules/messages/messages.routes';
 import { notificationsRoutes } from './modules/notifications/notifications.routes';
 import { ownerRoutes } from './modules/owner/owner.routes';
 import { privacyRoutes } from './modules/privacy/privacy.routes';
+import { privateChatRoutes } from './modules/private-chat/privateChat.routes';
 import { profilesRoutes } from './modules/profiles/profiles.routes';
 import { reportsRoutes } from './modules/reports/reports.routes';
 import { usersRoutes } from './modules/users/users.routes';
@@ -26,7 +27,11 @@ app.use('*', async (c, next) => {
   await next();
   c.header('X-Content-Type-Options', 'nosniff');
   c.header('Referrer-Policy', 'no-referrer');
-  if (c.req.path.startsWith('/v1/auth/') || c.req.path.startsWith('/v1/owner')) {
+  if (
+    c.req.path.startsWith('/v1/auth/') ||
+    c.req.path.startsWith('/v1/owner') ||
+    c.req.path.startsWith('/v1/private-chat')
+  ) {
     c.header('Cache-Control', 'no-store');
   }
 });
@@ -56,6 +61,7 @@ app.route('/v1/privacy', privacyRoutes);
 app.route('/v1/reports', reportsRoutes);
 app.route('/v1/notifications', notificationsRoutes);
 app.route('/v1/owner', ownerRoutes);
+app.route('/v1/private-chat', privateChatRoutes);
 
 /**
  * Authenticated WebSocket entry point routed to per-user Durable Object.

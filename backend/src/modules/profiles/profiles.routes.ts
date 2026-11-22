@@ -27,11 +27,12 @@ profilesRoutes.patch('/me', authMiddleware, async (c) => {
 
 profilesRoutes.post('/account/delete', authMiddleware, async (c) => {
   const auth = c.get('auth');
-  const body = await c.req.json<{ pin?: string }>();
+  const body = await c.req.json<{ pin?: string; confirmText?: string }>();
   const service = new ProfilesService(c.env, c.get('db'), createSupabaseStorage(c.env));
   const result = await service.deleteAccountPermanently(
     auth.userId,
     body.pin ?? '',
+    body.confirmText ?? '',
     c.req.header('CF-Connecting-IP')
   );
   return c.json(result, 200);

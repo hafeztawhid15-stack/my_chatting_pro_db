@@ -110,6 +110,13 @@ class VoiceRecorderManager(private val context: Context) {
         _state.value = VoiceRecordingState()
     }
 
+    fun clearRecordedStateWithoutDeleting() {
+        timerJob?.cancel()
+        cleanupRecorder()
+        stopPlayback()
+        _state.value = VoiceRecordingState()
+    }
+
     fun togglePreviewPlayback() {
         val file = _state.value.recordedFile ?: return
         if (_state.value.isPreviewPlaying) {

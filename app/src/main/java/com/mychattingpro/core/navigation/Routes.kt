@@ -22,8 +22,15 @@ sealed interface AppRoute {
     data class ChatDetail(
         val conversationId: String,
         val peerUserId: String,
-        val peerName: String
+        val peerName: String,
+        val isPrivate: Boolean = false
     ) : AppRoute
+
+    @Serializable
+    data object PrivatePin : AppRoute
+
+    @Serializable
+    data object PrivateChats : AppRoute
 
     @Serializable
     data object Profile : AppRoute
@@ -45,7 +52,8 @@ sealed interface AppRoute {
         val peerName: String,
         val peerAvatarMediaId: String?,
         val isVideo: Boolean,
-        val isIncoming: Boolean
+        val isIncoming: Boolean,
+        val autoAccept: Boolean = false
     ) : AppRoute
 
     @Serializable
@@ -55,4 +63,19 @@ sealed interface AppRoute {
         val filename: String,
         val isVideo: Boolean
     ) : AppRoute
+
+    @Serializable
+    data object CallHistory : AppRoute
+
+    @Serializable
+    data object NotificationSettings : AppRoute
+
+    @Serializable
+    data object ChangeLoginPin : AppRoute
+
+    @Serializable
+    data object RecoveryCode : AppRoute
+
+    @Serializable
+    data object ForgotLoginPin : AppRoute
 }

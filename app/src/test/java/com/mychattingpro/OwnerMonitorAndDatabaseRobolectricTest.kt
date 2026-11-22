@@ -282,9 +282,19 @@ class OwnerMonitorAndDatabaseRobolectricTest {
             Result.failure(UnsupportedOperationException())
 
         override suspend fun logout(): Result<Unit> = Result.success(Unit)
-        override suspend fun deleteAccount(pin: String): Result<String> = Result.success("deleted")
+        override suspend fun logoutAllDevices(keepCurrent: Boolean): Result<Unit> = Result.success(Unit)
+        override suspend fun changeLoginPin(currentPin: String, newPin: String, confirmNewPin: String): Result<Unit> = Result.success(Unit)
+        override suspend fun generateRecoveryCode(currentPin: String): Result<String> = Result.success("ABCD-EFGH-IJKL")
+        override suspend fun resetLoginPinWithRecoveryCode(
+            phoneE164: String,
+            recoveryCode: String,
+            newPin: String,
+            confirmNewPin: String
+        ): Result<UserProfile> = Result.failure(UnsupportedOperationException())
+        override suspend fun deleteAccount(pin: String, confirmText: String): Result<String> = Result.success("deleted")
         override suspend fun getActiveSessions(): Result<List<ActiveDeviceSession>> = Result.success(emptyList())
         override suspend fun revokeSession(sessionId: String): Result<Unit> = Result.success(Unit)
+        override suspend fun syncNotificationEndpoint(): Result<Unit> = Result.success(Unit)
     }
 
     private class FakeSafetyRepository : SafetyRepository {

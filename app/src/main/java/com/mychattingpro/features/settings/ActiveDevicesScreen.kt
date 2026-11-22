@@ -1,5 +1,6 @@
 package com.mychattingpro.features.settings
 
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -18,8 +19,11 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.automirrored.rounded.Logout
 import androidx.compose.material.icons.outlined.Devices
 import androidx.compose.material.icons.outlined.PhoneAndroid
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -30,10 +34,14 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -49,16 +57,63 @@ import com.mychattingpro.core.localization.DateTimeFormatters
 @Composable
 fun ActiveDevicesScreen(
     viewModel: SettingsViewModel,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onLoggedOutAllDevices: () -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val language by viewModel.language.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    var showLogoutAllDialog by remember { mutableStateOf(false) }
 
     BackHandler(onBack = onBack)
 
     LaunchedEffect(Unit) {
         viewModel.loadActiveSessions()
+    }
+
+    LaunchedEffect(uiState.securityNotice) {
+        uiState.securityNotice?.let {
+            Toast.makeText(context, it, Toast.LENGTH_SHORT).show()
+            viewModel.clearError()
+        }
+    }
+
+    if (showLogoutAllDialog) {
+        AlertDialog(
+            onDismissRequest = { if (!uiState.isLoggingOutAllDevices) showLogoutAllDialog = false },
+            title = { Text(stringResource(R.string.logout_all_devices_title)) },
+            text = { Text(stringResource(R.string.logout_all_devices_desc)) },
+            confirmButton = {
+                TextButton(
+                    enabled = !uiState.isLoggingOutAllDevices,
+                    onClick = {
+                        viewModel.logoutAllDevices(keepCurrent = true)
+                        showLogoutAllDialog = false
+                    },
+                    modifier = Modifier.testTag("confirm_logout_other_devices")
+                ) {
+                    Text(stringResource(R.string.logout_other_devices_btn))
+                }
+            },
+            dismissButton = {
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    TextButton(
+                        enabled = !uiState.isLoggingOutAllDevices,
+                        colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                        onClick = {
+                            showLogoutAllDialog = false
+                            viewModel.logoutAllDevices(keepCurrent = false, onAllLoggedOut = onLoggedOutAllDevices)
+                        },
+                        modifier = Modifier.testTag("confirm_logout_all_devices")
+                    ) {
+                        Text(stringResource(R.string.logout_all_devices_including_this))
+                    }
+                    TextButton(onClick = { showLogoutAllDialog = false }) {
+                        Text(stringResource(R.string.action_cancel))
+                    }
+                }
+            }
+        )
     }
 
     Scaffold(
@@ -120,6 +175,46 @@ fun ActiveDevicesScreen(
                         verticalArrangement = Arrangement.spacedBy(10.dp),
                         modifier = Modifier.fillMaxSize()
                     ) {
+                        item(key = "logout_all_banner") {
+                            ElevatedCard(
+                                shape = RoundedCornerShape(16.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(14.dp),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Text(
+                                        text = stringResource(R.string.logout_all_devices_title),
+                                        style = MaterialTheme.typography.titleSmall,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Text(
+                                        text = stringResource(R.string.logout_all_devices_desc),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    OutlinedButton(
+                                        enabled = !uiState.isLoggingOutAllDevices,
+                                        onClick = { showLogoutAllDialog = true },
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .testTag("devices_logout_all_button")
+                                    ) {
+                                        if (uiState.isLoggingOutAllDevices) {
+                                            CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                                        } else {
+                                            Icon(Icons.AutoMirrored.Rounded.Logout, contentDescription = null, modifier = Modifier.size(18.dp))
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Text(stringResource(R.string.logout_all_devices_title))
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
                         items(uiState.activeSessions, key = { it.sessionId }) { session ->
                             ElevatedCard(
                                 shape = RoundedCornerShape(16.dp),

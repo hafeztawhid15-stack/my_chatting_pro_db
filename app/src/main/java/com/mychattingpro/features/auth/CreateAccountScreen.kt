@@ -1,6 +1,8 @@
 package com.mychattingpro.features.auth
 
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -11,6 +13,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -18,6 +23,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -29,20 +35,26 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.PhoneAndroid
+import androidx.compose.material.icons.rounded.SimCard
+import androidx.compose.material.icons.rounded.SimCardAlert
 import androidx.compose.material.icons.rounded.VerifiedUser
+import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -60,6 +72,7 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.R
+import com.mychattingpro.core.security.SimCheckResult
 import com.mychattingpro.features.common.FiveDigitPinField
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -74,6 +87,16 @@ fun CreateAccountScreen(
     val recentIsos by viewModel.recentCountryIsos.collectAsStateWithLifecycle()
     val context = LocalContext.current
     var showCountryPicker by remember { mutableStateOf(false) }
+
+    val simPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) {
+        viewModel.refreshSimVerification(autoFillIfBlank = true)
+    }
+
+    LaunchedEffect(Unit) {
+        viewModel.refreshSimVerification(autoFillIfBlank = true)
+    }
 
     BackHandler {
         if (!viewModel.previousCreateStep()) {
@@ -165,12 +188,29 @@ fun CreateAccountScreen(
                                         icon = Icons.Rounded.PhoneAndroid
                                     )
 
+                                    SimVerificationStatusCard(
+                                        simStatus = state.simStatus,
+                                        onRequestPermission = {
+                                            simPermissionLauncher.launch(viewModel.simRequiredPermissions())
+                                        },
+                                        onRefreshSim = {
+                                            viewModel.refreshSimVerification(autoFillIfBlank = true)
+                                        },
+                                        onSelectVerifiedNumber = viewModel::selectVerifiedSimNumber
+                                    )
+
                                     AuthPhoneEntryBlock(
                                         selectedCountry = state.selectedCountry,
                                         phoneInput = state.phoneInput,
                                         onOpenCountryPicker = { showCountryPicker = true },
                                         onPhoneChange = viewModel::updatePhone,
-                                        onSubmitIme = viewModel::advanceCreateStep,
+                                        onSubmitIme = {
+                                            if (state.simStatus is SimCheckResult.PermissionRequired) {
+                                                simPermissionLauncher.launch(viewModel.simRequiredPermissions())
+                                            } else {
+                                                viewModel.advanceCreateStep()
+                                            }
+                                        },
                                         countryTestTag = "create_country_selector",
                                         phoneTestTag = "create_phone_input"
                                     )
@@ -178,8 +218,14 @@ fun CreateAccountScreen(
                                     AuthErrorBanner(state.error?.toLocalizedMessage(context))
 
                                     Button(
-                                        onClick = viewModel::advanceCreateStep,
-                                        enabled = !state.isLoading,
+                                        onClick = {
+                                            if (state.simStatus is SimCheckResult.PermissionRequired) {
+                                                simPermissionLauncher.launch(viewModel.simRequiredPermissions())
+                                            } else {
+                                                viewModel.advanceCreateStep()
+                                            }
+                                        },
+                                        enabled = !state.isLoading && state.simStatus !is SimCheckResult.NoSim,
                                         modifier = Modifier
                                             .fillMaxWidth()
                                             .height(54.dp)
@@ -194,7 +240,11 @@ fun CreateAccountScreen(
                                             )
                                         } else {
                                             Text(
-                                                text = stringResource(R.string.action_continue),
+                                                text = if (state.simStatus is SimCheckResult.PermissionRequired) {
+                                                    stringResource(R.string.sim_verify_grant_btn)
+                                                } else {
+                                                    stringResource(R.string.action_continue)
+                                                },
                                                 style = MaterialTheme.typography.titleMedium
                                             )
                                         }
@@ -373,7 +423,130 @@ fun CreateAccountScreen(
                         Text(stringResource(R.string.auth_switch_to_login))
                     }
 
-                    AuthNoOtpNotice()
+                    Surface(
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                        shape = RoundedCornerShape(14.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = stringResource(R.string.sim_verify_no_otp_note),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(12.dp)
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun SimVerificationStatusCard(
+    simStatus: SimCheckResult,
+    onRequestPermission: () -> Unit,
+    onRefreshSim: () -> Unit,
+    onSelectVerifiedNumber: (String) -> Unit
+) {
+    val containerColor = when (simStatus) {
+        is SimCheckResult.VerifiedWithNumbers,
+        is SimCheckResult.VerifiedCarrierOnly -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f)
+        SimCheckResult.NoSim -> MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.75f)
+        SimCheckResult.PermissionRequired -> MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.7f)
+    }
+    val contentColor = when (simStatus) {
+        is SimCheckResult.VerifiedWithNumbers,
+        is SimCheckResult.VerifiedCarrierOnly -> MaterialTheme.colorScheme.onPrimaryContainer
+        SimCheckResult.NoSim -> MaterialTheme.colorScheme.onErrorContainer
+        SimCheckResult.PermissionRequired -> MaterialTheme.colorScheme.onSecondaryContainer
+    }
+
+    Surface(
+        color = containerColor,
+        shape = RoundedCornerShape(16.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("create_sim_status_card")
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Icon(
+                    imageVector = if (simStatus is SimCheckResult.NoSim) Icons.Rounded.SimCardAlert else Icons.Rounded.SimCard,
+                    contentDescription = null,
+                    tint = contentColor
+                )
+                Text(
+                    text = stringResource(R.string.sim_verify_card_title),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = contentColor,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+
+            when (simStatus) {
+                is SimCheckResult.PermissionRequired -> {
+                    Text(
+                        text = stringResource(R.string.sim_verify_required_desc),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = contentColor
+                    )
+                    FilledTonalButton(
+                        onClick = onRequestPermission,
+                        modifier = Modifier.testTag("create_verify_sim_button")
+                    ) {
+                        Icon(Icons.Rounded.SimCard, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(stringResource(R.string.sim_verify_grant_btn))
+                    }
+                }
+                is SimCheckResult.NoSim -> {
+                    Text(
+                        text = stringResource(R.string.sim_verify_no_sim),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = contentColor
+                    )
+                    TextButton(
+                        onClick = onRefreshSim,
+                        modifier = Modifier.testTag("create_refresh_sim_button")
+                    ) {
+                        Text(stringResource(R.string.action_retry))
+                    }
+                }
+                is SimCheckResult.VerifiedWithNumbers -> {
+                    Text(
+                        text = stringResource(
+                            R.string.sim_verify_detected_number,
+                            simStatus.numbersE164.joinToString(", ")
+                        ),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = contentColor
+                    )
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        simStatus.numbersE164.forEach { num ->
+                            AssistChip(
+                                onClick = { onSelectVerifiedNumber(num) },
+                                label = { Text(stringResource(R.string.sim_verify_use_number, num)) },
+                                modifier = Modifier.testTag("create_use_sim_chip_$num")
+                            )
+                        }
+                    }
+                }
+                is SimCheckResult.VerifiedCarrierOnly -> {
+                    val carrier = simStatus.carriers.firstOrNull().orEmpty().ifBlank { "SIM" }
+                    val iso = simStatus.countryIsos.firstOrNull().orEmpty().uppercase().ifBlank { "SIM" }
+                    Text(
+                        text = stringResource(R.string.sim_verify_carrier_only, carrier, iso),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = contentColor
+                    )
                 }
             }
         }

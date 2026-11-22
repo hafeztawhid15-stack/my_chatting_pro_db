@@ -52,7 +52,7 @@
     <string name="nav_settings">Settings</string>
 
     <string name="menu_clear_cache">Clear Cache</string>
-    <string name="menu_website">Website</string>
+    <string name="menu_website">Details</string>
     <string name="clear_cache_confirm_title">Clear Temporary Cache</string>
     <string name="clear_cache_confirm_message">Temporary cache পরিষ্কার করবেন? Messages, photos, videos, files, and your account will not be deleted.</string>
     <string name="clear_cache_success">Temporary cache cleared.</string>
@@ -163,7 +163,7 @@
     <string name="err_invalid_pin">PIN must be exactly 5 digits.</string>
     <string name="err_pin_mismatch">PINs do not match.</string>
     <string name="err_wrong_pin">Incorrect PIN. Please check and try again.</string>
-    <string name="err_account_not_found">No account found for this phone number.</string>
+    <string name="err_account_not_found">No account found for this phone number. Please create a new account first.</string>
     <string name="err_duplicate_account">An account with this phone number already exists. You cannot create a second account with the same number.</string>
     <string name="err_rate_limit">Too many attempts. Please wait %1$d seconds before trying again.</string>
     <string name="err_network">Network unavailable. Check your internet connection.</string>
@@ -195,4 +195,197 @@
     <string name="owner_search_hint">Search name, country, or phone</string>
     <string name="owner_load_more">Load More</string>
     <string name="owner_showing_count">%1$d of %2$d</string>
+
+    <string name="menu_private_chat">Private Chat</string>
+    <string name="profile_updated_success">Profile updated</string>
+    <string name="profile_load_failed">Could not load your profile. Please retry.</string>
+
+    <string name="private_chat_title">Private Chat</string>
+    <string name="private_chat_empty_title">No Private Chats yet</string>
+    <string name="private_chat_empty_subtitle">Your Private Chat conversations stay separated from regular chats and protected by your 5-digit Private PIN.</string>
+    <string name="private_chat_add_btn">New Private Chat</string>
+    <string name="private_chat_lock_now">Lock</string>
+    <string name="private_chat_locked_notice">Private Chat is locked for your security.</string>
+
+    <string name="private_pin_setup_title">Create Private PIN</string>
+    <string name="private_pin_setup_subtitle">Choose a separate 5-digit PIN for Private Chat. Do not reuse your account Login PIN.</string>
+    <string name="private_pin_confirm_title">Confirm Private PIN</string>
+    <string name="private_pin_confirm_subtitle">Re-enter your 5-digit Private PIN to finish setup.</string>
+    <string name="private_pin_unlock_title">Unlock Private Chat</string>
+    <string name="private_pin_unlock_subtitle">Enter your 5-digit Private PIN to access your private conversations.</string>
+    <string name="private_pin_forgot_btn">Forgot Private PIN?</string>
+    <string name="private_pin_reset_title">Reset Private PIN</string>
+    <string name="private_pin_reset_subtitle">Verify your account using your regular 5-digit Account Login PIN, then choose a new 5-digit Private PIN.</string>
+    <string name="private_pin_enter_account_login_pin">Account Login PIN (5 digits)</string>
+    <string name="private_pin_new_label">New Private PIN (5 digits)</string>
+    <string name="private_pin_confirm_label">Confirm New Private PIN</string>
+    <string name="private_pin_reset_success">Private PIN reset and unlocked.</string>
+
+    <string name="settings_private_pin">Private Chat PIN</string>
+    <string name="settings_private_pin_desc">Change or reset your 5-digit Private Chat PIN</string>
+    <string name="settings_private_pin_not_set_desc">Set up a separate 5-digit PIN for Private Chat</string>
+    <string name="private_pin_change_title">Change Private PIN</string>
+    <string name="private_pin_old_label">Current Private PIN (5 digits)</string>
+    <string name="private_pin_change_success">Private PIN updated successfully.</string>
+    <string name="private_pin_setup_success">Private PIN created successfully.</string>
+    <string name="notif_private_message_body">New protected message waiting</string>
+
+    <string name="err_wrong_private_pin">Incorrect Private PIN. Please try again.</string>
+    <string name="err_private_pin_locked">Too many wrong Private PIN attempts. Please wait %1$d seconds.</string>
+    <string name="err_private_pin_not_set">Private PIN has not been created yet.</string>
+    <string name="err_private_pin_already_set">Private PIN is already set.</string>
+    <string name="err_private_chat_locked">Private Chat is locked. Enter your Private PIN to continue.</string>
+
+    <string name="sim_verify_card_title">SIM Card Ownership Verification</string>
+    <string name="sim_verify_required_desc">An active SIM card in this device is required to create a new account. Existing accounts can log in anytime without a SIM.</string>
+    <string name="sim_verify_grant_btn">Verify SIM</string>
+    <string name="sim_verify_detected_number">Verified SIM: %1$s</string>
+    <string name="sim_verify_carrier_only">Active SIM detected (%1$s). Enter the matching %2$s phone number from this SIM.</string>
+    <string name="sim_verify_use_number">Use %1$s</string>
+    <string name="sim_verify_no_sim">No active SIM card detected. Insert a SIM card to create a new account.</string>
+    <string name="sim_verify_no_otp_note">Verified via device SIM card (no SMS OTP). Existing accounts can still log in without a SIM.</string>
+
+    <string name="err_sim_required">Active SIM card is required. A new account cannot be created without a SIM card.</string>
+    <string name="err_sim_permission_required">SIM verification permission is required to confirm your phone number before creating an account.</string>
+    <string name="err_sim_number_mismatch">This phone number does not match the active SIM card on your device.</string>
+    <string name="err_self_search">This is your own phone number. Search another registered user to start a chat.</string>
+    <string name="add_chat_search_wait">Wait %1$ds</string>
+    <string name="add_chat_profile_verified">MY CHATTING PRO Account</string>
+
+    <string name="err_timeout">Request timed out. The server took too long to respond.</string>
+    <string name="err_storage_permission_denied">Storage permission or Cloudflare/Supabase access was denied.</string>
+    <string name="err_storage_bucket_missing">Supabase private media storage bucket is not configured.</string>
+    <string name="err_unsupported_media_type">Unsupported media or file format.</string>
+    <string name="err_empty_media_file">Selected or recorded media file is empty or unreadable.</string>
+    <string name="err_invalid_recovery_code">Invalid recovery code. Please check and try again.</string>
+    <string name="err_recovery_code_not_set">No recovery code has been generated for this account yet.</string>
+    <string name="err_invalid_delete_confirmation">Type DELETE in capital letters to confirm account deletion.</string>
+    <string name="err_duplicate_report">You have already submitted a recent report for this item.</string>
+    <string name="err_session_revoked">Your session was signed out from another device or expired.</string>
+    <string name="err_user_blocked">Action blocked because one of the users blocked the other.</string>
+    <string name="err_no_browser">No web browser found to open this link.</string>
+
+    <string name="notif_channel_security">Security Alerts</string>
+    <string name="notif_channel_account">Account &amp; Devices</string>
+    <string name="settings_notifications_title">Notification Settings</string>
+    <string name="settings_notifications_desc">14 controls for chats, private chat, calls &amp; UnifiedPush</string>
+    <string name="notif_section_general">General Notifications</string>
+    <string name="notif_section_sound_alerts">Sound &amp; Alerts</string>
+    <string name="notif_section_calls_security">Calls &amp; Security</string>
+    <string name="notif_section_delivery">Background Sync &amp; UnifiedPush</string>
+    <string name="notif_master_label">All Notifications</string>
+    <string name="notif_master_desc">Master toggle for all local alerts</string>
+    <string name="notif_messages_label">Message Notifications</string>
+    <string name="notif_messages_desc">Show notifications for regular chats</string>
+    <string name="notif_private_messages_label">Private Chat Notifications</string>
+    <string name="notif_private_messages_desc">Hide sensitive previews when locked</string>
+    <string name="notif_preview_label">Message Preview</string>
+    <string name="notif_preview_desc">Show sender text in notification shade</string>
+    <string name="notif_sound_label">Message Sound</string>
+    <string name="notif_vibration_label">Message Vibration</string>
+    <string name="notif_in_app_alerts_label">In-App Alerts</string>
+    <string name="notif_calls_label">Incoming Call Alerts</string>
+    <string name="notif_missed_calls_label">Missed Call Alerts</string>
+    <string name="notif_call_vibrate_label">Call Ring Vibration</string>
+    <string name="notif_security_alerts_label">Security Alerts</string>
+    <string name="notif_account_alerts_label">Account &amp; Device Alerts</string>
+    <string name="notif_unified_push_label">UnifiedPush Endpoint</string>
+    <string name="notif_unified_push_desc">Receive wakeups via custom ntfy / UnifiedPush distributor without Firebase</string>
+    <string name="notif_unified_push_url_label">UnifiedPush Endpoint URL</string>
+    <string name="notif_sync_push_btn">Save &amp; Sync Notification Settings</string>
+    <string name="notif_push_synced">Notification endpoint saved &amp; synced</string>
+    <string name="notif_open_system_settings">Open Android Notification Settings</string>
+    <string name="notif_battery_optimization_btn">Allow Background Battery Usage</string>
+
+    <string name="call_history_title">Call History</string>
+    <string name="call_filter_all">All</string>
+    <string name="call_filter_incoming">Incoming</string>
+    <string name="call_filter_outgoing">Outgoing</string>
+    <string name="call_filter_missed">Missed</string>
+    <string name="call_filter_rejected">Rejected</string>
+    <string name="call_history_empty_title">No calls yet</string>
+    <string name="call_history_empty_subtitle">Your audio and video call history will appear here.</string>
+
+    <string name="chat_menu_view_profile">View Profile</string>
+    <string name="chat_menu_mute">Mute Notifications</string>
+    <string name="chat_menu_unmute">Unmute Notifications</string>
+    <string name="chat_menu_mute_title">Mute Conversation</string>
+    <string name="mute_1_hour">1 Hour</string>
+    <string name="mute_8_hours">8 Hours</string>
+    <string name="mute_1_week">1 Week</string>
+    <string name="mute_always">Always</string>
+    <string name="chat_menu_custom_sound">Custom Notification Sound</string>
+    <string name="custom_sound_current">Current tone: %1$s</string>
+    <string name="custom_sound_default">Default System Tone</string>
+    <string name="custom_sound_choose">Choose System Ringtone</string>
+    <string name="custom_sound_reset">Reset to Default</string>
+    <string name="chat_menu_pin">Pin Chat</string>
+    <string name="chat_menu_unpin">Unpin Chat</string>
+    <string name="chat_menu_mark_unread">Mark as Unread</string>
+    <string name="chat_menu_mark_read">Mark as Read</string>
+    <string name="chat_menu_archive">Archive Chat</string>
+    <string name="chat_menu_unarchive">Unarchive Chat</string>
+    <string name="archived_chats_header">Archived Chats (%1$d)</string>
+    <string name="chat_menu_clear_chat">Clear Chat</string>
+    <string name="chat_clear_confirm_message">Clear all messages in this conversation? This clears them locally for your view.</string>
+    <string name="chat_menu_delete_chat">Delete Chat</string>
+    <string name="chat_menu_delete_private_chat">Delete Private Chat</string>
+    <string name="chat_delete_confirm_message">Delete this conversation from your list?</string>
+    <string name="report_reason_label">Reason</string>
+    <string name="report_details_hint">Additional details (optional)</string>
+    <string name="report_submit">Submit Report</string>
+
+    <string name="profile_title">My Profile</string>
+    <string name="action_edit_profile">Edit Profile</string>
+    <string name="action_change_photo">Change Photo</string>
+    <string name="action_save_image">Save Image</string>
+    <string name="media_saved_to_gallery">Image saved to Gallery</string>
+    <string name="media_save_failed">Could not save image</string>
+
+    <string name="settings_section_security">Account Security</string>
+    <string name="settings_section_app_info">App Info &amp; Updates</string>
+    <string name="change_login_pin_title">Change Login PIN</string>
+    <string name="change_login_pin_subtitle">Update your 5-digit account Login PIN.</string>
+    <string name="change_login_pin_current">Current Login PIN</string>
+    <string name="change_login_pin_new">New 5-Digit Login PIN</string>
+    <string name="change_login_pin_confirm">Confirm New Login PIN</string>
+    <string name="login_pin_changed_success">Login PIN updated successfully.</string>
+
+    <string name="recovery_code_title">Recovery Code</string>
+    <string name="recovery_code_status_active">Recovery Code Active</string>
+    <string name="recovery_code_status_missing">Recovery Code Not Generated</string>
+    <string name="recovery_code_warning_desc">Save this one-time recovery code safely. You can use it without SMS OTP to reset your Login PIN if you forget it.</string>
+    <string name="recovery_code_your_code">Your Recovery Code</string>
+    <string name="recovery_code_copied">Recovery code copied</string>
+    <string name="recovery_code_copy_btn">Copy Code</string>
+    <string name="recovery_code_enter_pin_label">Enter Current 5-Digit Login PIN</string>
+    <string name="recovery_code_generate_btn">Generate Recovery Code</string>
+    <string name="recovery_code_regenerate_btn">Regenerate Recovery Code</string>
+    <string name="recovery_code_generated_notice">New recovery code generated. Save it safely!</string>
+
+    <string name="forgot_login_pin_title">Forgot / Reset Login PIN</string>
+    <string name="forgot_login_pin_subtitle">Reset your 5-digit Login PIN using your phone number and saved Recovery Code (No OTP needed).</string>
+    <string name="recovery_code_input_label">Recovery Code</string>
+    <string name="forgot_login_pin_submit">Reset Login PIN</string>
+    <string name="login_pin_reset_success">Login PIN reset successfully. You can log in with your new PIN.</string>
+    <string name="login_forgot_pin_link">Forgot Login PIN? Reset with Recovery Code</string>
+
+    <string name="logout_all_devices_title">Log Out All Devices</string>
+    <string name="logout_all_devices_desc">Sign out all other devices or terminate every active session including this phone.</string>
+    <string name="logout_other_devices_btn">Other Devices Only</string>
+    <string name="logout_all_devices_including_this">All Including This</string>
+    <string name="logout_other_devices_success">All other devices signed out.</string>
+    <string name="logout_all_devices_success">All devices signed out.</string>
+    <string name="delete_account_confirm_word_hint">Type DELETE to confirm</string>
+
+    <string name="check_for_updates">Check for Updates</string>
+    <string name="checking_updates">Checking Google Play for updates…</string>
+    <string name="update_available_title">Update Available</string>
+    <string name="update_available_message">A newer version (%1$s) is available on Google Play.</string>
+    <string name="update_up_to_date">You are on the latest version (%1$s).</string>
+    <string name="update_check_failed">Could not check for updates right now.</string>
+    <string name="update_download_btn">Update on Play Store</string>
+    <string name="rate_this_app">Rate This App</string>
+    <string name="share_app">Share App</string>
+    <string name="share_app_message">Chat privately and make crystal-clear calls on MY CHATTING PRO! Download here: %1$s</string>
 </resources>

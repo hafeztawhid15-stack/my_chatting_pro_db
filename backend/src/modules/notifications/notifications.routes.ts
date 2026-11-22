@@ -37,3 +37,10 @@ notificationsRoutes.post('/endpoints', authMiddleware, async (c) => {
 
   return c.json({ ok: true, transport });
 });
+
+notificationsRoutes.delete('/endpoints', authMiddleware, async (c) => {
+  const auth = c.get('auth');
+  const db = c.get('db');
+  await db.deleteNotificationEndpoint(auth.userId, auth.deviceId);
+  return c.json({ ok: true });
+});

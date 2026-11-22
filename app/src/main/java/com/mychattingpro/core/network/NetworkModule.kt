@@ -7,6 +7,7 @@ import coil.memory.MemoryCache
 import com.example.BuildConfig
 import com.mychattingpro.core.datastore.AppPreferencesDataStore
 import com.mychattingpro.core.security.EncryptedTokenStore
+import com.mychattingpro.core.security.PrivateChatLockManager
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import okhttp3.OkHttpClient
@@ -19,7 +20,8 @@ import java.util.concurrent.TimeUnit
 class NetworkModule(
     context: Context,
     tokenStore: EncryptedTokenStore,
-    prefsStore: AppPreferencesDataStore
+    prefsStore: AppPreferencesDataStore,
+    privateChatLockManager: PrivateChatLockManager = PrivateChatLockManager()
 ) {
     val baseUrl: String = BuildConfig.CLOUDFLARE_API_BASE_URL
         .ifBlank { "https://my-chatting-pro-api.workers.dev" }
@@ -29,15 +31,17 @@ class NetworkModule(
         .addLast(KotlinJsonAdapterFactory())
         .build()
 
-    // Never log Authorization headers or sensitive request/response bodies in production
+    // Never log Authorization, X-Private-Unlock-Token, or X-Owner-Key headers
     private val loggingInterceptor = HttpLoggingInterceptor().apply {
         level = if (BuildConfig.DEBUG) HttpLoggingInterceptor.Level.BASIC else HttpLoggingInterceptor.Level.NONE
         redactHeader("Authorization")
         redactHeader("Cookie")
+        redactHeader("X-Private-Unlock-Token")
+        redactHeader("X-Owner-Key")
     }
 
     val okHttpClient: OkHttpClient = OkHttpClient.Builder()
-        .addInterceptor(AuthInterceptor(tokenStore))
+        .addInterceptor(AuthInterceptor(tokenStore, privateChatLockManager))
         .addInterceptor(loggingInterceptor)
         .authenticator(TokenAuthenticator(baseUrl, tokenStore, moshi))
         .connectTimeout(20, TimeUnit.SECONDS)
