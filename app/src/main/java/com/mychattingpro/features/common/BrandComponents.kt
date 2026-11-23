@@ -68,6 +68,7 @@ fun UserAvatar(
         .joinToString("")
         .ifEmpty { "M" }
 
+    var retryCount by remember(avatarMediaId) { mutableStateOf(0) }
     var imageLoadFailed by remember(avatarMediaId) {
         mutableStateOf(false)
     }
@@ -84,12 +85,19 @@ fun UserAvatar(
             AsyncImage(
                 model = ImageRequest.Builder(context)
                     .data(networkModule.mediaContentUrl(avatarMediaId))
+                    .setParameter("retry", retryCount, memoryCacheKey = null)
                     .crossfade(true)
                     .build(),
                 imageLoader = networkModule.imageLoader,
                 contentDescription = displayName,
                 contentScale = ContentScale.Crop,
-                onError = { imageLoadFailed = true },
+                onError = {
+                    if (retryCount < 1) {
+                        retryCount++
+                    } else {
+                        imageLoadFailed = true
+                    }
+                },
                 modifier = Modifier
                     .size(size)
                     .clip(CircleShape)

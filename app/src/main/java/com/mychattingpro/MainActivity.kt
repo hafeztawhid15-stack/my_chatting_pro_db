@@ -73,6 +73,8 @@ private data class PendingCallLaunch(
 
 class MainActivity : ComponentActivity() {
     private var pendingCallLaunch by mutableStateOf<PendingCallLaunch?>(null)
+    private var cachedHasSession = false
+    private var cachedBackgroundSyncEnabled = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -91,6 +93,13 @@ class MainActivity : ComponentActivity() {
             )
 
             LaunchedEffect(prefs.backgroundSyncEnabled, session?.userId) {
+                cachedHasSession = session != null
+                cachedBackgroundSyncEnabled = prefs.backgroundSyncEnabled
+                if (session != null) {
+                    container.networkModule.realtimeSocketManager.start()
+                } else {
+                    container.networkModule.realtimeSocketManager.stop()
+                }
                 if (prefs.backgroundSyncEnabled && session != null) {
                     RealtimeSyncService.start(applicationContext)
                 } else if (!prefs.backgroundSyncEnabled) {
@@ -158,10 +167,23 @@ class MainActivity : ComponentActivity() {
         )
     }
 
+    override fun onStart() {
+        super.onStart()
+        val container = (application as? MyChattingProApp)?.container ?: return
+        container.interstitialAdManager.preload()
+        if (cachedHasSession) {
+            container.networkModule.realtimeSocketManager.sendPresencePing()
+        }
+    }
+
     override fun onStop() {
         super.onStop()
         if (!isChangingConfigurations) {
-            (application as? MyChattingProApp)?.container?.privateChatLockManager?.lock()
+            val container = (application as? MyChattingProApp)?.container ?: return
+            container.privateChatLockManager.lock()
+            if (cachedHasSession && !cachedBackgroundSyncEnabled) {
+                container.networkModule.realtimeSocketManager.pauseForBackground()
+            }
         }
     }
 }
@@ -413,7 +435,8 @@ private fun MyChattingProNavRoot(
                         okHttpClient = container.networkModule.okHttpClient,
                         networkMonitor = container.networkModule.networkMonitor,
                         isPrivate = route.isPrivate,
-                        privateChatRepository = container.privateChatRepository
+                        privateChatRepository = container.privateChatRepository,
+                        baseUrl = container.networkModule.baseUrl
                     )
                 }
             )

@@ -1,6 +1,7 @@
 import { DatabaseClient } from '../../database/supabase';
 import { ApiError } from '../../middleware/errorHandler';
 import { normalizePhoneE164 } from '../../security/validation';
+import { computeIsFreshlyOnline } from '../../utils/presence';
 
 export interface PublicUserSearchResult {
   id: string;
@@ -32,7 +33,7 @@ export class UsersService {
       displayName: row.display_name,
       about: row.about_text,
       avatarMediaId: row.avatar_media_id,
-      isOnline: Boolean(row.is_online),
+      isOnline: computeIsFreshlyOnline(row.is_online, row.last_seen_ms),
       lastSeenMs: row.last_seen_ms,
     };
   }

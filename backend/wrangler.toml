@@ -3,9 +3,10 @@ main = "src/index.ts"
 compatibility_date = "2025-03-01"
 compatibility_flags = ["nodejs_compat"]
 
-# Development / Default environment bindings (Supabase PostgreSQL + Supabase Private Storage + Durable Objects)
+# Production / Default environment bindings (Supabase PostgreSQL + Supabase Private Storage + Durable Objects)
 [vars]
-ENVIRONMENT = "development"
+ENVIRONMENT = "production"
+SUPABASE_URL = "https://kfgqysczabdkrrrlrpyn.supabase.co"
 SUPABASE_STORAGE_BUCKET = "my-chatting-pro-media"
 ACCESS_TOKEN_TTL_SECONDS = "900"
 REFRESH_TOKEN_TTL_SECONDS = "2592000"
@@ -28,7 +29,7 @@ class_name = "ConversationCoordinator"
 tag = "v1"
 new_sqlite_classes = ["UserRealtimeCoordinator", "ConversationCoordinator"]
 
-# Production environment
+# Explicit Production environment alias (kept in sync with top-level defaults)
 [env.production]
 name = "my-chatting-pro-api"
 
@@ -52,3 +53,7 @@ class_name = "UserRealtimeCoordinator"
 [[env.production.durable_objects.bindings]]
 name = "CONVERSATION_COORDINATOR"
 class_name = "ConversationCoordinator"
+
+[[env.production.migrations]]
+tag = "v1"
+new_sqlite_classes = ["UserRealtimeCoordinator", "ConversationCoordinator"]

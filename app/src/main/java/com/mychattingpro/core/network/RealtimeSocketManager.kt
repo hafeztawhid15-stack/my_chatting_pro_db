@@ -3,6 +3,7 @@ package com.mychattingpro.core.network
 import com.mychattingpro.core.datastore.AppPreferencesDataStore
 import com.mychattingpro.core.security.EncryptedTokenStore
 import com.mychattingpro.core.security.SafeLogger
+import com.squareup.moshi.Moshi
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -16,8 +17,11 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
@@ -72,9 +76,12 @@ class RealtimeSocketManager(
     private val okHttpClient: OkHttpClient,
     private val tokenStore: EncryptedTokenStore,
     private val prefsStore: AppPreferencesDataStore,
-    private val networkMonitor: NetworkMonitor
+    private val networkMonitor: NetworkMonitor,
+    private val moshi: Moshi? = null
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val refreshLock = Any()
+    private val refreshClient = OkHttpClient.Builder().build()
 
     private val _connectionState = MutableStateFlow(SocketConnectionState.DISCONNECTED)
     val connectionState: StateFlow<SocketConnectionState> = _connectionState.asStateFlow()
@@ -120,13 +127,34 @@ class RealtimeSocketManager(
         connectIfNeeded()
     }
 
+    fun sendPresencePing() {
+        val ws = activeSocket
+        if (ws != null && _connectionState.value == SocketConnectionState.CONNECTED) {
+            if (ws.send("""{"type":"ping"}""")) return
+        }
+        start()
+    }
+
+    fun pauseForBackground() {
+        shouldStayConnected = false
+        reconnectJob?.cancel()
+        heartbeatJob?.cancel()
+        val ws = activeSocket
+        activeSocket = null
+        runCatching { ws?.send("""{"type":"presence.offline"}""") }
+        runCatching { ws?.close(1000, "App backgrounded") }
+        _connectionState.value = SocketConnectionState.DISCONNECTED
+    }
+
     fun stop() {
         shouldStayConnected = false
         reconnectJob?.cancel()
         heartbeatJob?.cancel()
         pendingOutboundSignals.clear()
-        activeSocket?.close(1000, "User stopped")
+        val ws = activeSocket
         activeSocket = null
+        runCatching { ws?.send("""{"type":"presence.offline"}""") }
+        runCatching { ws?.close(1000, "User stopped") }
         _connectionState.value = SocketConnectionState.DISCONNECTED
     }
 
@@ -192,6 +220,10 @@ class RealtimeSocketManager(
 
             activeSocket = okHttpClient.newWebSocket(request, object : WebSocketListener() {
                 override fun onOpen(webSocket: WebSocket, response: Response) {
+                    if (webSocket !== activeSocket) {
+                        webSocket.close(1000, "Superseded")
+                        return
+                    }
                     backoffAttempt = 0
                     _connectionState.value = SocketConnectionState.CONNECTED
                     flushPendingSignals(webSocket)
@@ -208,14 +240,75 @@ class RealtimeSocketManager(
                 }
 
                 override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
-                    cleanupSocketAndReconnect()
+                    if (webSocket === activeSocket) {
+                        cleanupSocketAndReconnect()
+                    }
                 }
 
                 override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-                    SafeLogger.w("RealtimeWS", "Socket failure: ${t.javaClass.simpleName}")
+                    SafeLogger.w("RealtimeWS", "Socket failure (${response?.code ?: 0}): ${t.javaClass.simpleName}")
+                    if (webSocket !== activeSocket) return
+                    if (response?.code == 401) {
+                        heartbeatJob?.cancel()
+                        activeSocket = null
+                        scope.launch {
+                            val refreshed = refreshAccessTokenSync()
+                            if (refreshed && shouldStayConnected) {
+                                backoffAttempt = 0
+                                _connectionState.value = SocketConnectionState.RECONNECTING
+                                connectIfNeeded()
+                            } else if (tokenStore.getSession() == null) {
+                                stop()
+                            } else {
+                                cleanupSocketAndReconnect()
+                            }
+                        }
+                        return
+                    }
                     cleanupSocketAndReconnect()
                 }
             })
+        }
+    }
+
+    private fun refreshAccessTokenSync(): Boolean {
+        synchronized(refreshLock) {
+            val session = runBlocking { tokenStore.getSession() } ?: return false
+            return try {
+                val reqJson = JSONObject().apply {
+                    put("refreshToken", session.refreshToken)
+                }.toString()
+                val req = Request.Builder()
+                    .url("${baseUrl.trimEnd('/')}/v1/auth/refresh")
+                    .post(reqJson.toRequestBody("application/json".toMediaType()))
+                    .build()
+                refreshClient.newCall(req).execute().use { resp ->
+                    if (!resp.isSuccessful) {
+                        if (resp.code == 401) {
+                            runBlocking { tokenStore.clearSession() }
+                        }
+                        return false
+                    }
+                    val raw = resp.body?.string() ?: return false
+                    val parsedAccess: String
+                    val parsedRefresh: String
+                    val adapter = moshi?.adapter(RefreshResponseDto::class.java)
+                    if (adapter != null) {
+                        val dto = adapter.fromJson(raw) ?: return false
+                        parsedAccess = dto.accessToken
+                        parsedRefresh = dto.refreshToken
+                    } else {
+                        val json = JSONObject(raw)
+                        parsedAccess = json.optString("accessToken")
+                        parsedRefresh = json.optString("refreshToken")
+                    }
+                    if (parsedAccess.isBlank() || parsedRefresh.isBlank()) return false
+                    runBlocking { tokenStore.updateTokens(parsedAccess, parsedRefresh) }
+                    true
+                }
+            } catch (_: Exception) {
+                false
+            }
         }
     }
 
@@ -278,6 +371,16 @@ class RealtimeSocketManager(
                         seenEventIds.iterator().let { it.next(); it.remove() }
                     }
                 }
+            }
+
+            val isTransientCallSignal = type == "call.invite" ||
+                type == "call.ringing" ||
+                type == "call.accept" ||
+                type == "call.offer" ||
+                type == "call.answer" ||
+                type == "call.ice"
+            if (isTransientCallSignal && ts > 0L && (System.currentTimeMillis() - ts) > 90_000L) {
+                return
             }
 
             if (ts > 0L) {

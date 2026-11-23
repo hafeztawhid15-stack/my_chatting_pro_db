@@ -63,7 +63,7 @@ class AppContainer(context: Context) {
     val notificationManager = AppNotificationManager(appContext)
     val simVerificationProvider: SimVerificationProvider = AndroidSimVerificationProvider(appContext)
     val ringtoneController = IncomingCallRingtoneController(appContext)
-    val errorMapper = ErrorMapper(networkModule.moshi)
+    val errorMapper = ErrorMapper(networkModule.moshi, networkModule.networkMonitor)
     val appUpdateChecker = AppUpdateChecker(networkModule.okHttpClient)
 
     val authRepository: AuthRepository = AuthRepositoryImpl(
@@ -148,10 +148,13 @@ class AppContainer(context: Context) {
         appScope.launch {
             var wasOnline = networkModule.networkMonitor.isOnline.value
             networkModule.networkMonitor.isOnline.collect { online ->
-                if (online && !wasOnline && tokenStore.getSession() != null) {
-                    runCatching { messageRepository.retryAllPendingMessages() }
-                    runCatching { chatRepository.refreshConversations() }
-                    runCatching { authRepository.syncNotificationEndpoint() }
+                if (online && !wasOnline) {
+                    interstitialAdManager.preload()
+                    if (tokenStore.getSession() != null) {
+                        runCatching { messageRepository.retryAllPendingMessages() }
+                        runCatching { chatRepository.refreshConversations() }
+                        runCatching { authRepository.syncNotificationEndpoint() }
+                    }
                 }
                 wasOnline = online
             }

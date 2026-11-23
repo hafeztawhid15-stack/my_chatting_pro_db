@@ -1409,11 +1409,23 @@ export class SupabaseDatabase implements DatabaseClient {
 
   async findCallById(
     callId: string
-  ): Promise<{ id: string; status: string; started_at_ms: number; answered_at_ms: number | null } | null> {
+  ): Promise<{
+    id: string;
+    status: string;
+    started_at_ms: number;
+    answered_at_ms: number | null;
+    ended_at_ms: number | null;
+  } | null> {
     const rows = await this.requestJson<
-      Array<{ id: string; status: string; started_at_ms: number; answered_at_ms: number | null }>
+      Array<{
+        id: string;
+        status: string;
+        started_at_ms: number;
+        answered_at_ms: number | null;
+        ended_at_ms: number | null;
+      }>
     >(
-      `/calls?select=id,status,started_at_ms,answered_at_ms&id=eq.${this.enc(callId)}&limit=1`,
+      `/calls?select=id,status,started_at_ms,answered_at_ms,ended_at_ms&id=eq.${this.enc(callId)}&limit=1`,
       { method: 'GET', headers: this.headers() }
     );
     return rows[0] ?? null;

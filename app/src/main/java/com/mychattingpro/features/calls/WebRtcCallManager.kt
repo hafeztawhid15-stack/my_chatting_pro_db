@@ -86,84 +86,118 @@ open class WebRtcCallManager(
         isVideo: Boolean,
         iceServers: List<IceServerConfig>,
         onStageChanged: (WebRtcConnectionStage) -> Unit
-    ) {
+    ): Boolean {
+        val isNewCall = currentCallId.isNotEmpty() && currentCallId != callId
         currentCallId = callId
         currentConversationId = conversationId
         currentPeerUserId = peerUserId
         isVideoCall = isVideo
         hasRemoteDescription = false
-        pendingIceCandidates.clear()
-
-        configureAudioRouting(speakerOn = isVideo)
-        ensureFactoryInitialized()
-
-        val rtcIceServers = iceServers.map { cfg ->
-            val builder = PeerConnection.IceServer.builder(cfg.urls)
-            if (!cfg.username.isNullOrBlank() && !cfg.credential.isNullOrBlank()) {
-                builder.setUsername(cfg.username).setPassword(cfg.credential)
+        if (isNewCall) {
+            synchronized(pendingIceCandidates) {
+                pendingIceCandidates.clear()
             }
-            builder.createIceServer()
         }
 
-        val rtcConfig = PeerConnection.RTCConfiguration(rtcIceServers).apply {
-            sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN
-            continualGatheringPolicy = PeerConnection.ContinualGatheringPolicy.GATHER_CONTINUALLY
-        }
+        return try {
+            configureAudioRouting(speakerOn = isVideo)
+            ensureFactoryInitialized()
 
-        peerConnection = factory?.createPeerConnection(
-            rtcConfig,
-            object : PeerConnection.Observer {
-                override fun onIceCandidate(candidate: IceCandidate) {
-                    val payload = JSONObject().apply {
-                        put("callId", currentCallId)
-                        put("conversationId", currentConversationId)
-                        put("targetUserId", currentPeerUserId)
-                        put("sdpMid", candidate.sdpMid)
-                        put("sdpMLineIndex", candidate.sdpMLineIndex)
-                        put("candidate", candidate.sdp)
-                    }
-                    socketManager.sendSignaling("call.ice", payload)
-                }
-
-                override fun onIceConnectionChange(state: PeerConnection.IceConnectionState?) {
-                    SafeLogger.d("WebRTC", "ICE state=$state")
-                    when (state) {
-                        PeerConnection.IceConnectionState.CHECKING -> onStageChanged(WebRtcConnectionStage.CONNECTING)
-                        PeerConnection.IceConnectionState.CONNECTED,
-                        PeerConnection.IceConnectionState.COMPLETED -> onStageChanged(WebRtcConnectionStage.CONNECTED)
-                        PeerConnection.IceConnectionState.DISCONNECTED -> onStageChanged(WebRtcConnectionStage.RECONNECTING)
-                        PeerConnection.IceConnectionState.FAILED -> onStageChanged(WebRtcConnectionStage.FAILED)
-                        PeerConnection.IceConnectionState.CLOSED -> onStageChanged(WebRtcConnectionStage.ENDED)
-                        else -> Unit
-                    }
-                }
-
-                override fun onTrack(transceiver: org.webrtc.RtpTransceiver?) {
-                    val track = transceiver?.receiver?.track()
-                    if (track is VideoTrack) {
-                        bindRemoteVideoTrack(track)
-                    }
-                }
-
-                override fun onAddTrack(receiver: RtpReceiver?, streams: Array<out MediaStream>?) {
-                    val track = receiver?.track()
-                    if (track is VideoTrack) {
-                        bindRemoteVideoTrack(track)
-                    }
-                }
-
-                override fun onSignalingChange(p0: PeerConnection.SignalingState?) {}
-                override fun onIceConnectionReceivingChange(p0: Boolean) {}
-                override fun onIceGatheringChange(p0: PeerConnection.IceGatheringState?) {}
-                override fun onIceCandidatesRemoved(p0: Array<out IceCandidate>?) {}
-                override fun onAddStream(p0: MediaStream?) {}
-                override fun onRemoveStream(p0: MediaStream?) {}
-                override fun onDataChannel(p0: DataChannel?) {}
-                override fun onRenegotiationNeeded() {}
+            val effectiveServers = iceServers.ifEmpty {
+                listOf(
+                    IceServerConfig(urls = listOf("stun:stun.cloudflare.com:3478", "stun:stun.l.google.com:19302"))
+                )
             }
-        )
+            val rtcIceServers = effectiveServers.map { cfg ->
+                val builder = PeerConnection.IceServer.builder(cfg.urls)
+                if (!cfg.username.isNullOrBlank() && !cfg.credential.isNullOrBlank()) {
+                    builder.setUsername(cfg.username).setPassword(cfg.credential)
+                }
+                builder.createIceServer()
+            }
 
-        setupLocalMediaTracks(isVideo)
+            val rtcConfig = PeerConnection.RTCConfiguration(rtcIceServers).apply {
+                sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN
+                continualGatheringPolicy = PeerConnection.ContinualGatheringPolicy.GATHER_CONTINUALLY
+            }
+
+            val createdPc = factory?.createPeerConnection(
+                rtcConfig,
+                object : PeerConnection.Observer {
+                    override fun onIceCandidate(candidate: IceCandidate) {
+                        val payload = JSONObject().apply {
+                            put("callId", currentCallId)
+                            put("conversationId", currentConversationId)
+                            put("targetUserId", currentPeerUserId)
+                            put("sdpMid", candidate.sdpMid)
+                            put("sdpMLineIndex", candidate.sdpMLineIndex)
+                            put("candidate", candidate.sdp)
+                        }
+                        socketManager.sendSignaling("call.ice", payload)
+                    }
+
+                    override fun onIceConnectionChange(state: PeerConnection.IceConnectionState?) {
+                        SafeLogger.d("WebRTC", "ICE state=$state")
+                        when (state) {
+                            PeerConnection.IceConnectionState.CHECKING -> onStageChanged(WebRtcConnectionStage.CONNECTING)
+                            PeerConnection.IceConnectionState.CONNECTED,
+                            PeerConnection.IceConnectionState.COMPLETED -> onStageChanged(WebRtcConnectionStage.CONNECTED)
+                            PeerConnection.IceConnectionState.DISCONNECTED -> onStageChanged(WebRtcConnectionStage.RECONNECTING)
+                            PeerConnection.IceConnectionState.FAILED -> onStageChanged(WebRtcConnectionStage.FAILED)
+                            PeerConnection.IceConnectionState.CLOSED -> onStageChanged(WebRtcConnectionStage.ENDED)
+                            else -> Unit
+                        }
+                    }
+
+                    override fun onConnectionChange(newState: PeerConnection.PeerConnectionState?) {
+                        SafeLogger.d("WebRTC", "PeerConnection state=$newState")
+                        when (newState) {
+                            PeerConnection.PeerConnectionState.CONNECTING -> onStageChanged(WebRtcConnectionStage.CONNECTING)
+                            PeerConnection.PeerConnectionState.CONNECTED -> onStageChanged(WebRtcConnectionStage.CONNECTED)
+                            PeerConnection.PeerConnectionState.DISCONNECTED -> onStageChanged(WebRtcConnectionStage.RECONNECTING)
+                            PeerConnection.PeerConnectionState.FAILED -> onStageChanged(WebRtcConnectionStage.FAILED)
+                            PeerConnection.PeerConnectionState.CLOSED -> onStageChanged(WebRtcConnectionStage.ENDED)
+                            else -> Unit
+                        }
+                    }
+
+                    override fun onTrack(transceiver: org.webrtc.RtpTransceiver?) {
+                        val track = transceiver?.receiver?.track()
+                        if (track is VideoTrack) {
+                            bindRemoteVideoTrack(track)
+                        }
+                    }
+
+                    override fun onAddTrack(receiver: RtpReceiver?, streams: Array<out MediaStream>?) {
+                        val track = receiver?.track()
+                        if (track is VideoTrack) {
+                            bindRemoteVideoTrack(track)
+                        }
+                    }
+
+                    override fun onSignalingChange(p0: PeerConnection.SignalingState?) {}
+                    override fun onIceConnectionReceivingChange(p0: Boolean) {}
+                    override fun onIceGatheringChange(p0: PeerConnection.IceGatheringState?) {}
+                    override fun onIceCandidatesRemoved(p0: Array<out IceCandidate>?) {}
+                    override fun onAddStream(p0: MediaStream?) {}
+                    override fun onRemoveStream(p0: MediaStream?) {}
+                    override fun onDataChannel(p0: DataChannel?) {}
+                    override fun onRenegotiationNeeded() {}
+                }
+            )
+            if (createdPc == null) {
+                SafeLogger.e("WebRTC", "createPeerConnection returned null")
+                endSession()
+                return false
+            }
+            peerConnection = createdPc
+            setupLocalMediaTracks(isVideo)
+            true
+        } catch (t: Throwable) {
+            SafeLogger.e("WebRTC", "startSession failed", t.javaClass.simpleName)
+            endSession()
+            false
+        }
     }
 
     private fun bindRemoteVideoTrack(track: VideoTrack) {
@@ -187,14 +221,17 @@ open class WebRtcCallManager(
         }
         pc.createOffer(object : SdpObserverAdapter() {
             override fun onCreateSuccess(sdp: SessionDescription) {
-                pc.setLocalDescription(SdpObserverAdapter(), sdp)
-                val payload = JSONObject().apply {
-                    put("callId", currentCallId)
-                    put("conversationId", currentConversationId)
-                    put("targetUserId", currentPeerUserId)
-                    put("sdp", sdp.description)
-                }
-                socketManager.sendSignaling("call.offer", payload)
+                pc.setLocalDescription(object : SdpObserverAdapter() {
+                    override fun onSetSuccess() {
+                        val payload = JSONObject().apply {
+                            put("callId", currentCallId)
+                            put("conversationId", currentConversationId)
+                            put("targetUserId", currentPeerUserId)
+                            put("sdp", sdp.description)
+                        }
+                        socketManager.sendSignaling("call.offer", payload)
+                    }
+                }, sdp)
             }
         }, constraints)
     }
@@ -212,14 +249,17 @@ open class WebRtcCallManager(
                 }
                 pc.createAnswer(object : SdpObserverAdapter() {
                     override fun onCreateSuccess(answer: SessionDescription) {
-                        pc.setLocalDescription(SdpObserverAdapter(), answer)
-                        val payload = JSONObject().apply {
-                            put("callId", currentCallId)
-                            put("conversationId", currentConversationId)
-                            put("targetUserId", currentPeerUserId)
-                            put("sdp", answer.description)
-                        }
-                        socketManager.sendSignaling("call.answer", payload)
+                        pc.setLocalDescription(object : SdpObserverAdapter() {
+                            override fun onSetSuccess() {
+                                val payload = JSONObject().apply {
+                                    put("callId", currentCallId)
+                                    put("conversationId", currentConversationId)
+                                    put("targetUserId", currentPeerUserId)
+                                    put("sdp", answer.description)
+                                }
+                                socketManager.sendSignaling("call.answer", payload)
+                            }
+                        }, answer)
                     }
                 }, constraints)
             }
@@ -239,10 +279,13 @@ open class WebRtcCallManager(
 
     open fun handleRemoteIceCandidate(sdpMid: String, sdpMLineIndex: Int, candidateSdp: String) {
         val candidate = IceCandidate(sdpMid, sdpMLineIndex, candidateSdp)
-        if (hasRemoteDescription) {
-            peerConnection?.addIceCandidate(candidate)
+        val pc = peerConnection
+        if (hasRemoteDescription && pc != null) {
+            pc.addIceCandidate(candidate)
         } else {
-            pendingIceCandidates.add(candidate)
+            synchronized(pendingIceCandidates) {
+                pendingIceCandidates.add(candidate)
+            }
         }
     }
 
@@ -277,19 +320,23 @@ open class WebRtcCallManager(
         remoteVideoTrack = null
 
         localSink?.let { sink -> runCatching { localVideoTrack?.removeSink(sink) } }
-        localVideoTrack?.dispose()
+        runCatching { localVideoTrack?.dispose() }
         localVideoTrack = null
-        videoSource?.dispose()
+        runCatching { videoSource?.dispose() }
         videoSource = null
 
-        localAudioTrack?.dispose()
+        runCatching { localAudioTrack?.dispose() }
         localAudioTrack = null
-        audioSource?.dispose()
+        runCatching { audioSource?.dispose() }
         audioSource = null
 
-        peerConnection?.close()
-        peerConnection?.dispose()
+        runCatching { peerConnection?.close() }
+        runCatching { peerConnection?.dispose() }
         peerConnection = null
+        hasRemoteDescription = false
+        synchronized(pendingIceCandidates) {
+            pendingIceCandidates.clear()
+        }
 
         runCatching {
             audioManager.isSpeakerphoneOn = false
@@ -299,7 +346,7 @@ open class WebRtcCallManager(
 
     open fun release() {
         endSession()
-        factory?.dispose()
+        runCatching { factory?.dispose() }
         factory = null
         runCatching { eglBase.release() }
     }
@@ -310,7 +357,14 @@ open class WebRtcCallManager(
             .createInitializationOptions()
         PeerConnectionFactory.initialize(initOptions)
 
-        val audioModule = JavaAudioDeviceModule.builder(context).createAudioDeviceModule()
+        val audioModule = runCatching {
+            JavaAudioDeviceModule.builder(context)
+                .setUseHardwareAcousticEchoCanceler(JavaAudioDeviceModule.isBuiltInAcousticEchoCancelerSupported())
+                .setUseHardwareNoiseSuppressor(JavaAudioDeviceModule.isBuiltInNoiseSuppressorSupported())
+                .createAudioDeviceModule()
+        }.getOrElse {
+            JavaAudioDeviceModule.builder(context).createAudioDeviceModule()
+        }
         factory = PeerConnectionFactory.builder()
             .setAudioDeviceModule(audioModule)
             .setVideoEncoderFactory(DefaultVideoEncoderFactory(eglBase.eglBaseContext, true, true))
@@ -331,37 +385,53 @@ open class WebRtcCallManager(
         localAudioTrack = audioTrack
 
         if (isVideo) {
-            val enumerator = Camera2Enumerator(context)
-            val deviceName = enumerator.deviceNames.firstOrNull { enumerator.isFrontFacing(it) }
-                ?: enumerator.deviceNames.firstOrNull()
-            if (deviceName != null) {
-                val capturer = enumerator.createCapturer(deviceName, null)
-                if (capturer != null) {
-                    val texHelper = SurfaceTextureHelper.create("MCPCaptureThread", eglBase.eglBaseContext)
-                    val vSource = f.createVideoSource(capturer.isScreencast)
-                    capturer.initialize(texHelper, context, vSource.capturerObserver)
-                    capturer.startCapture(720, 1280, 30)
+            runCatching {
+                val enumerator = Camera2Enumerator(context)
+                val deviceName = enumerator.deviceNames.firstOrNull { enumerator.isFrontFacing(it) }
+                    ?: enumerator.deviceNames.firstOrNull()
+                if (deviceName != null) {
+                    val capturer = enumerator.createCapturer(deviceName, null)
+                    if (capturer != null) {
+                        val formats = runCatching { enumerator.getSupportedFormats(deviceName) }.getOrNull().orEmpty()
+                        val chosen = formats.firstOrNull { it.width == 1280 && it.height == 720 }
+                            ?: formats.firstOrNull { it.width == 640 && it.height == 480 }
+                            ?: formats.firstOrNull()
+                        val capW = chosen?.width ?: 640
+                        val capH = chosen?.height ?: 480
+                        val capFps = chosen?.framerate?.max?.let { (it / 1000).coerceIn(15, 30) } ?: 30
 
-                    val vTrack = f.createVideoTrack("MCP_VIDEO_0", vSource)
-                    vTrack.setEnabled(true)
-                    mainHandler.post {
-                        localSink?.let { runCatching { vTrack.addSink(it) } }
+                        val texHelper = SurfaceTextureHelper.create("MCPCaptureThread", eglBase.eglBaseContext)
+                        val vSource = f.createVideoSource(capturer.isScreencast)
+                        capturer.initialize(texHelper, context, vSource.capturerObserver)
+                        capturer.startCapture(capW, capH, capFps)
+
+                        val vTrack = f.createVideoTrack("MCP_VIDEO_0", vSource)
+                        vTrack.setEnabled(true)
+                        mainHandler.post {
+                            localSink?.let { runCatching { vTrack.addSink(it) } }
+                        }
+                        pc.addTrack(vTrack, listOf("MCP_STREAM"))
+
+                        videoCapturer = capturer
+                        surfaceTextureHelper = texHelper
+                        videoSource = vSource
+                        localVideoTrack = vTrack
                     }
-                    pc.addTrack(vTrack, listOf("MCP_STREAM"))
-
-                    videoCapturer = capturer
-                    surfaceTextureHelper = texHelper
-                    videoSource = vSource
-                    localVideoTrack = vTrack
                 }
+            }.onFailure { err ->
+                SafeLogger.w("WebRTC", "Camera capture fallback without local video: ${err.javaClass.simpleName}")
             }
         }
     }
 
     private fun flushIceCandidates() {
         val pc = peerConnection ?: return
-        pendingIceCandidates.forEach { pc.addIceCandidate(it) }
-        pendingIceCandidates.clear()
+        val snapshot = synchronized(pendingIceCandidates) {
+            val copy = pendingIceCandidates.toList()
+            pendingIceCandidates.clear()
+            copy
+        }
+        snapshot.forEach { pc.addIceCandidate(it) }
     }
 
     private open class SdpObserverAdapter : SdpObserver {

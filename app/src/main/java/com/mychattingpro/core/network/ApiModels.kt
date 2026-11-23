@@ -365,6 +365,14 @@ data class CallHistoryResponseDto(
 )
 
 @JsonClass(generateAdapter = true)
+data class CallStatusResponseDto(
+    val callId: String,
+    val status: String,
+    val answeredAtMs: Long? = null,
+    val endedAtMs: Long? = null
+)
+
+@JsonClass(generateAdapter = true)
 data class NotificationEndpointRequestDto(
     val transport: String,
     val endpointUrl: String? = null

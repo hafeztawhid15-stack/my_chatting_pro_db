@@ -12,11 +12,15 @@ import android.os.Environment
 import android.provider.MediaStore
 import android.provider.OpenableColumns
 import android.webkit.MimeTypeMap
+import com.mychattingpro.core.common.AppError
+import com.mychattingpro.data.repository.AppException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.IOException
+import java.io.InputStream
 import java.util.UUID
 
 data class PreparedMediaFile(
@@ -29,7 +33,9 @@ data class PreparedMediaFile(
 object MediaUploadHelper {
 
     const val MAX_UPLOAD_BYTES: Long = 50L * 1024L * 1024L
+    private const val MAX_IMAGE_BYTES: Long = 10L * 1024L * 1024L
     private val dangerousExtensions = setOf("apk", "exe", "bat", "cmd", "sh", "msi", "zip", "rar")
+    private val directImageMimes = setOf("image/jpeg", "image/jpg", "image/png", "image/webp", "image/gif")
 
     fun isDangerousFile(filename: String): Boolean {
         val ext = filename.substringAfterLast('.', "").lowercase()
@@ -45,29 +51,76 @@ object MediaUploadHelper {
         return String.format("%.2f GB", mb / 1024.0)
     }
 
+    private fun openUriStream(context: Context, uri: Uri): InputStream? {
+        if (uri.scheme == "file") {
+            val path = uri.path
+            if (!path.isNullOrBlank()) {
+                val f = File(path)
+                if (f.exists() && f.canRead()) {
+                    return FileInputStream(f)
+                }
+            }
+        }
+        return runCatching { context.contentResolver.openInputStream(uri) }.getOrNull()
+    }
+
     suspend fun prepareImageForUpload(
         context: Context,
         uri: Uri,
         maxDimension: Int = 1600,
         quality: Int = 82
     ): PreparedMediaFile = withContext(Dispatchers.IO) {
-        val originalName = queryDisplayName(context, uri) ?: "photo_${UUID.randomUUID()}.jpg"
+        val originalName = runCatching { queryDisplayName(context, uri) }.getOrNull()
+            ?.takeIf { it.isNotBlank() }
+            ?: "photo_${UUID.randomUUID()}.jpg"
+        val inferredMime = inferMimeType(context, uri, originalName, "jpg").lowercase()
         val tempDir = File(context.cacheDir, "temp_media").apply { mkdirs() }
+        val stagedFile = File(tempDir, "stage_${UUID.randomUUID()}.tmp")
         val outFile = File(tempDir, "img_${UUID.randomUUID()}.jpg")
 
-        val orientation = runCatching {
-            context.contentResolver.openInputStream(uri)?.use { stream ->
-                ExifInterface(stream).getAttributeInt(
-                    ExifInterface.TAG_ORIENTATION,
-                    ExifInterface.ORIENTATION_NORMAL
+        try {
+            val stream = openUriStream(context, uri)
+                ?: throw AppException(AppError.StorageFailure)
+            stream.use { input ->
+                FileOutputStream(stagedFile).use { output ->
+                    val buffer = ByteArray(16 * 1024)
+                    var read: Int
+                    while (input.read(buffer).also { read = it } != -1) {
+                        output.write(buffer, 0, read)
+                    }
+                }
+            }
+            if (!stagedFile.exists() || stagedFile.length() <= 0L) {
+                throw AppException(AppError.EmptyMediaFile)
+            }
+        } catch (t: Throwable) {
+            stagedFile.delete()
+            if (t is AppException) throw t
+            throw AppException(AppError.StorageFailure)
+        }
+
+        // Preserve animated GIFs or already-valid raw images if bitmap decode isn't needed/fails
+        if (inferredMime == "image/gif" && stagedFile.length() <= MAX_IMAGE_BYTES) {
+            val gifFile = File(tempDir, "img_${UUID.randomUUID()}.gif")
+            if (stagedFile.renameTo(gifFile)) {
+                return@withContext PreparedMediaFile(
+                    file = gifFile,
+                    filename = originalName.substringBeforeLast('.') + ".gif",
+                    mimeType = "image/gif",
+                    sizeBytes = gifFile.length()
                 )
-            } ?: ExifInterface.ORIENTATION_NORMAL
+            }
+        }
+
+        val orientation = runCatching {
+            ExifInterface(stagedFile.absolutePath).getAttributeInt(
+                ExifInterface.TAG_ORIENTATION,
+                ExifInterface.ORIENTATION_NORMAL
+            )
         }.getOrDefault(ExifInterface.ORIENTATION_NORMAL)
 
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        context.contentResolver.openInputStream(uri)?.use { stream ->
-            BitmapFactory.decodeStream(stream, null, bounds)
-        } ?: throw IOException("Unable to open selected image stream")
+        BitmapFactory.decodeFile(stagedFile.absolutePath, bounds)
 
         var sampleSize = 1
         while (bounds.outWidth > 0 && bounds.outHeight > 0 &&
@@ -76,23 +129,62 @@ object MediaUploadHelper {
             sampleSize *= 2
         }
 
-        val decodeOpts = BitmapFactory.Options().apply { inSampleSize = sampleSize }
-        val decoded = context.contentResolver.openInputStream(uri)?.use { stream ->
-            BitmapFactory.decodeStream(stream, null, decodeOpts)
-        } ?: throw IOException("Unable to decode selected image")
+        var decoded: Bitmap? = runCatching {
+            val decodeOpts = BitmapFactory.Options().apply { inSampleSize = sampleSize }
+            BitmapFactory.decodeFile(stagedFile.absolutePath, decodeOpts)
+        }.getOrNull()
+
+        if (decoded == null) {
+            decoded = runCatching {
+                val fallbackOpts = BitmapFactory.Options().apply {
+                    inSampleSize = (sampleSize * 2).coerceAtLeast(2)
+                    inPreferredConfig = Bitmap.Config.RGB_565
+                }
+                BitmapFactory.decodeFile(stagedFile.absolutePath, fallbackOpts)
+            }.getOrNull()
+        }
+
+        if (decoded == null) {
+            if (inferredMime in directImageMimes && stagedFile.length() <= MAX_IMAGE_BYTES) {
+                val normalizedMime = if (inferredMime == "image/jpg") "image/jpeg" else inferredMime
+                val ext = when (normalizedMime) {
+                    "image/png" -> "png"
+                    "image/webp" -> "webp"
+                    "image/gif" -> "gif"
+                    else -> "jpg"
+                }
+                val directFile = File(tempDir, "img_${UUID.randomUUID()}.$ext")
+                if (stagedFile.renameTo(directFile)) {
+                    return@withContext PreparedMediaFile(
+                        file = directFile,
+                        filename = originalName.substringBeforeLast('.') + ".$ext",
+                        mimeType = normalizedMime,
+                        sizeBytes = directFile.length()
+                    )
+                }
+            }
+            stagedFile.delete()
+            outFile.delete()
+            throw AppException(AppError.StorageFailure)
+        }
 
         val orientedBitmap = applyExifOrientation(decoded, orientation)
 
         try {
             FileOutputStream(outFile).use { fos ->
                 if (!orientedBitmap.compress(Bitmap.CompressFormat.JPEG, quality, fos)) {
-                    throw IOException("Unable to compress selected image")
+                    throw AppException(AppError.StorageFailure)
                 }
+            }
+            if (!outFile.exists() || outFile.length() <= 0L) {
+                throw AppException(AppError.EmptyMediaFile)
             }
         } catch (t: Throwable) {
             outFile.delete()
-            throw t
+            if (t is AppException) throw t
+            throw AppException(AppError.StorageFailure)
         } finally {
+            stagedFile.delete()
             if (orientedBitmap !== decoded) {
                 decoded.recycle()
             }
@@ -113,15 +205,16 @@ object MediaUploadHelper {
         uri: Uri,
         fallbackExtension: String = "bin"
     ): PreparedMediaFile = withContext(Dispatchers.IO) {
-        val resolver = context.contentResolver
-        val displayName = queryDisplayName(context, uri) ?: "attachment_${UUID.randomUUID()}.$fallbackExtension"
+        val displayName = runCatching { queryDisplayName(context, uri) }.getOrNull()
+            ?.takeIf { it.isNotBlank() }
+            ?: "attachment_${UUID.randomUUID()}.$fallbackExtension"
         val mimeType = inferMimeType(context, uri, displayName, fallbackExtension)
         val tempDir = File(context.cacheDir, "temp_media").apply { mkdirs() }
         val safeTempName = "upload_${UUID.randomUUID()}_${displayName.replace(Regex("[^a-zA-Z0-9._-]"), "_")}"
         val outFile = File(tempDir, safeTempName)
 
         try {
-            val stream = resolver.openInputStream(uri) ?: throw IOException("Cannot read selected file")
+            val stream = openUriStream(context, uri) ?: throw AppException(AppError.StorageFailure)
             stream.use { input ->
                 FileOutputStream(outFile).use { output ->
                     val buffer = ByteArray(16 * 1024)
@@ -131,12 +224,13 @@ object MediaUploadHelper {
                     }
                 }
             }
-            if (outFile.length() <= 0L) {
-                throw IOException("Selected file is empty")
+            if (!outFile.exists() || outFile.length() <= 0L) {
+                throw AppException(AppError.EmptyMediaFile)
             }
         } catch (t: Throwable) {
             outFile.delete()
-            throw t
+            if (t is AppException) throw t
+            throw AppException(AppError.StorageFailure)
         }
 
         PreparedMediaFile(

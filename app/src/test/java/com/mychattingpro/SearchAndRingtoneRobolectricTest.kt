@@ -367,8 +367,9 @@ class SearchAndRingtoneRobolectricTest {
             isVideo: Boolean,
             iceServers: List<IceServerConfig>,
             onStageChanged: (WebRtcConnectionStage) -> Unit
-        ) {
+        ): Boolean {
             sessionStarted = true
+            return true
         }
         override fun endSession() = Unit
         override fun release() = Unit

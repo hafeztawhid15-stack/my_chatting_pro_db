@@ -1,5 +1,10 @@
 package com.mychattingpro.features.chats
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
@@ -20,14 +25,17 @@ import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import com.example.R
 import com.mychattingpro.core.network.NetworkModule
 import com.mychattingpro.domain.models.Conversation
@@ -56,6 +64,25 @@ fun MainTabsScreen(
 ) {
     // Strictly ONLY 3 options: 1. Chats, 2. Add Chat, 3. Settings
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
+    var askedNotificationPermission by rememberSaveable { mutableIntStateOf(0) }
+    val context = LocalContext.current
+    val notifPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { }
+
+    LaunchedEffect(Unit) {
+        interstitialAdManager.preload()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && askedNotificationPermission == 0) {
+            askedNotificationPermission = 1
+            val granted = ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.POST_NOTIFICATIONS
+            ) == PackageManager.PERMISSION_GRANTED
+            if (!granted) {
+                notifPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            }
+        }
+    }
 
     val tabItems = listOf(
         Triple(stringResource(R.string.nav_chats), Icons.Rounded.ChatBubble, Icons.Outlined.ChatBubbleOutline),

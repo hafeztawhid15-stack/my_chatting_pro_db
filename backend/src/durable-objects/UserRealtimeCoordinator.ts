@@ -17,6 +17,7 @@ interface SocketAttachment {
  */
 export class UserRealtimeCoordinator extends DurableObject<Env> {
   private readonly maxBuffer = 100;
+  private readonly presenceTimeoutMs = 90_000;
   private lastPingDbUpdateMs = 0;
 
   async fetch(request: Request): Promise<Response> {
@@ -53,18 +54,22 @@ export class UserRealtimeCoordinator extends DurableObject<Env> {
       const pair = new WebSocketPair();
       const [client, server] = Object.values(pair) as [WebSocket, WebSocket];
 
+      const now = Date.now();
       const attachment: SocketAttachment = {
         userId,
         deviceId,
         sessionId,
-        connectedAtMs: Date.now(),
+        connectedAtMs: now,
       };
 
       this.ctx.acceptWebSocket(server, [userId, deviceId]);
       server.serializeAttachment(attachment);
 
+      await this.ctx.storage.put('presence_user_id', userId);
+      await this.ctx.storage.put('last_active_ms', now);
+      await this.ctx.storage.setAlarm(now + this.presenceTimeoutMs);
+
       // Update online presence in Supabase PostgreSQL & notify conversation peers
-      const now = Date.now();
       const db = createSupabaseDb(this.env);
       await db.updateUserPresence(userId, true, now);
       this.ctx.waitUntil(this.broadcastPresenceToPeers(userId, true, now));
@@ -73,16 +78,23 @@ export class UserRealtimeCoordinator extends DurableObject<Env> {
       const ack: RealtimeEnvelope = {
         eventId: crypto.randomUUID(),
         type: 'connected',
-        timestampMs: Date.now(),
+        timestampMs: now,
         payload: { userId, deviceId },
       };
       server.send(JSON.stringify(ack));
 
-      // Replay missed buffered events if client supplied ?sinceMs=
+      // Replay missed buffered events if client supplied ?sinceMs=, or recent call invites on cold start
       const sinceMsParam = Number.parseInt(url.searchParams.get('sinceMs') ?? '0', 10);
       if (Number.isFinite(sinceMsParam) && sinceMsParam > 0) {
         const missed = await this.getBufferedEventsSince(sinceMsParam);
         for (const ev of missed) {
+          server.send(JSON.stringify(ev));
+        }
+      } else {
+        const recentInvites = (await this.getBufferedEventsSince(now - 45_000)).filter(
+          (ev) => ev.type === 'call.invite'
+        );
+        for (const ev of recentInvites) {
           server.send(JSON.stringify(ev));
         }
       }
@@ -91,6 +103,25 @@ export class UserRealtimeCoordinator extends DurableObject<Env> {
     }
 
     return new Response('Not found', { status: 404 });
+  }
+
+  async alarm(): Promise<void> {
+    const userId = await this.ctx.storage.get<string>('presence_user_id');
+    if (!userId) return;
+
+    const now = Date.now();
+    const lastActiveMs = (await this.ctx.storage.get<number>('last_active_ms')) ?? 0;
+    const sockets = this.ctx.getWebSockets();
+
+    if (sockets.length === 0 || now - lastActiveMs > this.presenceTimeoutMs) {
+      const db = createSupabaseDb(this.env);
+      const offlineAt = lastActiveMs > 0 ? lastActiveMs : now;
+      await db.updateUserPresence(userId, false, offlineAt);
+      await this.broadcastPresenceToPeers(userId, false, offlineAt);
+      return;
+    }
+
+    await this.ctx.storage.setAlarm(now + this.presenceTimeoutMs);
   }
 
   async webSocketMessage(ws: WebSocket, message: string | ArrayBuffer): Promise<void> {
@@ -110,7 +141,14 @@ export class UserRealtimeCoordinator extends DurableObject<Env> {
 
     if (parsed.type === 'ping') {
       const now = Date.now();
-      if (now - this.lastPingDbUpdateMs >= 60_000) {
+      this.ctx.waitUntil(
+        (async () => {
+          await this.ctx.storage.put('presence_user_id', attachment.userId);
+          await this.ctx.storage.put('last_active_ms', now);
+          await this.ctx.storage.setAlarm(now + this.presenceTimeoutMs);
+        })()
+      );
+      if (now - this.lastPingDbUpdateMs >= 30_000) {
         this.lastPingDbUpdateMs = now;
         const db = createSupabaseDb(this.env);
         this.ctx.waitUntil(
@@ -125,6 +163,18 @@ export class UserRealtimeCoordinator extends DurableObject<Env> {
           payload: {},
         } satisfies RealtimeEnvelope)
       );
+      return;
+    }
+
+    if (parsed.type === 'presence.offline') {
+      const now = Date.now();
+      const otherSockets = this.ctx.getWebSockets().filter((sock) => sock !== ws);
+      if (otherSockets.length === 0) {
+        await this.ctx.storage.put('last_active_ms', 0);
+        const db = createSupabaseDb(this.env);
+        await db.updateUserPresence(attachment.userId, false, now);
+        this.ctx.waitUntil(this.broadcastPresenceToPeers(attachment.userId, false, now));
+      }
       return;
     }
 
@@ -192,9 +242,10 @@ export class UserRealtimeCoordinator extends DurableObject<Env> {
     }
     if (!attachment) return;
 
-    const remaining = this.ctx.getWebSockets();
+    const remaining = this.ctx.getWebSockets().filter((sock) => sock !== ws);
     if (remaining.length === 0) {
       const now = Date.now();
+      await this.ctx.storage.put('last_active_ms', 0);
       const db = createSupabaseDb(this.env);
       await db.updateUserPresence(attachment.userId, false, now);
       this.ctx.waitUntil(this.broadcastPresenceToPeers(attachment.userId, false, now));

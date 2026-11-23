@@ -984,6 +984,10 @@ class CallRepositoryImpl(
     override suspend fun updateCallState(callId: String, action: String): Result<Unit> = runCatching {
         api.updateCallState(callId, UpdateCallStateRequestDto(action))
     }.recoverCatching { throw AppException(errorMapper.map(it)) }
+
+    override suspend fun getCallStatus(callId: String): Result<String?> = runCatching {
+        api.getCallStatus(callId).status
+    }.recoverCatching { throw AppException(errorMapper.map(it)) }
 }
 
 class OwnerRepositoryImpl(

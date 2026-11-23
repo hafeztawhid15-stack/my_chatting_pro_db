@@ -41,6 +41,14 @@ callsRoutes.post('/', authMiddleware, async (c) => {
   return c.json({ call }, 201);
 });
 
+callsRoutes.get('/:callId', authMiddleware, async (c) => {
+  const auth = c.get('auth');
+  const callId = c.req.param('callId') ?? '';
+  const service = new CallsService(c.env, c.get('db'));
+  const result = await service.getCallStatus(auth.userId, callId);
+  return c.json(result);
+});
+
 callsRoutes.post('/:callId/state', authMiddleware, async (c) => {
   const auth = c.get('auth');
   const callId = c.req.param('callId') ?? '';

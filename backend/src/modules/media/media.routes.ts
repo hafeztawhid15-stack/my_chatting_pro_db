@@ -16,6 +16,38 @@ interface UploadedFileLike {
   arrayBuffer: () => Promise<ArrayBuffer>;
 }
 
+function resolveEffectiveMimeType(fileType: string | undefined, filename: string, category: MediaCategory): string {
+  const cleaned = (fileType ?? '').toLowerCase().split(';')[0]?.trim() ?? '';
+  if (cleaned && cleaned !== 'application/octet-stream') {
+    return cleaned === 'image/jpg' ? 'image/jpeg' : cleaned;
+  }
+  const ext = filename.split('.').pop()?.toLowerCase() ?? '';
+  const byExt: Record<string, string> = {
+    jpg: 'image/jpeg',
+    jpeg: 'image/jpeg',
+    png: 'image/png',
+    webp: 'image/webp',
+    gif: 'image/gif',
+    mp4: category === 'audio' ? 'audio/mp4' : 'video/mp4',
+    mov: 'video/quicktime',
+    m4a: 'audio/mp4',
+    aac: 'audio/aac',
+    mp3: 'audio/mpeg',
+    ogg: 'audio/ogg',
+    opus: 'audio/opus',
+    wav: 'audio/wav',
+    webm: category === 'audio' ? 'audio/webm' : 'video/webm',
+    amr: 'audio/amr',
+    '3gp': category === 'audio' ? 'audio/3gpp' : 'video/3gpp',
+    pdf: 'application/pdf',
+    txt: 'text/plain',
+    csv: 'text/csv',
+    json: 'application/json',
+    zip: 'application/zip',
+  };
+  return byExt[ext] ?? (cleaned || 'application/octet-stream');
+}
+
 mediaRoutes.post(
   '/upload',
   authMiddleware,
@@ -52,6 +84,8 @@ mediaRoutes.post(
     const heightRaw = formData.get('height');
     const height = typeof heightRaw === 'string' ? Number.parseInt(heightRaw, 10) : null;
 
+    const filename = file.name || (category === 'audio' ? 'voice.m4a' : category === 'image' || category === 'profile' ? 'photo.jpg' : 'upload.bin');
+    const mimeType = resolveEffectiveMimeType(file.type, filename, category);
     const bytes = await file.arrayBuffer();
     const service = new MediaService(c.env, c.get('db'), createSupabaseStorage(c.env));
     const uploaded = await service.uploadMedia({
@@ -60,8 +94,8 @@ mediaRoutes.post(
       privateUnlockToken: c.req.header('X-Private-Unlock-Token'),
       category,
       conversationId,
-      filename: file.name || 'upload.bin',
-      mimeType: file.type || 'application/octet-stream',
+      filename,
+      mimeType,
       bytes,
       durationMs: durationMs && Number.isFinite(durationMs) ? durationMs : null,
       width: width && Number.isFinite(width) ? width : null,

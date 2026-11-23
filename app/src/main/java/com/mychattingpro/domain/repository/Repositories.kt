@@ -164,4 +164,5 @@ interface CallRepository {
     suspend fun fetchIceServers(): Result<Pair<List<IceServerConfig>, Boolean>>
     suspend fun initiateCall(conversationId: String, calleeId: String, isVideo: Boolean): Result<String>
     suspend fun updateCallState(callId: String, action: String): Result<Unit>
+    suspend fun getCallStatus(callId: String): Result<String?> = Result.success(null)
 }

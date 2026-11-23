@@ -90,10 +90,20 @@ class ChatsViewModel(
     init {
         socketManager.start()
         refresh()
+        viewModelScope.launch {
+            while (isActive) {
+                delay(25_000L)
+                if (networkMonitor.isOnline.value) {
+                    socketManager.sendPresencePing()
+                    chatRepository.refreshConversations()
+                }
+            }
+        }
     }
 
     fun refresh() {
         viewModelScope.launch {
+            socketManager.sendPresencePing()
             chatRepository.refreshConversations()
         }
     }

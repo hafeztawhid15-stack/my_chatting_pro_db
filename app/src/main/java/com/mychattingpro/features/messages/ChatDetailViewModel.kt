@@ -2,11 +2,14 @@ package com.mychattingpro.features.messages
 
 import android.content.Context
 import android.content.Intent
+import android.media.AudioAttributes
+import android.media.AudioManager
 import android.media.MediaPlayer
 import android.net.Uri
 import androidx.core.content.FileProvider
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.BuildConfig
 import com.example.R
 import com.mychattingpro.core.common.AppError
 import com.mychattingpro.core.datastore.AppPreferencesDataStore
@@ -36,11 +39,13 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
+import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.util.UUID
 
@@ -73,9 +78,12 @@ class ChatDetailViewModel(
     prefsStore: AppPreferencesDataStore,
     private val socketManager: RealtimeSocketManager,
     private val okHttpClient: OkHttpClient,
-    networkMonitor: NetworkMonitor,
+    private val networkMonitor: NetworkMonitor,
     val isPrivate: Boolean = false,
-    private val privateChatRepository: PrivateChatRepository? = null
+    private val privateChatRepository: PrivateChatRepository? = null,
+    private val baseUrl: String = BuildConfig.CLOUDFLARE_API_BASE_URL
+        .ifBlank { "https://my-chatting-pro-api.workers.dev" }
+        .trimEnd('/') + "/"
 ) : ViewModel() {
 
     val voiceRecorder = VoiceRecorderManager(context)
@@ -165,6 +173,32 @@ class ChatDetailViewModel(
                 ) {
                     _uiState.value = _uiState.value.copy(isPeerTyping = ev.isTyping)
                 }
+            }
+        }
+
+        // Periodic presence refresh while conversation screen is open
+        viewModelScope.launch {
+            while (isActive) {
+                delay(25_000L)
+                if (networkMonitor.isOnline.value) {
+                    socketManager.sendPresencePing()
+                    if (isPrivate && privateChatRepository != null) {
+                        privateChatRepository.refreshPrivateConversations()
+                    } else {
+                        chatRepository.refreshConversations()
+                    }
+                }
+            }
+        }
+    }
+
+    fun refreshConversationState() {
+        viewModelScope.launch {
+            socketManager.sendPresencePing()
+            if (isPrivate && privateChatRepository != null) {
+                privateChatRepository.refreshPrivateConversations()
+            } else {
+                chatRepository.refreshConversations()
             }
         }
     }
@@ -326,7 +360,12 @@ class ChatDetailViewModel(
     }
 
     fun sendRecordedVoiceNote() {
-        val result = voiceRecorder.stopRecording() ?: return
+        val result = voiceRecorder.stopRecording()
+        if (result == null) {
+            val msg = voiceRecorder.state.value.error ?: context.getString(R.string.err_empty_media_file)
+            _uiState.value = _uiState.value.copy(error = AppError.ServerError(msg))
+            return
+        }
         val (file, durationMs) = result
         // Preserve recorded file on disk until upload succeeds or is cancelled
         voiceRecorder.clearRecordedStateWithoutDeleting()
@@ -339,26 +378,82 @@ class ChatDetailViewModel(
     }
 
     fun toggleVoiceMessagePlayback(message: Message) {
-        val mediaId = message.media?.id ?: return
         if (_uiState.value.activeAudioMessageId == message.id && _uiState.value.isAudioPlaying) {
             stopAudioPlayback()
             return
         }
 
+        val mediaId = message.media?.id
+        val localUriString = message.localUri
+        if (mediaId == null && localUriString.isNullOrBlank()) return
+
         stopAudioPlayback()
-        _uiState.value = _uiState.value.copy(activeAudioMessageId = message.id, isAudioPlaying = true)
+        _uiState.value = _uiState.value.copy(
+            activeAudioMessageId = message.id,
+            isAudioPlaying = true,
+            error = null
+        )
+
         viewModelScope.launch {
-            val urlRes = messageRepository.getSignedMediaUrl(mediaId)
-            urlRes.onSuccess { signedUrl ->
+            val resolvedFile = withContext(Dispatchers.IO) {
+                // 1. Prefer valid local file if available (for instant playback of own or cached notes)
+                if (!localUriString.isNullOrBlank()) {
+                    val uri = Uri.parse(localUriString)
+                    if (uri.scheme == "file" && !uri.path.isNullOrBlank()) {
+                        val f = File(uri.path!!)
+                        if (f.exists() && f.length() > 0L) return@withContext Result.success(f)
+                    }
+                }
+
+                if (mediaId == null) {
+                    return@withContext Result.failure<File>(IllegalStateException("Missing audio source"))
+                }
+
+                val cacheDir = File(context.cacheDir, "voice_cache").apply { mkdirs() }
+                val cachedFile = File(cacheDir, "$mediaId.audio")
+                if (cachedFile.exists() && cachedFile.length() > 0L) {
+                    return@withContext Result.success(cachedFile)
+                }
+
+                // 2. Download via authenticated Cloudflare /v1/media/{id}/content (carries JWT & Private unlock token)
+                val primaryUrl = "${baseUrl}v1/media/$mediaId/content"
+                val primarySuccess = downloadAudioToFile(primaryUrl, cachedFile)
+                if (primarySuccess) {
+                    return@withContext Result.success(cachedFile)
+                }
+
+                // 3. Fallback to signed URL download
+                val signedUrl = messageRepository.getSignedMediaUrl(mediaId).getOrNull()
+                if (!signedUrl.isNullOrBlank() && downloadAudioToFile(signedUrl, cachedFile)) {
+                    return@withContext Result.success(cachedFile)
+                }
+
+                Result.failure(IllegalStateException("Failed to fetch voice audio"))
+            }
+
+            resolvedFile.onSuccess { audioFile ->
                 runCatching {
+                    val am = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+                    if (am != null && am.mode != AudioManager.MODE_IN_COMMUNICATION) {
+                        am.mode = AudioManager.MODE_NORMAL
+                    }
+                    val attrs = AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_MEDIA)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                        .build()
                     val player = MediaPlayer().apply {
-                        setDataSource(signedUrl)
-                        setOnPreparedListener { it.start() }
+                        setAudioAttributes(attrs)
+                        FileInputStream(audioFile).use { fis ->
+                            setDataSource(fis.fd)
+                        }
+                        setVolume(1.0f, 1.0f)
+                        setOnPreparedListener { mp -> mp.start() }
                         setOnCompletionListener {
-                            _uiState.value = _uiState.value.copy(activeAudioMessageId = null, isAudioPlaying = false)
+                            stopAudioPlayback()
                         }
                         setOnErrorListener { _, _, _ ->
-                            _uiState.value = _uiState.value.copy(activeAudioMessageId = null, isAudioPlaying = false, error = AppError.StorageFailure)
+                            stopAudioPlayback()
+                            _uiState.value = _uiState.value.copy(error = AppError.StorageFailure)
                             true
                         }
                         prepareAsync()
@@ -366,11 +461,69 @@ class ChatDetailViewModel(
                     audioPlayer = player
                 }.onFailure {
                     stopAudioPlayback()
+                    _uiState.value = _uiState.value.copy(error = AppError.StorageFailure)
                 }
             }.onFailure {
-                stopAudioPlayback()
-                _uiState.value = _uiState.value.copy(error = AppError.StorageFailure)
+                // Handle content:// localUri directly if File copy wasn't used
+                if (!localUriString.isNullOrBlank() && Uri.parse(localUriString).scheme == "content") {
+                    runCatching {
+                        val attrs = AudioAttributes.Builder()
+                            .setUsage(AudioAttributes.USAGE_MEDIA)
+                            .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                            .build()
+                        val player = MediaPlayer().apply {
+                            setAudioAttributes(attrs)
+                            setDataSource(context, Uri.parse(localUriString))
+                            setVolume(1.0f, 1.0f)
+                            setOnPreparedListener { mp -> mp.start() }
+                            setOnCompletionListener { stopAudioPlayback() }
+                            setOnErrorListener { _, _, _ ->
+                                stopAudioPlayback()
+                                _uiState.value = _uiState.value.copy(error = AppError.StorageFailure)
+                                true
+                            }
+                            prepareAsync()
+                        }
+                        audioPlayer = player
+                    }.onFailure {
+                        stopAudioPlayback()
+                        _uiState.value = _uiState.value.copy(error = AppError.StorageFailure)
+                    }
+                } else {
+                    stopAudioPlayback()
+                    _uiState.value = _uiState.value.copy(error = AppError.StorageFailure)
+                }
             }
+        }
+    }
+
+    private fun downloadAudioToFile(url: String, target: File): Boolean {
+        val tempFile = File(target.parentFile, "${target.name}.tmp")
+        return runCatching {
+            val req = Request.Builder().url(url).build()
+            okHttpClient.newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) return false
+                val body = resp.body ?: return false
+                body.byteStream().use { input ->
+                    FileOutputStream(tempFile).use { output ->
+                        input.copyTo(output)
+                    }
+                }
+            }
+            if (tempFile.exists() && tempFile.length() > 0L) {
+                if (target.exists()) target.delete()
+                if (!tempFile.renameTo(target)) {
+                    tempFile.copyTo(target, overwrite = true)
+                    tempFile.delete()
+                }
+                true
+            } else {
+                tempFile.delete()
+                false
+            }
+        }.getOrElse {
+            tempFile.delete()
+            false
         }
     }
 
@@ -638,6 +791,7 @@ class ChatDetailViewModel(
     }
 
     fun clearError() {
+        voiceRecorder.clearError()
         _uiState.value = _uiState.value.copy(error = null, infoToast = null)
     }
 
@@ -655,7 +809,9 @@ class ChatDetailViewModel(
 
     private fun stopAudioPlayback() {
         runCatching {
-            audioPlayer?.stop()
+            if (audioPlayer?.isPlaying == true) {
+                audioPlayer?.stop()
+            }
             audioPlayer?.release()
         }
         audioPlayer = null

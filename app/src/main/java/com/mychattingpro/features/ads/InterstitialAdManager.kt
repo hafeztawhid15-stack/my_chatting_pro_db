@@ -55,6 +55,9 @@ class InterstitialAdManager(private val appContext: Context) {
     private var initialized = false
 
     @Volatile
+    private var isInitializing = false
+
+    @Volatile
     private var isLoading = false
 
     @Volatile
@@ -63,10 +66,16 @@ class InterstitialAdManager(private val appContext: Context) {
     @Volatile
     private var lastShownAtMs: Long = 0L
 
+    private var retryAttempt = 0
+    private var pendingRetryRunnable: Runnable? = null
+
     fun initialize() {
-        if (initialized) return
-        initialized = true
-        initScope.launch {
+        mainHandler.post {
+            if (initialized || isInitializing) {
+                if (initialized) preload()
+                return@post
+            }
+            isInitializing = true
             runCatching {
                 if (BuildConfig.DEBUG) {
                     MobileAds.setRequestConfiguration(
@@ -76,10 +85,13 @@ class InterstitialAdManager(private val appContext: Context) {
                     )
                 }
                 MobileAds.initialize(appContext) {
+                    initialized = true
+                    isInitializing = false
                     SafeLogger.d(TAG, "MobileAds initialized (debug=${BuildConfig.DEBUG})")
                     preload()
                 }
             }.onFailure { error ->
+                isInitializing = false
                 SafeLogger.w(TAG, "MobileAds init skipped: ${error.message}")
             }
         }
@@ -87,7 +99,13 @@ class InterstitialAdManager(private val appContext: Context) {
 
     fun preload() {
         mainHandler.post {
+            if (!initialized && !isInitializing) {
+                initialize()
+                return@post
+            }
             if (loadedAd != null || isLoading) return@post
+            pendingRetryRunnable?.let { mainHandler.removeCallbacks(it) }
+            pendingRetryRunnable = null
             isLoading = true
             runCatching {
                 val adUnitId = resolveAdUnitId(BuildConfig.DEBUG)
@@ -99,6 +117,7 @@ class InterstitialAdManager(private val appContext: Context) {
                     object : InterstitialAdLoadCallback() {
                         override fun onAdLoaded(ad: InterstitialAd) {
                             isLoading = false
+                            retryAttempt = 0
                             loadedAd = ad
                             SafeLogger.d(TAG, "Interstitial ad loaded and ready")
                         }
@@ -107,6 +126,7 @@ class InterstitialAdManager(private val appContext: Context) {
                             isLoading = false
                             loadedAd = null
                             SafeLogger.w(TAG, "Interstitial load failed code=${error.code}")
+                            scheduleRetry()
                         }
                     }
                 )
@@ -115,6 +135,25 @@ class InterstitialAdManager(private val appContext: Context) {
                 SafeLogger.w(TAG, "Interstitial load skipped: ${error.message}")
             }
         }
+    }
+
+    private fun scheduleRetry() {
+        if (retryAttempt >= 4) return
+        val delayMs = when (retryAttempt) {
+            0 -> 5_000L
+            1 -> 15_000L
+            else -> 30_000L
+        }
+        retryAttempt++
+        pendingRetryRunnable?.let { mainHandler.removeCallbacks(it) }
+        val runnable = Runnable {
+            pendingRetryRunnable = null
+            if (loadedAd == null && !isLoading) {
+                preload()
+            }
+        }
+        pendingRetryRunnable = runnable
+        mainHandler.postDelayed(runnable, delayMs)
     }
 
     /**

@@ -69,6 +69,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -87,6 +88,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
@@ -149,8 +153,19 @@ fun ChatDetailScreen(
     }
 
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
     val listState = rememberLazyListState()
     val menuController = rememberConversationMenuController()
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                viewModel.refreshConversationState()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     var selectedMessageForDetails by remember { mutableStateOf<Message?>(null) }
     var dangerousFileConfirmMessage by remember { mutableStateOf<Message?>(null) }
@@ -538,7 +553,8 @@ fun ChatDetailScreen(
                     .navigationBarsPadding()
                     .imePadding()
             ) {
-                if (uiState.error != null) {
+                val activeErrorMessage = uiState.error?.toLocalizedMessage(context) ?: voiceState.error
+                if (activeErrorMessage != null) {
                     Surface(
                         color = MaterialTheme.colorScheme.errorContainer,
                         modifier = Modifier.fillMaxWidth()
@@ -548,7 +564,7 @@ fun ChatDetailScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = uiState.error!!.toLocalizedMessage(context),
+                                text = activeErrorMessage,
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onErrorContainer,
                                 modifier = Modifier.weight(1f)
@@ -738,6 +754,10 @@ fun ChatDetailScreen(
                             onRetry = { viewModel.retryMessage(msg) },
                             onCancelUpload = { viewModel.cancelUpload(msg.clientMessageId) },
                             onOpenMedia = {
+                                if (msg.type == MessageType.VOICE || msg.type == MessageType.AUDIO) {
+                                    viewModel.toggleVoiceMessagePlayback(msg)
+                                    return@MessageBubble
+                                }
                                 val media = msg.media ?: return@MessageBubble
                                 if (msg.type == MessageType.IMAGE || msg.type == MessageType.VIDEO) {
                                     onOpenMediaViewer(
@@ -746,8 +766,6 @@ fun ChatDetailScreen(
                                         media.originalFilename,
                                         msg.type == MessageType.VIDEO
                                     )
-                                } else if (msg.type == MessageType.VOICE || msg.type == MessageType.AUDIO) {
-                                    viewModel.toggleVoiceMessagePlayback(msg)
                                 } else {
                                     if (MediaUploadHelper.isDangerousFile(media.originalFilename)) {
                                         dangerousFileConfirmMessage = msg
@@ -827,7 +845,10 @@ private fun MessageBubble(
                 .widthIn(max = 310.dp)
                 .combinedClickable(
                     onClick = {
-                        if (message.media != null && message.deletedForAllAtMs == null) {
+                        val canPlayLocalAudio =
+                            (message.type == MessageType.VOICE || message.type == MessageType.AUDIO) &&
+                                !message.localUri.isNullOrBlank()
+                        if ((message.media != null || canPlayLocalAudio) && message.deletedForAllAtMs == null) {
                             onOpenMedia()
                         }
                     },
@@ -1109,17 +1130,33 @@ private fun VoiceRecordingBar(
                 modifier = Modifier.weight(1f)
             )
             if (isRecording) {
-                FilledIconButton(onClick = onStop) {
+                FilledIconButton(
+                    onClick = onStop,
+                    modifier = Modifier.testTag("voice_stop_button")
+                ) {
                     Icon(Icons.Rounded.Stop, contentDescription = "Stop")
                 }
+                Spacer(modifier = Modifier.width(8.dp))
+                FilledIconButton(
+                    onClick = onSend,
+                    modifier = Modifier.testTag("voice_send_now_button")
+                ) {
+                    Icon(Icons.AutoMirrored.Rounded.Send, contentDescription = "Send")
+                }
             } else {
-                IconButton(onClick = onTogglePreview) {
+                IconButton(
+                    onClick = onTogglePreview,
+                    modifier = Modifier.testTag("voice_preview_button")
+                ) {
                     Icon(
                         if (isPlayingPreview) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
                         contentDescription = "Preview"
                     )
                 }
-                FilledIconButton(onClick = onSend) {
+                FilledIconButton(
+                    onClick = onSend,
+                    modifier = Modifier.testTag("voice_send_button")
+                ) {
                     Icon(Icons.AutoMirrored.Rounded.Send, contentDescription = "Send")
                 }
             }

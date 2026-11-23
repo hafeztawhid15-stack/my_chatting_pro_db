@@ -5,6 +5,7 @@ import { AppVariables, authMiddleware } from '../../middleware/auth';
 import { rateLimitMiddleware } from '../../middleware/rateLimit';
 import { recordAuditLog } from '../../security/audit';
 import { sha256Hex, timingSafeEqualBytes } from '../../security/jwt';
+import { computeIsFreshlyOnline } from '../../utils/presence';
 
 const encoder = new TextEncoder();
 
@@ -132,7 +133,7 @@ ownerRoutes.get(
       displayName: row.display_name,
       countryIso2: row.country_iso2,
       maskedPhone: maskPhone(row.phone_e164),
-      isOnline: Boolean(row.is_online),
+      isOnline: computeIsFreshlyOnline(row.is_online, row.last_seen_ms, now),
       lastSeenMs: row.last_seen_ms,
       createdAtMs: row.created_at_ms,
       latestDeviceName: row.latest_device_name ?? 'Android Device',

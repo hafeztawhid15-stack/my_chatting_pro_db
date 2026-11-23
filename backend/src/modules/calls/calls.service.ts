@@ -18,9 +18,9 @@ export class CallsService {
   ) {}
 
   async getIceServers(): Promise<{ iceServers: IceServerDto[]; turnConfigured: boolean }> {
-    const iceServers: IceServerDto[] = [
-      { urls: [this.env.ALLOWED_STUN_URL || 'stun:stun.cloudflare.com:3478'] },
-    ];
+    const primaryStun = this.env.ALLOWED_STUN_URL || 'stun:stun.cloudflare.com:3478';
+    const stunUrls = Array.from(new Set([primaryStun, 'stun:stun.cloudflare.com:3478', 'stun:stun.l.google.com:19302']));
+    const iceServers: IceServerDto[] = [{ urls: stunUrls }];
     let turnConfigured = false;
 
     if (this.env.CLOUDFLARE_TURN_TOKEN_ID && this.env.CLOUDFLARE_TURN_API_TOKEN) {
@@ -199,6 +199,25 @@ export class CallsService {
     );
 
     return { callId, status: nextStatus, endedAtMs: now, durationSeconds };
+  }
+
+  async getCallStatus(userId: string, callId: string) {
+    const isParticipant = await this.db.isCallParticipant(callId, userId);
+    if (!isParticipant) {
+      throw new ApiError(403, 'forbidden_call', 'You are not a participant of this call.');
+    }
+
+    const call = await this.db.findCallById(callId);
+    if (!call) {
+      throw new ApiError(404, 'call_not_found', 'Call record not found.');
+    }
+
+    return {
+      callId: call.id,
+      status: call.status,
+      answeredAtMs: call.answered_at_ms ?? null,
+      endedAtMs: call.ended_at_ms ?? null,
+    };
   }
 
   async getCallHistory(userId: string, filterRaw?: string, limitRaw?: number) {

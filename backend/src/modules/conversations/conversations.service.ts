@@ -1,5 +1,6 @@
 import { DatabaseClient } from '../../database/supabase';
 import { ApiError } from '../../middleware/errorHandler';
+import { computeIsFreshlyOnline } from '../../utils/presence';
 
 export interface ConversationSummary {
   id: string;
@@ -45,7 +46,7 @@ export class ConversationsService {
       peerDisplayName: r.peer_display_name,
       peerAvatarMediaId: r.peer_avatar_media_id,
       peerAbout: r.peer_about_text,
-      peerIsOnline: Boolean(r.peer_is_online) && !r.blocked_me,
+      peerIsOnline: computeIsFreshlyOnline(r.peer_is_online, r.peer_last_seen_ms) && !r.blocked_me,
       peerLastSeenMs: r.blocked_me ? null : r.peer_last_seen_ms,
       isBlockedByMe: Boolean(r.blocked_by_me),
       hasBlockedMe: Boolean(r.blocked_me),
@@ -251,7 +252,7 @@ export class ConversationsService {
         displayName: peer.display_name,
         about: peer.about_text,
         avatarMediaId: peer.avatar_media_id,
-        isOnline: peer.is_online,
+        isOnline: computeIsFreshlyOnline(peer.is_online, peer.last_seen_ms) && !peer.blocked_me,
         lastSeenMs: peer.last_seen_ms,
       },
       isBlockedByMe: peer.blocked_by_me,

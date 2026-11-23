@@ -192,34 +192,36 @@ fun ProfileScreen(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
+                val launchAvatarPicker = {
+                    if (!state.isUploadingPhoto) {
+                        avatarPicker.launch(
+                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                        )
+                    }
+                }
                 Box(contentAlignment = Alignment.BottomEnd) {
                     UserAvatar(
                         displayName = state.displayName.ifBlank { "M" },
                         avatarMediaId = state.avatarMediaId,
                         networkModule = networkModule,
-                        size = 112.dp
+                        size = 112.dp,
+                        onClick = launchAvatarPicker
                     )
-                    if (state.isEditMode) {
-                        if (state.isUploadingPhoto) {
-                            CircularProgressIndicator(modifier = Modifier.size(36.dp))
-                        } else {
-                            FilledIconButton(
-                                onClick = {
-                                    avatarPicker.launch(
-                                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                                    )
-                                },
-                                shape = CircleShape,
-                                modifier = Modifier
-                                    .size(48.dp)
-                                    .testTag("profile_change_photo_button")
-                            ) {
-                                Icon(
-                                    Icons.Rounded.CameraAlt,
-                                    contentDescription = stringResource(R.string.action_change_photo),
-                                    modifier = Modifier.size(20.dp)
-                                )
-                            }
+                    if (state.isUploadingPhoto) {
+                        CircularProgressIndicator(modifier = Modifier.size(36.dp))
+                    } else {
+                        FilledIconButton(
+                            onClick = launchAvatarPicker,
+                            shape = CircleShape,
+                            modifier = Modifier
+                                .size(48.dp)
+                                .testTag("profile_change_photo_button")
+                        ) {
+                            Icon(
+                                Icons.Rounded.CameraAlt,
+                                contentDescription = stringResource(R.string.action_change_photo),
+                                modifier = Modifier.size(20.dp)
+                            )
                         }
                     }
                 }

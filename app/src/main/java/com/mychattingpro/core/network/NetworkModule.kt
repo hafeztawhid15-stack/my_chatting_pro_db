@@ -10,7 +10,9 @@ import com.mychattingpro.core.security.EncryptedTokenStore
 import com.mychattingpro.core.security.PrivateChatLockManager
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
+import okhttp3.ConnectionPool
 import okhttp3.OkHttpClient
+import okhttp3.Protocol
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
 import retrofit2.converter.moshi.MoshiConverterFactory
@@ -41,12 +43,15 @@ class NetworkModule(
     }
 
     val okHttpClient: OkHttpClient = OkHttpClient.Builder()
+        .protocols(listOf(Protocol.HTTP_1_1))
+        .connectionPool(ConnectionPool(5, 3, TimeUnit.MINUTES))
+        .retryOnConnectionFailure(true)
         .addInterceptor(AuthInterceptor(tokenStore, privateChatLockManager))
         .addInterceptor(loggingInterceptor)
         .authenticator(TokenAuthenticator(baseUrl, tokenStore, moshi))
-        .connectTimeout(20, TimeUnit.SECONDS)
-        .readTimeout(45, TimeUnit.SECONDS)
-        .writeTimeout(90, TimeUnit.SECONDS)
+        .connectTimeout(25, TimeUnit.SECONDS)
+        .readTimeout(60, TimeUnit.SECONDS)
+        .writeTimeout(120, TimeUnit.SECONDS)
         .pingInterval(25, TimeUnit.SECONDS)
         .build()
 
@@ -65,7 +70,8 @@ class NetworkModule(
         okHttpClient = okHttpClient,
         tokenStore = tokenStore,
         prefsStore = prefsStore,
-        networkMonitor = networkMonitor
+        networkMonitor = networkMonitor,
+        moshi = moshi
     )
 
     val imageLoader: ImageLoader = ImageLoader.Builder(context)

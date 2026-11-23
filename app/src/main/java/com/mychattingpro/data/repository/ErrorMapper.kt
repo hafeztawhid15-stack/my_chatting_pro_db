@@ -2,22 +2,46 @@ package com.mychattingpro.data.repository
 
 import com.mychattingpro.core.common.AppError
 import com.mychattingpro.core.network.ApiErrorResponseDto
+import com.mychattingpro.core.network.NetworkMonitor
 import com.squareup.moshi.Moshi
 import retrofit2.HttpException
 import java.io.FileNotFoundException
 import java.io.IOException
+import java.io.InterruptedIOException
+import java.net.ConnectException
+import java.net.NoRouteToHostException
+import java.net.PortUnreachableException
 import java.net.SocketTimeoutException
+import java.net.UnknownHostException
 
 class AppException(val appError: AppError) : Exception()
 
-class ErrorMapper(private val moshi: Moshi) {
+class ErrorMapper(
+    private val moshi: Moshi,
+    private val networkMonitor: NetworkMonitor? = null
+) {
     private val adapter = moshi.adapter(ApiErrorResponseDto::class.java)
 
     fun map(throwable: Throwable): AppError {
         if (throwable is AppException) return throwable.appError
         if (throwable is SocketTimeoutException) return AppError.TimeoutError
+        if (throwable is InterruptedIOException && throwable.message?.contains("timeout", ignoreCase = true) == true) {
+            return AppError.TimeoutError
+        }
         if (throwable is FileNotFoundException) return AppError.StorageFailure
-        if (throwable is IOException) return AppError.NetworkUnavailable
+        if (throwable is UnknownHostException ||
+            throwable is ConnectException ||
+            throwable is NoRouteToHostException ||
+            throwable is PortUnreachableException
+        ) {
+            return AppError.NetworkUnavailable
+        }
+        if (throwable is IOException) {
+            if (networkMonitor == null || !networkMonitor.isOnline.value) {
+                return AppError.NetworkUnavailable
+            }
+            return AppError.ServerError("Connection interrupted while reaching server. Please try again.")
+        }
         if (throwable is HttpException) {
             val body = runCatching { throwable.response()?.errorBody()?.string() }.getOrNull()
             val parsed = body?.let { runCatching { adapter.fromJson(it) }.getOrNull() }

@@ -116,6 +116,9 @@ interface CloudflareApiService {
     @POST("v1/calls")
     suspend fun initiateCall(@Body body: CreateCallRequestDto): CreateCallResponseDto
 
+    @GET("v1/calls/{callId}")
+    suspend fun getCallStatus(@Path("callId") callId: String): CallStatusResponseDto
+
     @POST("v1/calls/{callId}/state")
     suspend fun updateCallState(
         @Path("callId") callId: String,

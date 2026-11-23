@@ -4,6 +4,7 @@ import { ApiError } from '../../middleware/errorHandler';
 import { recordAuditLog } from '../../security/audit';
 import { sanitizeAboutText, sanitizeDisplayName } from '../../security/validation';
 import { resolveStorageBucket, StorageClient } from '../../storage/supabaseStorage';
+import { computeIsFreshlyOnline } from '../../utils/presence';
 import { verifyPin } from '../auth/pin.crypto';
 import { dispatchSecurityAlert } from '../notifications/pushDispatcher';
 
@@ -25,7 +26,7 @@ export class ProfilesService {
       displayName: row.display_name,
       about: row.about_text,
       avatarMediaId: row.avatar_media_id,
-      isOnline: Boolean(row.is_online),
+      isOnline: computeIsFreshlyOnline(row.is_online, row.last_seen_ms),
       lastSeenMs: row.last_seen_ms,
     };
   }
