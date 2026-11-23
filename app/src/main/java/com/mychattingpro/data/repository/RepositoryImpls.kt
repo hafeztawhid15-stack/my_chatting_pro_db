@@ -572,8 +572,8 @@ class ChatRepositoryImpl(
     }.recoverCatching { throw AppException(errorMapper.map(it)) }
 
     override suspend fun setMutedUntil(conversationId: String, mutedUntilMs: Long?): Result<Unit> = runCatching {
-        api.updateConversationPreferences(conversationId, mapOf("mutedUntilMs" to mutedUntilMs))
-        conversationDao.updateMutedUntil(conversationId, mutedUntilMs)
+        api.updateConversationPreferences(conversationId, mapOf("mutedUntilMs" to (mutedUntilMs ?: 0L)))
+        conversationDao.updateMutedUntil(conversationId, mutedUntilMs?.takeIf { it > 0L })
     }.recoverCatching { throw AppException(errorMapper.map(it)) }
 
     override suspend fun setCustomSound(
@@ -583,9 +583,13 @@ class ChatRepositoryImpl(
     ): Result<Unit> = runCatching {
         api.updateConversationPreferences(
             conversationId,
-            mapOf("customSoundUri" to soundUri, "customSoundLabel" to soundLabel)
+            mapOf("customSoundUri" to (soundUri ?: ""), "customSoundLabel" to (soundLabel ?: ""))
         )
-        conversationDao.updateCustomSound(conversationId, soundUri, soundLabel)
+        conversationDao.updateCustomSound(
+            conversationId,
+            soundUri?.takeIf { it.isNotBlank() },
+            soundLabel?.takeIf { it.isNotBlank() }
+        )
     }.recoverCatching { throw AppException(errorMapper.map(it)) }
 
     override suspend fun setMarkedUnread(conversationId: String, unread: Boolean): Result<Unit> = runCatching {
@@ -1205,8 +1209,8 @@ class PrivateChatRepositoryImpl(
     override suspend fun setPrivateMutedUntil(conversationId: String, mutedUntilMs: Long?): Result<Unit> = runCatching {
         requireUnlocked()
         lockManager.touchActivity()
-        api.updatePrivateConversationPreferences(conversationId, mapOf("mutedUntilMs" to mutedUntilMs))
-        conversationDao.updateMutedUntil(conversationId, mutedUntilMs)
+        api.updatePrivateConversationPreferences(conversationId, mapOf("mutedUntilMs" to (mutedUntilMs ?: 0L)))
+        conversationDao.updateMutedUntil(conversationId, mutedUntilMs?.takeIf { it > 0L })
     }.recoverCatching { throw AppException(errorMapper.map(it)) }
 
     override suspend fun setPrivateCustomSound(
@@ -1218,9 +1222,13 @@ class PrivateChatRepositoryImpl(
         lockManager.touchActivity()
         api.updatePrivateConversationPreferences(
             conversationId,
-            mapOf("customSoundUri" to soundUri, "customSoundLabel" to soundLabel)
+            mapOf("customSoundUri" to (soundUri ?: ""), "customSoundLabel" to (soundLabel ?: ""))
         )
-        conversationDao.updateCustomSound(conversationId, soundUri, soundLabel)
+        conversationDao.updateCustomSound(
+            conversationId,
+            soundUri?.takeIf { it.isNotBlank() },
+            soundLabel?.takeIf { it.isNotBlank() }
+        )
     }.recoverCatching { throw AppException(errorMapper.map(it)) }
 
     override suspend fun setPrivateMarkedUnread(conversationId: String, unread: Boolean): Result<Unit> = runCatching {
@@ -1564,9 +1572,9 @@ private fun ConversationDto.toEntity(forcePrivate: Boolean = isPrivate) = Conver
     pinnedAtMs = pinnedAtMs,
     isArchived = isArchived,
     archivedAtMs = archivedAtMs,
-    mutedUntilMs = mutedUntilMs,
-    customSoundUri = customSoundUri,
-    customSoundLabel = customSoundLabel,
+    mutedUntilMs = mutedUntilMs?.takeIf { it > 0L },
+    customSoundUri = customSoundUri?.takeIf { it.isNotBlank() },
+    customSoundLabel = customSoundLabel?.takeIf { it.isNotBlank() },
     markedUnread = markedUnread
 )
 
@@ -1593,9 +1601,9 @@ private fun ConversationEntity.toDomain() = Conversation(
     pinnedAtMs = pinnedAtMs,
     isArchived = isArchived,
     archivedAtMs = archivedAtMs,
-    mutedUntilMs = mutedUntilMs,
-    customSoundUri = customSoundUri,
-    customSoundLabel = customSoundLabel,
+    mutedUntilMs = mutedUntilMs?.takeIf { it > 0L },
+    customSoundUri = customSoundUri?.takeIf { it.isNotBlank() },
+    customSoundLabel = customSoundLabel?.takeIf { it.isNotBlank() },
     markedUnread = markedUnread,
     clearedAtMs = clearedAtMs
 )

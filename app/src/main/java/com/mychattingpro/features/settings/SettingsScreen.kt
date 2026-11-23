@@ -126,7 +126,7 @@ fun SettingsScreen(
     var showPrivatePinDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
-        interstitialAdManager.preload()
+        interstitialAdManager.preload(resetRetry = true)
         viewModel.loadPrivatePinStatus()
     }
 

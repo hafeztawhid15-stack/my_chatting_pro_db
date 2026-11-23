@@ -9,9 +9,11 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -272,35 +274,43 @@ fun FiveDigitPinField(
             .fillMaxWidth()
             .testTag(testTag),
         decorationBox = {
-            Row(
+            Box(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally)
+                contentAlignment = Alignment.Center
             ) {
-                repeat(5) { idx ->
-                    val filled = idx < pin.length
-                    val isFocused = idx == pin.length
-                    Box(
-                        modifier = Modifier
-                            .size(width = 52.dp, height = 58.dp)
-                            .clip(RoundedCornerShape(14.dp))
-                            .background(
-                                if (filled) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)
-                                else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .widthIn(max = 300.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    repeat(5) { idx ->
+                        val filled = idx < pin.length
+                        val isFocused = idx == pin.length
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(54.dp)
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(
+                                    if (filled) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)
+                                    else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                                )
+                                .border(
+                                    width = if (isFocused) 2.dp else 1.dp,
+                                    color = if (isFocused) MaterialTheme.colorScheme.primary
+                                    else MaterialTheme.colorScheme.outlineVariant,
+                                    shape = RoundedCornerShape(14.dp)
+                                ),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = if (filled) "●" else "",
+                                style = MaterialTheme.typography.titleLarge,
+                                color = MaterialTheme.colorScheme.primary,
+                                textAlign = TextAlign.Center
                             )
-                            .border(
-                                width = if (isFocused) 2.dp else 1.dp,
-                                color = if (isFocused) MaterialTheme.colorScheme.primary
-                                else MaterialTheme.colorScheme.outlineVariant,
-                                shape = RoundedCornerShape(14.dp)
-                            ),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = if (filled) "●" else "",
-                            style = MaterialTheme.typography.titleLarge,
-                            color = MaterialTheme.colorScheme.primary,
-                            textAlign = TextAlign.Center
-                        )
+                        }
                     }
                 }
             }

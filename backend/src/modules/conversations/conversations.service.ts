@@ -190,9 +190,11 @@ export class ConversationsService {
       pinnedAtMs: input.isPinned === true ? now : input.isPinned === false ? null : undefined,
       isArchived: input.isArchived,
       archivedAtMs: input.isArchived === true ? now : input.isArchived === false ? null : undefined,
-      mutedUntilMs: input.mutedUntilMs,
-      customSoundUri: input.customSoundUri?.slice(0, 500) ?? input.customSoundUri,
-      customSoundLabel: input.customSoundLabel?.slice(0, 80) ?? input.customSoundLabel,
+      mutedUntilMs: input.mutedUntilMs === 0 ? null : input.mutedUntilMs,
+      customSoundUri:
+        input.customSoundUri === '' ? null : (input.customSoundUri?.slice(0, 500) ?? input.customSoundUri),
+      customSoundLabel:
+        input.customSoundLabel === '' ? null : (input.customSoundLabel?.slice(0, 80) ?? input.customSoundLabel),
       markedUnread: input.markedUnread,
     });
     return { ok: true };

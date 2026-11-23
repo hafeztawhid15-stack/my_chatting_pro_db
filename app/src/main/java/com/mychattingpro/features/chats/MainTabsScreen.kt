@@ -71,7 +71,7 @@ fun MainTabsScreen(
     ) { }
 
     LaunchedEffect(Unit) {
-        interstitialAdManager.preload()
+        interstitialAdManager.preload(resetRetry = true)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && askedNotificationPermission == 0) {
             askedNotificationPermission = 1
             val granted = ContextCompat.checkSelfPermission(

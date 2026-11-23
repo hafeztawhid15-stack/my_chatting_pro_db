@@ -170,7 +170,7 @@ class MainActivity : ComponentActivity() {
     override fun onStart() {
         super.onStart()
         val container = (application as? MyChattingProApp)?.container ?: return
-        container.interstitialAdManager.preload()
+        container.interstitialAdManager.preload(resetRetry = true)
         if (cachedHasSession) {
             container.networkModule.realtimeSocketManager.sendPresencePing()
         }
@@ -691,7 +691,7 @@ private fun MyChattingProNavRoot(
                 }
             }
             LaunchedEffect(Unit) {
-                container.interstitialAdManager.preload()
+                container.interstitialAdManager.preload(resetRetry = true)
             }
             val callVm: CallViewModel = viewModel(
                 key = "call_${route.callId}_${route.isIncoming}_${route.autoAccept}",

@@ -149,7 +149,7 @@ class AppContainer(context: Context) {
             var wasOnline = networkModule.networkMonitor.isOnline.value
             networkModule.networkMonitor.isOnline.collect { online ->
                 if (online && !wasOnline) {
-                    interstitialAdManager.preload()
+                    interstitialAdManager.preload(resetRetry = true)
                     if (tokenStore.getSession() != null) {
                         runCatching { messageRepository.retryAllPendingMessages() }
                         runCatching { chatRepository.refreshConversations() }
@@ -178,7 +178,10 @@ class AppContainer(context: Context) {
                             isVideo = event.isVideo
                         )
                         if (prefs.notificationsEnabled && prefs.callNotificationsEnabled) {
-                            ringtoneController.startRinging(event.callId)
+                            ringtoneController.startRinging(
+                                callId = event.callId,
+                                allowVibration = prefs.callVibrationEnabled
+                            )
                         }
                         _incomingCall.value = prompt
                         notificationManager.showIncomingCallNotification(
@@ -309,6 +312,7 @@ class MyChattingProApp : Application() {
     override fun onCreate() {
         super.onCreate()
         container = AppContainer(this)
+        container.interstitialAdManager.attachApplication(this)
         container.interstitialAdManager.initialize()
         BackgroundSyncJobService.schedule(this)
     }

@@ -118,5 +118,21 @@ class CoreLogicUnitTest {
         assertFalse(InterstitialAdManager.isCooldownActive(nowMs = 10_000L, lastShownAtMs = 0L))
         assertTrue(InterstitialAdManager.isCooldownActive(nowMs = 25_000L, lastShownAtMs = 10_000L))
         assertFalse(InterstitialAdManager.isCooldownActive(nowMs = 35_000L, lastShownAtMs = 10_000L))
+
+        assertEquals(5_000L, InterstitialAdManager.retryDelayMs(0))
+        assertEquals(15_000L, InterstitialAdManager.retryDelayMs(1))
+        assertEquals(30_000L, InterstitialAdManager.retryDelayMs(2))
+        assertEquals(60_000L, InterstitialAdManager.retryDelayMs(3))
+        assertEquals(120_000L, InterstitialAdManager.retryDelayMs(4))
+        assertEquals(120_000L, InterstitialAdManager.retryDelayMs(10))
+
+        assertFalse(InterstitialAdManager.isLoadedAdExpired(nowMs = 100_000L, loadedAtMs = 0L))
+        assertFalse(InterstitialAdManager.isLoadedAdExpired(nowMs = 1_000_000L, loadedAtMs = 500_000L))
+        assertTrue(
+            InterstitialAdManager.isLoadedAdExpired(
+                nowMs = 500_000L + InterstitialAdManager.MAX_AD_AGE_MS,
+                loadedAtMs = 500_000L
+            )
+        )
     }
 }

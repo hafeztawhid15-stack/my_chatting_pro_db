@@ -9,9 +9,11 @@ import android.media.Ringtone
 import android.media.RingtoneManager
 import android.net.Uri
 import android.os.Build
+import android.os.VibrationAttributes
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
+import android.provider.Settings
 import com.mychattingpro.core.security.SafeLogger
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -25,6 +27,7 @@ import kotlinx.coroutines.launch
 
 interface RingtonePlaybackEngine {
     fun resolveCurrentSystemRingtoneUri(): Uri?
+    fun resolveFallbackSystemRingtoneUris(): List<Uri> = listOfNotNull(resolveCurrentSystemRingtoneUri())
     fun getRingerMode(): Int
     fun startPlayback(uri: Uri?, vibrate: Boolean)
     fun stopPlayback()
@@ -46,12 +49,26 @@ class AndroidRingtonePlaybackEngine(
         .build()
 
     override fun resolveCurrentSystemRingtoneUri(): Uri? {
-        val actual = runCatching {
+        return resolveFallbackSystemRingtoneUris().firstOrNull()
+    }
+
+    override fun resolveFallbackSystemRingtoneUris(): List<Uri> {
+        val uris = linkedSetOf<Uri>()
+        runCatching {
             RingtoneManager.getActualDefaultRingtoneUri(context, RingtoneManager.TYPE_RINGTONE)
-        }.getOrNull()
-        return actual ?: runCatching {
+        }.getOrNull()?.let { uris.add(it) }
+        runCatching {
             RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)
-        }.getOrNull()
+        }.getOrNull()?.let { uris.add(it) }
+        uris.add(Settings.System.DEFAULT_RINGTONE_URI)
+        runCatching {
+            RingtoneManager.getActualDefaultRingtoneUri(context, RingtoneManager.TYPE_NOTIFICATION)
+        }.getOrNull()?.let { uris.add(it) }
+        runCatching {
+            RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
+        }.getOrNull()?.let { uris.add(it) }
+        uris.add(Settings.System.DEFAULT_NOTIFICATION_URI)
+        return uris.toList()
     }
 
     override fun getRingerMode(): Int = runCatching {
@@ -65,41 +82,57 @@ class AndroidRingtonePlaybackEngine(
         if (uri != null) {
             requestRingtoneFocusAndMode()
 
+            val candidates = (listOf(uri) + resolveFallbackSystemRingtoneUris()).distinct()
             var startedAudio = false
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                startedAudio = runCatching {
-                    val rt = RingtoneManager.getRingtone(context, uri) ?: return@runCatching false
-                    rt.audioAttributes = ringAudioAttributes
-                    rt.isLooping = true
-                    rt.play()
-                    ringtone = rt
-                    true
-                }.getOrDefault(false)
-            }
 
-            if (!startedAudio) {
-                startedAudio = runCatching {
-                    val mp = MediaPlayer()
+            // Pass 1: MediaPlayer validates data source & codecs upfront instead of failing silently
+            for (candidate in candidates) {
+                val mp = MediaPlayer()
+                var cleanedUp = false
+                val played = runCatching {
                     mp.setAudioAttributes(ringAudioAttributes)
-                    mp.setDataSource(context, uri)
+                    mp.setDataSource(context, candidate)
                     mp.isLooping = true
+                    mp.setVolume(1.0f, 1.0f)
+                    mp.setOnErrorListener { failedMp, _, _ ->
+                        runCatching { failedMp.release() }
+                        if (mediaPlayer === failedMp) {
+                            mediaPlayer = null
+                        }
+                        true
+                    }
                     mp.prepare()
                     mp.start()
                     mediaPlayer = mp
                     true
                 }.onFailure {
-                    runCatching { mediaPlayer?.release() }
-                    mediaPlayer = null
+                    if (!cleanedUp) {
+                        cleanedUp = true
+                        runCatching { mp.reset() }
+                        runCatching { mp.release() }
+                    }
                 }.getOrDefault(false)
+                if (played) {
+                    startedAudio = true
+                    break
+                }
             }
 
+            // Pass 2: System Ringtone fallback if MediaPlayer could not open any URI directly
             if (!startedAudio) {
-                runCatching {
-                    val rt = RingtoneManager.getRingtone(context, uri)
-                    if (rt != null) {
+                for (candidate in candidates) {
+                    val played = runCatching {
+                        val rt = RingtoneManager.getRingtone(context, candidate) ?: return@runCatching false
                         rt.audioAttributes = ringAudioAttributes
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                            rt.isLooping = true
+                        }
                         rt.play()
                         ringtone = rt
+                        true
+                    }.getOrDefault(false)
+                    if (played) {
+                        break
                     }
                 }
             }
@@ -185,8 +218,14 @@ class AndroidRingtonePlaybackEngine(
         if (!vibrator.hasVibrator()) return
         val pattern = longArrayOf(0L, 600L, 900L)
         runCatching {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                vibrator.vibrate(VibrationEffect.createWaveform(pattern, 0))
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                val attrs = VibrationAttributes.Builder()
+                    .setUsage(VibrationAttributes.USAGE_RINGTONE)
+                    .build()
+                vibrator.vibrate(VibrationEffect.createWaveform(pattern, 0), attrs)
+            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                @Suppress("DEPRECATION")
+                vibrator.vibrate(VibrationEffect.createWaveform(pattern, 0), ringAudioAttributes)
             } else {
                 @Suppress("DEPRECATION")
                 vibrator.vibrate(pattern, 0)
@@ -223,7 +262,7 @@ class IncomingCallRingtoneController(
     private var autoStopJob: Job? = null
 
     @Synchronized
-    fun startRinging(callId: String) {
+    fun startRinging(callId: String, allowVibration: Boolean = true) {
         if (currentCallId == callId && _isRinging.value) return
 
         stopRinging(force = true)
@@ -241,8 +280,17 @@ class IncomingCallRingtoneController(
         } else {
             null
         }
-        val shouldVibrate = ringerMode == AudioManager.RINGER_MODE_VIBRATE ||
-            ringerMode == AudioManager.RINGER_MODE_NORMAL
+        val shouldVibrate = allowVibration && (
+            ringerMode == AudioManager.RINGER_MODE_VIBRATE ||
+                ringerMode == AudioManager.RINGER_MODE_NORMAL
+            )
+
+        if (currentSystemUri == null && !shouldVibrate) {
+            currentCallId = callId
+            lastPlayedUri = null
+            _isRinging.value = false
+            return
+        }
 
         runCatching {
             engine.startPlayback(uri = currentSystemUri, vibrate = shouldVibrate)

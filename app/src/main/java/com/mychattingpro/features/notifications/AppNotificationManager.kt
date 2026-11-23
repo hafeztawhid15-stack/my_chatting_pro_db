@@ -9,9 +9,17 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.media.AudioAttributes
+import android.media.AudioManager
+import android.media.MediaPlayer
+import android.media.Ringtone
 import android.media.RingtoneManager
 import android.net.Uri
 import android.os.Build
+import android.os.VibrationAttributes
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
+import android.provider.Settings
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.app.Person
@@ -30,10 +38,10 @@ import java.util.Collections
 class AppNotificationManager(private val context: Context) {
 
     companion object {
-        const val CHANNEL_MESSAGES = "mcp_messages"
+        const val CHANNEL_MESSAGES = "mcp_messages_v2"
         const val CHANNEL_CALLS = "mcp_calls_v2"
-        const val CHANNEL_SECURITY = "mcp_security"
-        const val CHANNEL_ACCOUNT = "mcp_account"
+        const val CHANNEL_SECURITY = "mcp_security_v2"
+        const val CHANNEL_ACCOUNT = "mcp_account_v2"
         const val CHANNEL_SYNC = "mcp_realtime_sync"
 
         const val EXTRA_CALL_ID = "callId"
@@ -56,6 +64,17 @@ class AppNotificationManager(private val context: Context) {
         )
     )
 
+    private val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+    private val notifAudioAttributes: AudioAttributes = AudioAttributes.Builder()
+        .setUsage(AudioAttributes.USAGE_NOTIFICATION)
+        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+        .build()
+
+    private val soundLock = Any()
+    private var activeMessageMediaPlayer: MediaPlayer? = null
+    private var activeMessageRingtone: Ringtone? = null
+    private var lastMessageAlertPlayedAtMs: Long = 0L
+
     init {
         createChannels()
     }
@@ -63,12 +82,18 @@ class AppNotificationManager(private val context: Context) {
     fun createChannels() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            // Delete legacy silent channels so devices upgrade cleanly to active-sound channels.
+            runCatching { nm.deleteNotificationChannel("mcp_messages") }
+            runCatching { nm.deleteNotificationChannel("mcp_security") }
+            runCatching { nm.deleteNotificationChannel("mcp_account") }
+
             nm.createNotificationChannel(
                 NotificationChannel(
                     CHANNEL_MESSAGES,
                     context.getString(R.string.notif_channel_messages),
                     NotificationManager.IMPORTANCE_HIGH
                 ).apply {
+                    setSound(Settings.System.DEFAULT_NOTIFICATION_URI, notifAudioAttributes)
                     enableVibration(true)
                     lockscreenVisibility = Notification.VISIBILITY_PRIVATE
                 }
@@ -94,6 +119,7 @@ class AppNotificationManager(private val context: Context) {
                     context.getString(R.string.notif_channel_security),
                     NotificationManager.IMPORTANCE_HIGH
                 ).apply {
+                    setSound(Settings.System.DEFAULT_NOTIFICATION_URI, notifAudioAttributes)
                     enableVibration(true)
                     lockscreenVisibility = Notification.VISIBILITY_PRIVATE
                 }
@@ -103,7 +129,10 @@ class AppNotificationManager(private val context: Context) {
                     CHANNEL_ACCOUNT,
                     context.getString(R.string.notif_channel_account),
                     NotificationManager.IMPORTANCE_DEFAULT
-                )
+                ).apply {
+                    setSound(Settings.System.DEFAULT_NOTIFICATION_URI, notifAudioAttributes)
+                    enableVibration(true)
+                }
             )
             nm.createNotificationChannel(
                 NotificationChannel(
@@ -131,10 +160,22 @@ class AppNotificationManager(private val context: Context) {
         customSoundUri: String? = null,
         eventId: String? = null
     ) {
-        if (!hasNotificationPermission()) return
         if (!prefs.notificationsEnabled || !prefs.messageNotificationsEnabled) return
-        if (mutedUntilMs != null && mutedUntilMs > System.currentTimeMillis()) return
+        if (mutedUntilMs != null && mutedUntilMs > 0L && mutedUntilMs > System.currentTimeMillis()) return
         if (!markEventSeen(eventId)) return
+
+        val canPostSystemNotif = hasNotificationPermission()
+        val hasCustomSound = !customSoundUri.isNullOrBlank() && prefs.messageSoundEnabled
+        if (hasCustomSound) {
+            playLiveMessageSound(customSoundUri = customSoundUri, prefs = prefs)
+            if (!canPostSystemNotif) {
+                playMessageVibration(prefs = prefs)
+            }
+        } else if (!canPostSystemNotif && prefs.inAppAlertsEnabled) {
+            playLiveMessageSound(customSoundUri = null, prefs = prefs)
+            playMessageVibration(prefs = prefs)
+        }
+        if (!canPostSystemNotif) return
 
         val intent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
@@ -153,11 +194,6 @@ class AppNotificationManager(private val context: Context) {
             context.getString(R.string.notif_new_message_body)
         }
 
-        val hasCustomSound = !customSoundUri.isNullOrBlank() && prefs.messageSoundEnabled
-        if (hasCustomSound) {
-            playCustomMessageSound(customSoundUri!!)
-        }
-
         val builder = NotificationCompat.Builder(context, CHANNEL_MESSAGES)
             .setSmallIcon(R.drawable.ic_notif_chat)
             .setContentTitle(context.getString(R.string.notif_new_message_title, senderName))
@@ -172,9 +208,14 @@ class AppNotificationManager(private val context: Context) {
 
         if (!prefs.messageSoundEnabled || hasCustomSound) {
             builder.setSilent(true)
-        }
-        if (prefs.vibrationEnabled && !hasCustomSound) {
-            builder.setDefaults(Notification.DEFAULT_VIBRATE)
+            if (hasCustomSound && prefs.vibrationEnabled) {
+                playMessageVibration(prefs = prefs)
+            }
+        } else {
+            builder.setSound(resolveSystemNotificationUriForBuilder())
+            if (prefs.vibrationEnabled) {
+                builder.setDefaults(Notification.DEFAULT_VIBRATE)
+            }
         }
 
         runCatching {
@@ -188,10 +229,22 @@ class AppNotificationManager(private val context: Context) {
         customSoundUri: String? = null,
         eventId: String? = null
     ) {
-        if (!hasNotificationPermission()) return
         if (!prefs.notificationsEnabled || !prefs.privateChatNotificationsEnabled) return
-        if (mutedUntilMs != null && mutedUntilMs > System.currentTimeMillis()) return
+        if (mutedUntilMs != null && mutedUntilMs > 0L && mutedUntilMs > System.currentTimeMillis()) return
         if (!markEventSeen(eventId)) return
+
+        val canPostSystemNotif = hasNotificationPermission()
+        val hasCustomSound = !customSoundUri.isNullOrBlank() && prefs.messageSoundEnabled
+        if (hasCustomSound) {
+            playLiveMessageSound(customSoundUri = customSoundUri, prefs = prefs)
+            if (!canPostSystemNotif) {
+                playMessageVibration(prefs = prefs)
+            }
+        } else if (!canPostSystemNotif && prefs.inAppAlertsEnabled) {
+            playLiveMessageSound(customSoundUri = null, prefs = prefs)
+            playMessageVibration(prefs = prefs)
+        }
+        if (!canPostSystemNotif) return
 
         val intent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
@@ -202,11 +255,6 @@ class AppNotificationManager(private val context: Context) {
             intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
-
-        val hasCustomSound = !customSoundUri.isNullOrBlank() && prefs.messageSoundEnabled
-        if (hasCustomSound) {
-            playCustomMessageSound(customSoundUri!!)
-        }
 
         val builder = NotificationCompat.Builder(context, CHANNEL_MESSAGES)
             .setSmallIcon(R.drawable.ic_notif_chat)
@@ -219,6 +267,14 @@ class AppNotificationManager(private val context: Context) {
 
         if (!prefs.messageSoundEnabled || hasCustomSound) {
             builder.setSilent(true)
+            if (hasCustomSound && prefs.vibrationEnabled) {
+                playMessageVibration(prefs = prefs)
+            }
+        } else {
+            builder.setSound(resolveSystemNotificationUriForBuilder())
+            if (prefs.vibrationEnabled) {
+                builder.setDefaults(Notification.DEFAULT_VIBRATE)
+            }
         }
 
         runCatching {
@@ -313,17 +369,32 @@ class AppNotificationManager(private val context: Context) {
     }
 
     fun showMissedCallNotification(callId: String, callerName: String, prefs: AppPreferences) {
-        if (!hasNotificationPermission()) return
         if (!prefs.notificationsEnabled || !prefs.missedCallNotificationsEnabled) return
-        val notification = NotificationCompat.Builder(context, CHANNEL_MESSAGES)
+        if (!markEventSeen("missed-$callId")) return
+
+        val canPostSystemNotif = hasNotificationPermission()
+        if (!canPostSystemNotif && prefs.inAppAlertsEnabled) {
+            playLiveMessageSound(customSoundUri = null, prefs = prefs)
+            playMessageVibration(prefs = prefs)
+        }
+        if (!canPostSystemNotif) return
+
+        val builder = NotificationCompat.Builder(context, CHANNEL_MESSAGES)
             .setSmallIcon(R.drawable.ic_notif_chat)
             .setContentTitle(callerName.ifBlank { context.getString(R.string.app_name) })
             .setContentText(context.getString(R.string.notif_missed_call_body))
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .setAutoCancel(true)
-            .build()
+        if (!prefs.messageSoundEnabled) {
+            builder.setSilent(true)
+        } else {
+            builder.setSound(resolveSystemNotificationUriForBuilder())
+            if (prefs.vibrationEnabled) {
+                builder.setDefaults(Notification.DEFAULT_VIBRATE)
+            }
+        }
         runCatching {
-            NotificationManagerCompat.from(context).notify(callId.hashCode() + 1, notification)
+            NotificationManagerCompat.from(context).notify(callId.hashCode() + 1, builder.build())
         }
     }
 
@@ -334,12 +405,18 @@ class AppNotificationManager(private val context: Context) {
         prefs: AppPreferences,
         eventId: String? = null
     ) {
-        if (!hasNotificationPermission()) return
         val isAccountEvent = alertType == "account_deleted" || alertType == "recovery_code_updated"
         if (!prefs.notificationsEnabled) return
         if (isAccountEvent && !prefs.accountAlertsEnabled) return
         if (!isAccountEvent && !prefs.securityAlertsEnabled) return
         if (!markEventSeen(eventId)) return
+
+        val canPostSystemNotif = hasNotificationPermission()
+        if (!canPostSystemNotif && prefs.inAppAlertsEnabled) {
+            playLiveMessageSound(customSoundUri = null, prefs = prefs)
+            playMessageVibration(prefs = prefs)
+        }
+        if (!canPostSystemNotif) return
 
         val channel = if (isAccountEvent) CHANNEL_ACCOUNT else CHANNEL_SECURITY
         val intent = Intent(context, MainActivity::class.java).apply {
@@ -351,7 +428,7 @@ class AppNotificationManager(private val context: Context) {
             intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
-        val notification = NotificationCompat.Builder(context, channel)
+        val builder = NotificationCompat.Builder(context, channel)
             .setSmallIcon(R.drawable.ic_notif_chat)
             .setContentTitle(title)
             .setContentText(body)
@@ -359,12 +436,22 @@ class AppNotificationManager(private val context: Context) {
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setAutoCancel(true)
             .setContentIntent(pi)
-            .build()
+        if (!prefs.messageSoundEnabled) {
+            builder.setSilent(true)
+        } else {
+            builder.setSound(resolveSystemNotificationUriForBuilder())
+            if (prefs.vibrationEnabled) {
+                builder.setDefaults(Notification.DEFAULT_VIBRATE)
+            }
+        }
 
         runCatching {
-            NotificationManagerCompat.from(context).notify((eventId ?: alertType).hashCode(), notification)
+            NotificationManagerCompat.from(context).notify((eventId ?: alertType).hashCode(), builder.build())
         }
     }
+
+    private fun resolveSystemNotificationUriForBuilder(): Uri =
+        resolveMessageSoundCandidates(null).firstOrNull() ?: Settings.System.DEFAULT_NOTIFICATION_URI
 
     fun cancelCallNotification(callId: String) {
         runCatching {
@@ -372,17 +459,138 @@ class AppNotificationManager(private val context: Context) {
         }
     }
 
-    private fun playCustomMessageSound(uriString: String) {
+    private fun resolveMessageSoundCandidates(customSoundUri: String?): List<Uri> {
+        val uris = linkedSetOf<Uri>()
+        if (!customSoundUri.isNullOrBlank()) {
+            runCatching { Uri.parse(customSoundUri) }.getOrNull()?.let { uris.add(it) }
+        }
         runCatching {
-            val uri = Uri.parse(uriString)
-            val ringtone = RingtoneManager.getRingtone(context, uri) ?: return
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                ringtone.audioAttributes = AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_NOTIFICATION)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                    .build()
+            RingtoneManager.getActualDefaultRingtoneUri(context, RingtoneManager.TYPE_NOTIFICATION)
+        }.getOrNull()?.let { uris.add(it) }
+        runCatching {
+            RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
+        }.getOrNull()?.let { uris.add(it) }
+        uris.add(Settings.System.DEFAULT_NOTIFICATION_URI)
+        return uris.toList()
+    }
+
+    private fun playLiveMessageSound(customSoundUri: String?, prefs: AppPreferences) {
+        if (!prefs.notificationsEnabled || !prefs.messageSoundEnabled) return
+        val ringerMode = runCatching {
+            audioManager?.ringerMode ?: AudioManager.RINGER_MODE_NORMAL
+        }.getOrDefault(AudioManager.RINGER_MODE_NORMAL)
+        if (ringerMode != AudioManager.RINGER_MODE_NORMAL) return
+
+        val candidates = resolveMessageSoundCandidates(customSoundUri)
+        if (candidates.isEmpty()) return
+
+        synchronized(soundLock) {
+            val now = System.currentTimeMillis()
+            if (now - lastMessageAlertPlayedAtMs < 600L) return
+            lastMessageAlertPlayedAtMs = now
+
+            stopActiveMessageAudioLocked()
+
+            // Pass 1: MediaPlayer verifies data source upfront and releases immediately after single playback
+            var started = false
+            for (candidate in candidates) {
+                val mp = MediaPlayer()
+                val played = runCatching {
+                    mp.setAudioAttributes(notifAudioAttributes)
+                    mp.setDataSource(context, candidate)
+                    mp.isLooping = false
+                    mp.setVolume(1.0f, 1.0f)
+                    mp.setOnCompletionListener { finishedMp ->
+                        synchronized(soundLock) {
+                            if (activeMessageMediaPlayer === finishedMp) {
+                                activeMessageMediaPlayer = null
+                            }
+                        }
+                        runCatching { finishedMp.release() }
+                    }
+                    mp.setOnErrorListener { failedMp, _, _ ->
+                        synchronized(soundLock) {
+                            if (activeMessageMediaPlayer === failedMp) {
+                                activeMessageMediaPlayer = null
+                            }
+                        }
+                        runCatching { failedMp.release() }
+                        true
+                    }
+                    mp.prepare()
+                    mp.start()
+                    activeMessageMediaPlayer = mp
+                    true
+                }.onFailure {
+                    runCatching { mp.reset() }
+                    runCatching { mp.release() }
+                }.getOrDefault(false)
+                if (played) {
+                    started = true
+                    break
+                }
             }
-            ringtone.play()
+
+            // Pass 2: System Ringtone fallback
+            if (!started) {
+                for (candidate in candidates) {
+                    val played = runCatching {
+                        val ringtone = RingtoneManager.getRingtone(context, candidate) ?: return@runCatching false
+                        ringtone.audioAttributes = notifAudioAttributes
+                        ringtone.play()
+                        activeMessageRingtone = ringtone
+                        true
+                    }.getOrDefault(false)
+                    if (played) break
+                }
+            }
+        }
+    }
+
+    private fun stopActiveMessageAudioLocked() {
+        runCatching { activeMessageRingtone?.stop() }
+        activeMessageRingtone = null
+        runCatching {
+            activeMessageMediaPlayer?.let { mp ->
+                if (mp.isPlaying) mp.stop()
+                mp.release()
+            }
+        }
+        activeMessageMediaPlayer = null
+    }
+
+    private fun playMessageVibration(prefs: AppPreferences) {
+        if (!prefs.notificationsEnabled || !prefs.vibrationEnabled) return
+        val ringerMode = runCatching {
+            audioManager?.ringerMode ?: AudioManager.RINGER_MODE_NORMAL
+        }.getOrDefault(AudioManager.RINGER_MODE_NORMAL)
+        if (ringerMode == AudioManager.RINGER_MODE_SILENT) return
+
+        val vibrator = runCatching {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                val vm = context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as? VibratorManager
+                vm?.defaultVibrator
+            } else {
+                @Suppress("DEPRECATION")
+                context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
+            }
+        }.getOrNull() ?: return
+
+        if (!vibrator.hasVibrator()) return
+        val pattern = longArrayOf(0L, 180L, 90L, 180L)
+        runCatching {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                val attrs = VibrationAttributes.Builder()
+                    .setUsage(VibrationAttributes.USAGE_NOTIFICATION)
+                    .build()
+                vibrator.vibrate(VibrationEffect.createWaveform(pattern, -1), attrs)
+            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                @Suppress("DEPRECATION")
+                vibrator.vibrate(VibrationEffect.createWaveform(pattern, -1), notifAudioAttributes)
+            } else {
+                @Suppress("DEPRECATION")
+                vibrator.vibrate(pattern, -1)
+            }
         }
     }
 
