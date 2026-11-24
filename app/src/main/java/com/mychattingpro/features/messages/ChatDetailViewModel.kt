@@ -1,11 +1,15 @@
 package com.mychattingpro.features.messages
 
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.media.AudioAttributes
+import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.media.MediaPlayer
 import android.net.Uri
+import android.os.Build
 import androidx.core.content.FileProvider
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -28,6 +32,7 @@ import com.mychattingpro.domain.repository.MessageRepository
 import com.mychattingpro.domain.repository.PrivateChatRepository
 import com.mychattingpro.domain.repository.SafetyRepository
 import com.mychattingpro.features.common.PeerProfileModalState
+import com.mychattingpro.features.media.MediaUploadHelper
 import com.mychattingpro.features.media.VoiceRecorderManager
 import com.mychattingpro.features.media.VoiceRecordingState
 import kotlinx.coroutines.Dispatchers
@@ -51,6 +56,7 @@ import java.util.UUID
 
 data class ChatDetailUiState(
     val composerText: String = "",
+    val replyingToMessage: Message? = null,
     val isLoadingInitial: Boolean = true,
     val isLoadingOlder: Boolean = false,
     val hasMoreOlder: Boolean = true,
@@ -61,6 +67,7 @@ data class ChatDetailUiState(
     val pendingMediaPreviewUri: Uri? = null,
     val pendingMediaIsVideo: Boolean = false,
     val downloadingMessageId: String? = null,
+    val isSharingMessage: Boolean = false,
     val peerProfileModal: PeerProfileModalState? = null,
     val conversationDeleted: Boolean = false,
     val error: AppError? = null,
@@ -122,6 +129,8 @@ class ChatDetailViewModel(
     private val uploadJobs = mutableMapOf<String, Job>()
     private var typingTimeoutJob: Job? = null
     private var audioPlayer: MediaPlayer? = null
+    private var playbackFocusRequest: AudioFocusRequest? = null
+    private val playbackFocusListener = AudioManager.OnAudioFocusChangeListener { }
 
     init {
         viewModelScope.launch {
@@ -222,18 +231,41 @@ class ChatDetailViewModel(
         }
     }
 
+    fun startReply(message: Message) {
+        if (message.deletedForAllAtMs != null || message.id.startsWith("pending_")) return
+        touchPrivateActivity()
+        _uiState.value = _uiState.value.copy(replyingToMessage = message)
+    }
+
+    fun cancelReply() {
+        _uiState.value = _uiState.value.copy(replyingToMessage = null)
+    }
+
     fun sendTextMessage() {
         touchPrivateActivity()
         val text = _uiState.value.composerText.trim()
         if (text.isEmpty()) return
-        _uiState.value = _uiState.value.copy(composerText = "", error = null)
+        val replyToId = _uiState.value.replyingToMessage?.id
+        _uiState.value = _uiState.value.copy(
+            composerText = "",
+            replyingToMessage = null,
+            error = null
+        )
         socketManager.sendTyping(conversationId, peerUserId, false)
 
         viewModelScope.launch {
             val res = if (isPrivate && privateChatRepository != null) {
-                privateChatRepository.sendPrivateTextMessage(conversationId, text)
+                privateChatRepository.sendPrivateTextMessage(
+                    conversationId = conversationId,
+                    text = text,
+                    replyToMessageId = replyToId
+                )
             } else {
-                messageRepository.sendTextMessage(conversationId, text)
+                messageRepository.sendTextMessage(
+                    conversationId = conversationId,
+                    text = text,
+                    replyToMessageId = replyToId
+                )
             }
             res.onFailure { err ->
                 val appErr = (err as? AppException)?.appError ?: AppError.ServerError()
@@ -273,6 +305,10 @@ class ChatDetailViewModel(
         durationMs: Long? = null
     ) {
         touchPrivateActivity()
+        val replyToId = _uiState.value.replyingToMessage?.id
+        if (replyToId != null) {
+            _uiState.value = _uiState.value.copy(replyingToMessage = null)
+        }
         val cid = UUID.randomUUID().toString()
         val job = viewModelScope.launch {
             updateProgress(cid, 0.05f)
@@ -285,6 +321,7 @@ class ChatDetailViewModel(
                     caption = caption,
                     durationMs = durationMs,
                     existingClientMessageId = cid,
+                    replyToMessageId = replyToId,
                     onProgress = { p -> updateProgress(cid, p) }
                 )
             } else {
@@ -296,6 +333,7 @@ class ChatDetailViewModel(
                     caption = caption,
                     durationMs = durationMs,
                     existingClientMessageId = cid,
+                    replyToMessageId = replyToId,
                     onProgress = { p -> updateProgress(cid, p) }
                 )
             }
@@ -434,8 +472,11 @@ class ChatDetailViewModel(
             resolvedFile.onSuccess { audioFile ->
                 runCatching {
                     val am = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
-                    if (am != null && am.mode != AudioManager.MODE_IN_COMMUNICATION) {
+                    if (am != null) {
+                        @Suppress("DEPRECATION")
+                        am.isSpeakerphoneOn = false
                         am.mode = AudioManager.MODE_NORMAL
+                        requestPlaybackFocus(am)
                     }
                     val attrs = AudioAttributes.Builder()
                         .setUsage(AudioAttributes.USAGE_MEDIA)
@@ -467,6 +508,13 @@ class ChatDetailViewModel(
                 // Handle content:// localUri directly if File copy wasn't used
                 if (!localUriString.isNullOrBlank() && Uri.parse(localUriString).scheme == "content") {
                     runCatching {
+                        val am = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+                        if (am != null) {
+                            @Suppress("DEPRECATION")
+                            am.isSpeakerphoneOn = false
+                            am.mode = AudioManager.MODE_NORMAL
+                            requestPlaybackFocus(am)
+                        }
                         val attrs = AudioAttributes.Builder()
                             .setUsage(AudioAttributes.USAGE_MEDIA)
                             .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
@@ -568,6 +616,180 @@ class ChatDetailViewModel(
             }.onFailure {
                 _uiState.value = _uiState.value.copy(downloadingMessageId = null, error = AppError.StorageFailure)
             }
+        }
+    }
+
+    fun copyMessage(message: Message) {
+        val text = message.bodyText?.trim().orEmpty()
+        if (text.isEmpty()) return
+        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+        clipboard?.setPrimaryClip(ClipData.newPlainText("Message", text))
+        _uiState.value = _uiState.value.copy(infoToast = context.getString(R.string.msg_copied))
+    }
+
+    fun shareMessage(message: Message) {
+        if (message.deletedForAllAtMs != null) return
+        touchPrivateActivity()
+        val media = message.media
+        if (media == null && message.localUri.isNullOrBlank()) {
+            val text = message.bodyText?.trim().orEmpty()
+            if (text.isEmpty()) return
+            val sendIntent = Intent(Intent.ACTION_SEND).apply {
+                type = "text/plain"
+                putExtra(Intent.EXTRA_TEXT, text)
+            }
+            val chooser = Intent.createChooser(sendIntent, context.getString(R.string.action_share)).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            runCatching { context.startActivity(chooser) }.onFailure {
+                _uiState.value = _uiState.value.copy(error = AppError.ServerError(context.getString(R.string.share_failed)))
+            }
+            return
+        }
+
+        _uiState.value = _uiState.value.copy(
+            isSharingMessage = true,
+            infoToast = context.getString(R.string.share_preparing)
+        )
+        viewModelScope.launch {
+            val resolved = resolveShareableMediaFile(message)
+            _uiState.value = _uiState.value.copy(isSharingMessage = false)
+            resolved.onSuccess { (file, mimeType) ->
+                val uri = FileProvider.getUriForFile(
+                    context,
+                    "${context.packageName}.fileprovider",
+                    file
+                )
+                val sendIntent = Intent(Intent.ACTION_SEND).apply {
+                    type = mimeType.ifBlank { "*/*" }
+                    putExtra(Intent.EXTRA_STREAM, uri)
+                    if (!message.bodyText.isNullOrBlank()) {
+                        putExtra(Intent.EXTRA_TEXT, message.bodyText)
+                    }
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+                val chooser = Intent.createChooser(sendIntent, context.getString(R.string.action_share)).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+                runCatching { context.startActivity(chooser) }.onFailure {
+                    _uiState.value = _uiState.value.copy(error = AppError.ServerError(context.getString(R.string.share_failed)))
+                }
+            }.onFailure {
+                _uiState.value = _uiState.value.copy(error = AppError.ServerError(context.getString(R.string.share_failed)))
+            }
+        }
+    }
+
+    fun saveImageToGallery(message: Message) {
+        if (message.type != MessageType.IMAGE || message.deletedForAllAtMs != null) return
+        touchPrivateActivity()
+        _uiState.value = _uiState.value.copy(downloadingMessageId = message.id, error = null)
+        viewModelScope.launch {
+            val result = runCatching {
+                val bytes = withContext(Dispatchers.IO) {
+                    val localStr = message.localUri
+                    if (!localStr.isNullOrBlank()) {
+                        val parsed = Uri.parse(localStr)
+                        if (parsed.scheme == "file" && !parsed.path.isNullOrBlank()) {
+                            val f = File(parsed.path!!)
+                            if (f.exists() && f.length() > 0L) return@withContext f.readBytes()
+                        } else if (parsed.scheme == "content") {
+                            context.contentResolver.openInputStream(parsed)?.use { it.readBytes() }?.let {
+                                if (it.isNotEmpty()) return@withContext it
+                            }
+                        }
+                    }
+                    val mediaId = message.media?.id ?: error("Missing media")
+                    val primaryUrl = "${baseUrl}v1/media/$mediaId/content"
+                    val primaryBytes = runCatching {
+                        okHttpClient.newCall(Request.Builder().url(primaryUrl).build()).execute().use { resp ->
+                            if (resp.isSuccessful) resp.body?.bytes() else null
+                        }
+                    }.getOrNull()
+                    if (primaryBytes != null && primaryBytes.isNotEmpty()) {
+                        return@withContext primaryBytes
+                    }
+                    val signedUrl = messageRepository.getSignedMediaUrl(mediaId).getOrThrow()
+                    okHttpClient.newCall(Request.Builder().url(signedUrl).build()).execute().use { resp ->
+                        if (resp.isSuccessful) {
+                            resp.body?.bytes() ?: error("Empty body")
+                        } else {
+                            error("HTTP ${resp.code}")
+                        }
+                    }
+                }
+                val filename = message.media?.originalFilename?.ifBlank { null }
+                    ?: "MCP_${System.currentTimeMillis()}.jpg"
+                val mime = message.media?.mimeType?.takeIf { it.startsWith("image/") }
+                    ?: if (filename.lowercase().endsWith(".png")) "image/png" else "image/jpeg"
+                MediaUploadHelper.saveImageToGallery(
+                    context = context,
+                    imageBytes = bytes,
+                    preferredFilename = filename,
+                    mimeType = mime
+                )
+            }
+            _uiState.value = _uiState.value.copy(downloadingMessageId = null)
+            result.onSuccess {
+                _uiState.value = _uiState.value.copy(infoToast = context.getString(R.string.media_saved_to_gallery))
+            }.onFailure {
+                _uiState.value = _uiState.value.copy(error = AppError.ServerError(context.getString(R.string.media_save_failed)))
+            }
+        }
+    }
+
+    private suspend fun resolveShareableMediaFile(message: Message): Result<Pair<File, String>> = withContext(Dispatchers.IO) {
+        runCatching {
+            val dir = File(context.cacheDir, "downloads").apply { mkdirs() }
+            val media = message.media
+            val rawName = media?.originalFilename?.takeIf { it.isNotBlank() } ?: when (message.type) {
+                MessageType.IMAGE -> "image_${message.id}.jpg"
+                MessageType.VIDEO -> "video_${message.id}.mp4"
+                MessageType.VOICE, MessageType.AUDIO -> "voice_${message.id}.m4a"
+                else -> "file_${message.id}"
+            }
+            val safeName = rawName.replace(Regex("[^a-zA-Z0-9._-]"), "_")
+            val target = File(dir, safeName)
+            val mimeType = media?.mimeType ?: when (message.type) {
+                MessageType.IMAGE -> "image/jpeg"
+                MessageType.VIDEO -> "video/mp4"
+                MessageType.VOICE, MessageType.AUDIO -> "audio/mp4"
+                else -> "*/*"
+            }
+
+            if (target.exists() && target.length() > 0L) {
+                return@runCatching target to mimeType
+            }
+
+            if (!message.localUri.isNullOrBlank()) {
+                val parsed = Uri.parse(message.localUri)
+                if (parsed.scheme == "file" && !parsed.path.isNullOrBlank()) {
+                    val f = File(parsed.path!!)
+                    if (f.exists() && f.length() > 0L) {
+                        f.copyTo(target, overwrite = true)
+                        return@runCatching target to mimeType
+                    }
+                } else if (parsed.scheme == "content") {
+                    context.contentResolver.openInputStream(parsed)?.use { input ->
+                        FileOutputStream(target).use { output -> input.copyTo(output) }
+                    }
+                    if (target.exists() && target.length() > 0L) {
+                        return@runCatching target to mimeType
+                    }
+                }
+            }
+
+            val mediaId = media?.id ?: error("Missing media")
+            val primaryUrl = "${baseUrl}v1/media/$mediaId/content"
+            if (downloadAudioToFile(primaryUrl, target)) {
+                return@runCatching target to mimeType
+            }
+
+            val signedUrl = messageRepository.getSignedMediaUrl(mediaId).getOrThrow()
+            if (downloadAudioToFile(signedUrl, target)) {
+                return@runCatching target to mimeType
+            }
+            error("Failed to download media for sharing")
         }
     }
 
@@ -815,7 +1037,43 @@ class ChatDetailViewModel(
             audioPlayer?.release()
         }
         audioPlayer = null
+        val am = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+        if (am != null) {
+            abandonPlaybackFocus(am)
+        }
         _uiState.value = _uiState.value.copy(activeAudioMessageId = null, isAudioPlaying = false)
+    }
+
+    private fun requestPlaybackFocus(am: AudioManager) {
+        runCatching {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                val attrs = AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_MEDIA)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                    .build()
+                val req = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK)
+                    .setAudioAttributes(attrs)
+                    .setOnAudioFocusChangeListener(playbackFocusListener)
+                    .build()
+                playbackFocusRequest = req
+                am.requestAudioFocus(req)
+            } else {
+                @Suppress("DEPRECATION")
+                am.requestAudioFocus(playbackFocusListener, AudioManager.STREAM_MUSIC, AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK)
+            }
+        }
+    }
+
+    private fun abandonPlaybackFocus(am: AudioManager) {
+        runCatching {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                playbackFocusRequest?.let { am.abandonAudioFocusRequest(it) }
+                playbackFocusRequest = null
+            } else {
+                @Suppress("DEPRECATION")
+                am.abandonAudioFocus(playbackFocusListener)
+            }
+        }
     }
 
     override fun onCleared() {

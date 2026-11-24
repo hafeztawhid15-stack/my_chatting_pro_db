@@ -62,7 +62,8 @@ data class MessageEntity(
     val createdAtMs: Long,
     val deliveredAtMs: Long?,
     val readAtMs: Long?,
-    val isPrivate: Boolean = false
+    val isPrivate: Boolean = false,
+    val replyToMessageId: String? = null
 )
 
 @Entity(

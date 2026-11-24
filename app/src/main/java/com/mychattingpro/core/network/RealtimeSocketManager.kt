@@ -167,9 +167,10 @@ class RealtimeSocketManager(
         if (ws != null && _connectionState.value == SocketConnectionState.CONNECTED) {
             if (ws.send(envelope)) return
         }
-        if (type.startsWith("call.") && shouldStayConnected) {
+        if (type.startsWith("call.")) {
+            shouldStayConnected = true
             synchronized(pendingOutboundSignals) {
-                if (pendingOutboundSignals.size >= 32) {
+                if (pendingOutboundSignals.size >= 48) {
                     pendingOutboundSignals.removeAt(0)
                 }
                 pendingOutboundSignals.add(envelope)
@@ -409,6 +410,7 @@ class RealtimeSocketManager(
                                 durationMs = if (it.isNull("durationMs")) null else it.optLong("durationMs")
                             )
                         },
+                        replyToMessageId = if (msgObj.isNull("replyToMessageId")) null else msgObj.optString("replyToMessageId").takeIf { it.isNotBlank() },
                         createdAtMs = msgObj.getLong("createdAtMs"),
                         deliveredAtMs = if (msgObj.isNull("deliveredAtMs")) null else msgObj.optLong("deliveredAtMs"),
                         readAtMs = if (msgObj.isNull("readAtMs")) null else msgObj.optLong("readAtMs"),

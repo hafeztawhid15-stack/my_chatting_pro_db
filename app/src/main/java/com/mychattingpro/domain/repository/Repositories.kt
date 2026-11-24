@@ -83,7 +83,12 @@ interface MessageRepository {
     fun observeMessages(conversationId: String): Flow<List<Message>>
     suspend fun loadLatestMessages(conversationId: String): Result<Boolean>
     suspend fun loadOlderMessages(conversationId: String, beforeTs: Long, beforeId: String): Result<Boolean>
-    suspend fun sendTextMessage(conversationId: String, text: String, clientMessageId: String? = null): Result<Message>
+    suspend fun sendTextMessage(
+        conversationId: String,
+        text: String,
+        clientMessageId: String? = null,
+        replyToMessageId: String? = null
+    ): Result<Message>
     suspend fun sendMediaMessage(
         conversationId: String,
         uri: Uri,
@@ -92,6 +97,7 @@ interface MessageRepository {
         caption: String?,
         durationMs: Long? = null,
         existingClientMessageId: String? = null,
+        replyToMessageId: String? = null,
         onProgress: (Float) -> Unit
     ): Result<Message>
     suspend fun retryFailedMessage(message: Message, onProgress: (Float) -> Unit): Result<Message>
@@ -134,7 +140,8 @@ interface PrivateChatRepository {
     suspend fun sendPrivateTextMessage(
         conversationId: String,
         text: String,
-        clientMessageId: String? = null
+        clientMessageId: String? = null,
+        replyToMessageId: String? = null
     ): Result<Message>
     suspend fun sendPrivateMediaMessage(
         conversationId: String,
@@ -144,6 +151,7 @@ interface PrivateChatRepository {
         caption: String?,
         durationMs: Long? = null,
         existingClientMessageId: String? = null,
+        replyToMessageId: String? = null,
         onProgress: (Float) -> Unit
     ): Result<Message>
     suspend fun retryFailedPrivateMessage(message: Message, onProgress: (Float) -> Unit): Result<Message>

@@ -2,6 +2,7 @@ package com.mychattingpro.features.media
 
 import android.content.Context
 import android.media.AudioAttributes
+import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.media.MediaPlayer
 import android.media.MediaRecorder
@@ -35,6 +36,8 @@ class VoiceRecorderManager(private val context: Context) {
     private var player: MediaPlayer? = null
     private var timerJob: Job? = null
     private var startTimeMs: Long = 0L
+    private var playbackFocusRequest: AudioFocusRequest? = null
+    private val focusListener = AudioManager.OnAudioFocusChangeListener { }
 
     private val _state = MutableStateFlow(VoiceRecordingState())
     val state: StateFlow<VoiceRecordingState> = _state.asStateFlow()
@@ -45,6 +48,7 @@ class VoiceRecorderManager(private val context: Context) {
         val audioEncoder: Int,
         val bitRate: Int?,
         val sampleRate: Int?,
+        val channels: Int?,
         val extension: String
     )
 
@@ -55,11 +59,21 @@ class VoiceRecorderManager(private val context: Context) {
         val dir = File(context.filesDir, "voice").apply { mkdirs() }
         val profiles = listOf(
             RecorderProfile(
+                audioSource = MediaRecorder.AudioSource.VOICE_RECOGNITION,
+                outputFormat = MediaRecorder.OutputFormat.MPEG_4,
+                audioEncoder = MediaRecorder.AudioEncoder.AAC,
+                bitRate = 64_000,
+                sampleRate = 44_100,
+                channels = 1,
+                extension = "m4a"
+            ),
+            RecorderProfile(
                 audioSource = MediaRecorder.AudioSource.MIC,
                 outputFormat = MediaRecorder.OutputFormat.MPEG_4,
                 audioEncoder = MediaRecorder.AudioEncoder.AAC,
-                bitRate = 96_000,
+                bitRate = 64_000,
                 sampleRate = 44_100,
+                channels = 1,
                 extension = "m4a"
             ),
             RecorderProfile(
@@ -68,6 +82,7 @@ class VoiceRecorderManager(private val context: Context) {
                 audioEncoder = MediaRecorder.AudioEncoder.AAC,
                 bitRate = 48_000,
                 sampleRate = 16_000,
+                channels = 1,
                 extension = "m4a"
             ),
             RecorderProfile(
@@ -76,6 +91,7 @@ class VoiceRecorderManager(private val context: Context) {
                 audioEncoder = MediaRecorder.AudioEncoder.AMR_NB,
                 bitRate = null,
                 sampleRate = null,
+                channels = 1,
                 extension = "3gp"
             )
         )
@@ -94,6 +110,7 @@ class VoiceRecorderManager(private val context: Context) {
                     setAudioSource(profile.audioSource)
                     setOutputFormat(profile.outputFormat)
                     setAudioEncoder(profile.audioEncoder)
+                    profile.channels?.let { setAudioChannels(it) }
                     profile.bitRate?.let { setAudioEncodingBitRate(it) }
                     profile.sampleRate?.let { setAudioSamplingRate(it) }
                     setOutputFile(file.absolutePath)
@@ -194,8 +211,11 @@ class VoiceRecorderManager(private val context: Context) {
         }
         runCatching {
             val am = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
-            if (am != null && am.mode != AudioManager.MODE_IN_COMMUNICATION) {
+            if (am != null) {
+                @Suppress("DEPRECATION")
+                am.isSpeakerphoneOn = false
                 am.mode = AudioManager.MODE_NORMAL
+                requestMediaFocus(am)
             }
             val attrs = AudioAttributes.Builder()
                 .setUsage(AudioAttributes.USAGE_MEDIA)
@@ -233,6 +253,10 @@ class VoiceRecorderManager(private val context: Context) {
             player?.release()
         }
         player = null
+        val am = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+        if (am != null) {
+            abandonMediaFocus(am)
+        }
         _state.value = _state.value.copy(isPreviewPlaying = false)
     }
 
@@ -240,6 +264,38 @@ class VoiceRecorderManager(private val context: Context) {
         timerJob?.cancel()
         cleanupRecorder()
         stopPlayback()
+    }
+
+    private fun requestMediaFocus(am: AudioManager) {
+        runCatching {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                val attrs = AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_MEDIA)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                    .build()
+                val req = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK)
+                    .setAudioAttributes(attrs)
+                    .setOnAudioFocusChangeListener(focusListener)
+                    .build()
+                playbackFocusRequest = req
+                am.requestAudioFocus(req)
+            } else {
+                @Suppress("DEPRECATION")
+                am.requestAudioFocus(focusListener, AudioManager.STREAM_MUSIC, AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK)
+            }
+        }
+    }
+
+    private fun abandonMediaFocus(am: AudioManager) {
+        runCatching {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                playbackFocusRequest?.let { am.abandonAudioFocusRequest(it) }
+                playbackFocusRequest = null
+            } else {
+                @Suppress("DEPRECATION")
+                am.abandonAudioFocus(focusListener)
+            }
+        }
     }
 
     private fun cleanupRecorder() {

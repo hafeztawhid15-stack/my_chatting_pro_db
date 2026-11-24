@@ -9,7 +9,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [ConversationEntity::class, MessageEntity::class, CallHistoryEntity::class],
-    version = 3,
+    version = 4,
     exportSchema = false
 )
 abstract class MyChattingProDatabase : RoomDatabase() {
@@ -59,6 +59,12 @@ abstract class MyChattingProDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE cached_messages ADD COLUMN replyToMessageId TEXT")
+            }
+        }
+
         @Volatile
         private var INSTANCE: MyChattingProDatabase? = null
 
@@ -69,7 +75,7 @@ abstract class MyChattingProDatabase : RoomDatabase() {
                     MyChattingProDatabase::class.java,
                     "my_chatting_pro_cache.db"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                     .fallbackToDestructiveMigration(dropAllTables = true)
                     .build()
                     .also { INSTANCE = it }

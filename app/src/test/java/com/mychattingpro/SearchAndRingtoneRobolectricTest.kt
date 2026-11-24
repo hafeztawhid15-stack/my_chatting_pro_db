@@ -360,6 +360,7 @@ class SearchAndRingtoneRobolectricTest {
         socketManager: com.mychattingpro.core.network.RealtimeSocketManager
     ) : WebRtcCallManager(context, socketManager) {
         var sessionStarted = false
+        var stageCallback: ((WebRtcConnectionStage) -> Unit)? = null
         override fun startSession(
             callId: String,
             conversationId: String,
@@ -369,6 +370,7 @@ class SearchAndRingtoneRobolectricTest {
             onStageChanged: (WebRtcConnectionStage) -> Unit
         ): Boolean {
             sessionStarted = true
+            stageCallback = onStageChanged
             return true
         }
         override fun endSession() = Unit
@@ -484,5 +486,41 @@ class SearchAndRingtoneRobolectricTest {
             IncomingCallActionReceiver().onReceive(app, declineIntent)
             assertFalse(myApp.container.ringtoneController.isRinging.value)
         }
+    }
+
+    @Test
+    fun `call viewmodel ignores late CONNECTING regression after CONNECTED`() = runTest {
+        val prefs = AppPreferencesDataStore(app)
+        val net = NetworkModule(app, FakeTokenStore(app), prefs, PrivateChatLockManager())
+        val callRepo = FakeCallRepo()
+        val fakeRtc = FakeWebRtcManager(app, net.realtimeSocketManager)
+
+        val vm = CallViewModel(
+            context = app,
+            initialCallId = "call-regress-1",
+            conversationId = "conv-r",
+            peerUserId = "peer-r",
+            isVideo = false,
+            isIncoming = true,
+            callRepository = callRepo,
+            socketManager = net.realtimeSocketManager,
+            networkMonitor = net.networkMonitor,
+            webRtcManager = fakeRtc
+        )
+
+        vm.beginAfterPermissionsGranted()
+        advanceUntilIdle()
+        vm.acceptIncomingCall()
+        advanceUntilIdle()
+
+        fakeRtc.stageCallback?.invoke(WebRtcConnectionStage.CONNECTED)
+        assertEquals(WebRtcConnectionStage.CONNECTED, vm.uiState.value.stage)
+
+        // Late ICE/PeerConnection CONNECTING notification must never revert CONNECTED back to CONNECTING
+        fakeRtc.stageCallback?.invoke(WebRtcConnectionStage.CONNECTING)
+        assertEquals(WebRtcConnectionStage.CONNECTED, vm.uiState.value.stage)
+
+        vm.endCall {}
+        advanceUntilIdle()
     }
 }

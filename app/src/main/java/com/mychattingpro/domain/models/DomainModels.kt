@@ -118,7 +118,8 @@ data class Message(
     val createdAtMs: Long,
     val deliveredAtMs: Long? = null,
     val readAtMs: Long? = null,
-    val isPrivate: Boolean = false
+    val isPrivate: Boolean = false,
+    val replyToMessageId: String? = null
 )
 
 data class BlockedUser(

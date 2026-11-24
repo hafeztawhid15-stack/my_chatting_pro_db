@@ -91,10 +91,17 @@ export class UserRealtimeCoordinator extends DurableObject<Env> {
           server.send(JSON.stringify(ev));
         }
       } else {
-        const recentInvites = (await this.getBufferedEventsSince(now - 45_000)).filter(
-          (ev) => ev.type === 'call.invite'
+        const recentCallEvents = (await this.getBufferedEventsSince(now - 45_000)).filter(
+          (ev) =>
+            ev.type === 'call.invite' ||
+            ev.type === 'call.ringing' ||
+            ev.type === 'call.accept' ||
+            ev.type === 'call.offer' ||
+            ev.type === 'call.answer' ||
+            ev.type === 'call.ice' ||
+            ev.type === 'call.state'
         );
-        for (const ev of recentInvites) {
+        for (const ev of recentCallEvents) {
           server.send(JSON.stringify(ev));
         }
       }
@@ -193,6 +200,8 @@ export class UserRealtimeCoordinator extends DurableObject<Env> {
     const targetUserId = typeof parsed.payload?.targetUserId === 'string' ? parsed.payload.targetUserId : null;
     const conversationId = typeof parsed.payload?.conversationId === 'string' ? parsed.payload.conversationId : null;
 
+    const callId = typeof parsed.payload?.callId === 'string' ? parsed.payload.callId : null;
+
     if (
       targetUserId &&
       (parsed.type === 'typing.start' ||
@@ -206,10 +215,13 @@ export class UserRealtimeCoordinator extends DurableObject<Env> {
         parsed.type === 'call.end')
     ) {
       const db = createSupabaseDb(this.env);
-      // Verify both users belong to the conversation & are not blocked
+      // Verify both users belong to the conversation & are not blocked (or are participants on the call)
       if (conversationId) {
         const allowed = await db.checkConversationPair(conversationId, attachment.userId, targetUserId);
         if (!allowed) return;
+      } else if (parsed.type.startsWith('call.') && callId) {
+        const isParticipant = await db.isCallParticipant(callId, attachment.userId);
+        if (!isParticipant) return;
       }
 
       const envelope: RealtimeEnvelope = {

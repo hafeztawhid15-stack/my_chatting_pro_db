@@ -659,7 +659,8 @@ class PrivateChatAndFixesRobolectricTest {
         override suspend fun sendPrivateTextMessage(
             conversationId: String,
             text: String,
-            clientMessageId: String?
+            clientMessageId: String?,
+            replyToMessageId: String?
         ): Result<Message> = Result.failure(UnsupportedOperationException())
         override suspend fun sendPrivateMediaMessage(
             conversationId: String,
@@ -669,6 +670,7 @@ class PrivateChatAndFixesRobolectricTest {
             caption: String?,
             durationMs: Long?,
             existingClientMessageId: String?,
+            replyToMessageId: String?,
             onProgress: (Float) -> Unit
         ): Result<Message> = Result.failure(UnsupportedOperationException())
         override suspend fun retryFailedPrivateMessage(

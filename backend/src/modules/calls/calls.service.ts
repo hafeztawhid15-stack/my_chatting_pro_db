@@ -19,7 +19,16 @@ export class CallsService {
 
   async getIceServers(): Promise<{ iceServers: IceServerDto[]; turnConfigured: boolean }> {
     const primaryStun = this.env.ALLOWED_STUN_URL || 'stun:stun.cloudflare.com:3478';
-    const stunUrls = Array.from(new Set([primaryStun, 'stun:stun.cloudflare.com:3478', 'stun:stun.l.google.com:19302']));
+    const stunUrls = Array.from(
+      new Set([
+        primaryStun,
+        'stun:stun.cloudflare.com:3478',
+        'stun:stun.l.google.com:19302',
+        'stun:stun1.l.google.com:19302',
+        'stun:stun2.l.google.com:19302',
+        'stun:global.stun.twilio.com:3478',
+      ])
+    );
     const iceServers: IceServerDto[] = [{ urls: stunUrls }];
     let turnConfigured = false;
 

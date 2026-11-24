@@ -668,13 +668,15 @@ class MessageRepositoryImpl(
     override suspend fun sendTextMessage(
         conversationId: String,
         text: String,
-        clientMessageId: String?
+        clientMessageId: String?,
+        replyToMessageId: String?
     ): Result<Message> {
         val myId = tokenStore.getSession()?.userId ?: return Result.failure(AppException(AppError.SessionRevoked))
         val cid = clientMessageId ?: UUID.randomUUID().toString()
         val existing = messageDao.getByClientId(cid)
         val tempId = existing?.id ?: "pending_$cid"
         val pendingTs = existing?.createdAtMs ?: System.currentTimeMillis()
+        val resolvedReplyId = replyToMessageId ?: existing?.replyToMessageId
 
         val pendingEntity = MessageEntity(
             id = tempId,
@@ -695,7 +697,8 @@ class MessageRepositoryImpl(
             deletedForAllAtMs = null,
             createdAtMs = pendingTs,
             deliveredAtMs = null,
-            readAtMs = null
+            readAtMs = null,
+            replyToMessageId = resolvedReplyId
         )
         messageDao.upsert(pendingEntity)
 
@@ -705,7 +708,8 @@ class MessageRepositoryImpl(
                     conversationId = conversationId,
                     clientMessageId = cid,
                     messageType = "text",
-                    bodyText = text
+                    bodyText = text,
+                    replyToMessageId = resolvedReplyId
                 )
             )
             if (tempId != resp.message.id) {
@@ -728,6 +732,7 @@ class MessageRepositoryImpl(
         caption: String?,
         durationMs: Long?,
         existingClientMessageId: String?,
+        replyToMessageId: String?,
         onProgress: (Float) -> Unit
     ): Result<Message> {
         val myId = tokenStore.getSession()?.userId ?: return Result.failure(AppException(AppError.SessionRevoked))
@@ -735,6 +740,7 @@ class MessageRepositoryImpl(
         val existing = messageDao.getByClientId(cid)
         val tempId = existing?.id ?: "pending_$cid"
         val pendingTs = existing?.createdAtMs ?: System.currentTimeMillis()
+        val resolvedReplyId = replyToMessageId ?: existing?.replyToMessageId
 
         val pendingEntity = MessageEntity(
             id = tempId,
@@ -755,7 +761,8 @@ class MessageRepositoryImpl(
             deletedForAllAtMs = null,
             createdAtMs = pendingTs,
             deliveredAtMs = null,
-            readAtMs = null
+            readAtMs = null,
+            replyToMessageId = resolvedReplyId
         )
         messageDao.upsert(pendingEntity)
 
@@ -807,7 +814,8 @@ class MessageRepositoryImpl(
                     clientMessageId = cid,
                     messageType = messageType.name.lowercase(),
                     bodyText = caption,
-                    mediaId = uploadResp.media.id
+                    mediaId = uploadResp.media.id,
+                    replyToMessageId = resolvedReplyId
                 )
             )
             if (tempId != msgResp.message.id) {
@@ -835,7 +843,12 @@ class MessageRepositoryImpl(
 
     override suspend fun retryFailedMessage(message: Message, onProgress: (Float) -> Unit): Result<Message> {
         return if (message.type == MessageType.TEXT) {
-            sendTextMessage(message.conversationId, message.bodyText.orEmpty(), message.clientMessageId)
+            sendTextMessage(
+                conversationId = message.conversationId,
+                text = message.bodyText.orEmpty(),
+                clientMessageId = message.clientMessageId,
+                replyToMessageId = message.replyToMessageId
+            )
         } else {
             val uriStr = message.localUri ?: return Result.failure(AppException(AppError.StorageFailure))
             val cat = when (message.type) {
@@ -852,6 +865,7 @@ class MessageRepositoryImpl(
                 caption = message.bodyText,
                 durationMs = message.media?.durationMs,
                 existingClientMessageId = message.clientMessageId,
+                replyToMessageId = message.replyToMessageId,
                 onProgress = onProgress
             )
         }
@@ -875,7 +889,8 @@ class MessageRepositoryImpl(
                                 conversationId = entity.conversationId,
                                 clientMessageId = entity.clientMessageId,
                                 messageType = "text",
-                                bodyText = entity.bodyText
+                                bodyText = entity.bodyText,
+                                replyToMessageId = entity.replyToMessageId
                             )
                         )
                     }
@@ -1313,7 +1328,8 @@ class PrivateChatRepositoryImpl(
     override suspend fun sendPrivateTextMessage(
         conversationId: String,
         text: String,
-        clientMessageId: String?
+        clientMessageId: String?,
+        replyToMessageId: String?
     ): Result<Message> {
         if (lockManager.currentTokenOrNull() == null) {
             return Result.failure(AppException(AppError.PrivateChatLocked))
@@ -1324,6 +1340,7 @@ class PrivateChatRepositoryImpl(
         val existing = messageDao.getByClientId(cid)
         val tempId = existing?.id ?: "pending_$cid"
         val pendingTs = existing?.createdAtMs ?: System.currentTimeMillis()
+        val resolvedReplyId = replyToMessageId ?: existing?.replyToMessageId
 
         val pendingEntity = MessageEntity(
             id = tempId,
@@ -1345,7 +1362,8 @@ class PrivateChatRepositoryImpl(
             createdAtMs = pendingTs,
             deliveredAtMs = null,
             readAtMs = null,
-            isPrivate = true
+            isPrivate = true,
+            replyToMessageId = resolvedReplyId
         )
         messageDao.upsert(pendingEntity)
 
@@ -1355,7 +1373,8 @@ class PrivateChatRepositoryImpl(
                     conversationId = conversationId,
                     clientMessageId = cid,
                     messageType = "text",
-                    bodyText = text
+                    bodyText = text,
+                    replyToMessageId = resolvedReplyId
                 )
             )
             if (tempId != resp.message.id) {
@@ -1378,6 +1397,7 @@ class PrivateChatRepositoryImpl(
         caption: String?,
         durationMs: Long?,
         existingClientMessageId: String?,
+        replyToMessageId: String?,
         onProgress: (Float) -> Unit
     ): Result<Message> {
         if (lockManager.currentTokenOrNull() == null) {
@@ -1389,6 +1409,7 @@ class PrivateChatRepositoryImpl(
         val existing = messageDao.getByClientId(cid)
         val tempId = existing?.id ?: "pending_$cid"
         val pendingTs = existing?.createdAtMs ?: System.currentTimeMillis()
+        val resolvedReplyId = replyToMessageId ?: existing?.replyToMessageId
 
         val pendingEntity = MessageEntity(
             id = tempId,
@@ -1410,7 +1431,8 @@ class PrivateChatRepositoryImpl(
             createdAtMs = pendingTs,
             deliveredAtMs = null,
             readAtMs = null,
-            isPrivate = true
+            isPrivate = true,
+            replyToMessageId = resolvedReplyId
         )
         messageDao.upsert(pendingEntity)
 
@@ -1462,7 +1484,8 @@ class PrivateChatRepositoryImpl(
                     clientMessageId = cid,
                     messageType = messageType.name.lowercase(),
                     bodyText = caption,
-                    mediaId = uploadResp.media.id
+                    mediaId = uploadResp.media.id,
+                    replyToMessageId = resolvedReplyId
                 )
             )
             if (tempId != msgResp.message.id) {
@@ -1493,7 +1516,12 @@ class PrivateChatRepositoryImpl(
         onProgress: (Float) -> Unit
     ): Result<Message> {
         return if (message.type == MessageType.TEXT) {
-            sendPrivateTextMessage(message.conversationId, message.bodyText.orEmpty(), message.clientMessageId)
+            sendPrivateTextMessage(
+                conversationId = message.conversationId,
+                text = message.bodyText.orEmpty(),
+                clientMessageId = message.clientMessageId,
+                replyToMessageId = message.replyToMessageId
+            )
         } else {
             val uriStr = message.localUri ?: return Result.failure(AppException(AppError.StorageFailure))
             val cat = when (message.type) {
@@ -1510,6 +1538,7 @@ class PrivateChatRepositoryImpl(
                 caption = message.bodyText,
                 durationMs = message.media?.durationMs,
                 existingClientMessageId = message.clientMessageId,
+                replyToMessageId = message.replyToMessageId,
                 onProgress = onProgress
             )
         }
@@ -1634,7 +1663,8 @@ private fun MessageDto.toEntity(myUserId: String?, forcePrivate: Boolean = isPri
         createdAtMs = createdAtMs,
         deliveredAtMs = deliveredAtMs,
         readAtMs = readAtMs,
-        isPrivate = forcePrivate || isPrivate
+        isPrivate = forcePrivate || isPrivate,
+        replyToMessageId = replyToMessageId
     )
 }
 
@@ -1664,7 +1694,8 @@ private fun MessageEntity.toDomain() = Message(
     createdAtMs = createdAtMs,
     deliveredAtMs = deliveredAtMs,
     readAtMs = readAtMs,
-    isPrivate = isPrivate
+    isPrivate = isPrivate,
+    replyToMessageId = replyToMessageId
 )
 
 private fun CallHistoryItemDto.toEntity() = CallHistoryEntity(

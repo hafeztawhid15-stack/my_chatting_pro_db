@@ -244,4 +244,59 @@ class CompleteUpdateRobolectricTest {
         helper.close()
         dbFile.delete()
     }
+
+    @Test
+    fun `room migration 3 to 4 adds replyToMessageId column to cached_messages`() {
+        val dbFile = File(app.cacheDir, "migration_3_4_test.db").apply { delete() }
+        val sqlite = SQLiteDatabase.openOrCreateDatabase(dbFile, null)
+        sqlite.execSQL(
+            """
+            CREATE TABLE cached_messages (
+                id TEXT NOT NULL PRIMARY KEY,
+                conversationId TEXT NOT NULL,
+                senderId TEXT NOT NULL,
+                type TEXT NOT NULL,
+                textContent TEXT,
+                mediaId TEXT,
+                mediaMime TEXT,
+                mediaSize INTEGER,
+                mediaDurationMs INTEGER,
+                clientMessageId TEXT,
+                createdAtMs INTEGER NOT NULL,
+                deliveredAtMs INTEGER,
+                readAtMs INTEGER,
+                deletedForEveryoneAtMs INTEGER,
+                localStatus TEXT NOT NULL,
+                localUri TEXT,
+                isPrivate INTEGER NOT NULL DEFAULT 0
+            )
+            """.trimIndent()
+        )
+        sqlite.close()
+
+        val callback = object : androidx.sqlite.db.SupportSQLiteOpenHelper.Callback(4) {
+            override fun onCreate(db: SupportSQLiteDatabase) = Unit
+            override fun onUpgrade(db: SupportSQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
+        }
+        val helper = FrameworkSQLiteOpenHelperFactory().create(
+            androidx.sqlite.db.SupportSQLiteOpenHelper.Configuration.builder(app)
+                .name(dbFile.absolutePath)
+                .callback(callback)
+                .build()
+        )
+        val supportDb = helper.writableDatabase
+        MyChattingProDatabase.MIGRATION_3_4.migrate(supportDb)
+
+        supportDb.query("PRAGMA table_info(cached_messages)").use { cursor ->
+            val columns = mutableSetOf<String>()
+            val nameIdx = cursor.getColumnIndex("name")
+            while (cursor.moveToNext()) {
+                columns += cursor.getString(nameIdx)
+            }
+            assertTrue("replyToMessageId" in columns)
+        }
+
+        helper.close()
+        dbFile.delete()
+    }
 }

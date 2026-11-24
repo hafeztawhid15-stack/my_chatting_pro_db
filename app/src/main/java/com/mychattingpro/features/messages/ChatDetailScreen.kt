@@ -9,6 +9,7 @@ import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.layout.Arrangement
@@ -33,6 +34,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.automirrored.rounded.Reply
 import androidx.compose.material.icons.automirrored.rounded.Send
 import androidx.compose.material.icons.rounded.AttachFile
 import androidx.compose.material.icons.rounded.Call
@@ -75,6 +77,7 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -114,6 +117,7 @@ import com.mychattingpro.features.common.NetworkStatusBanner
 import com.mychattingpro.features.common.UserAvatar
 import com.mychattingpro.features.common.rememberConversationMenuController
 import com.mychattingpro.features.media.MediaUploadHelper
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -155,6 +159,7 @@ fun ChatDetailScreen(
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val listState = rememberLazyListState()
+    val scrollScope = rememberCoroutineScope()
     val menuController = rememberConversationMenuController()
 
     DisposableEffect(lifecycleOwner) {
@@ -168,11 +173,14 @@ fun ChatDetailScreen(
     }
 
     var selectedMessageForDetails by remember { mutableStateOf<Message?>(null) }
+    var messagePendingReport by remember { mutableStateOf<Message?>(null) }
     var dangerousFileConfirmMessage by remember { mutableStateOf<Message?>(null) }
     var showAttachmentMenu by remember { mutableStateOf(false) }
     var showConversationMenu by remember { mutableStateOf(false) }
     var showMicRationale by remember { mutableStateOf(false) }
     var previewCaption by remember { mutableStateOf("") }
+    val messagesById = remember(messages) { messages.associateBy { it.id } }
+    val messageIndexById = remember(messages) { messages.mapIndexed { index, m -> m.id to index }.toMap() }
 
     val menuCallbacks = remember(viewModel) {
         ConversationMenuCallbacks(
@@ -369,14 +377,44 @@ fun ChatDetailScreen(
     }
 
     selectedMessageForDetails?.let { msg ->
+        val saveHandler: (() -> Unit)? = when {
+            msg.type == MessageType.IMAGE && msg.deletedForAllAtMs == null -> {
+                { viewModel.saveImageToGallery(msg) }
+            }
+            msg.media != null && msg.type != MessageType.VOICE && msg.type != MessageType.AUDIO && msg.deletedForAllAtMs == null -> {
+                {
+                    if (MediaUploadHelper.isDangerousFile(msg.media.originalFilename)) {
+                        dangerousFileConfirmMessage = msg
+                    } else {
+                        viewModel.downloadAndOpenFile(msg)
+                    }
+                }
+            }
+            else -> null
+        }
         MessageDetailsSheet(
             message = msg,
             isMine = msg.senderId == viewModel.myUserId,
             language = language,
+            onReply = { viewModel.startReply(msg) },
+            onCopy = { viewModel.copyMessage(msg) },
+            onShare = { viewModel.shareMessage(msg) },
+            onSaveMedia = saveHandler,
             onRetry = { viewModel.retryMessage(msg) },
             onDelete = { viewModel.deleteMessage(msg.id) },
-            onReport = { viewModel.report(msg.id, "inappropriate_message") },
+            onReportClick = { messagePendingReport = msg },
             onDismiss = { selectedMessageForDetails = null }
+        )
+    }
+
+    messagePendingReport?.let { msg ->
+        ReportMessageDialog(
+            messageId = msg.id,
+            onDismiss = { messagePendingReport = null },
+            onSubmit = { reason, details ->
+                messagePendingReport = null
+                viewModel.report(msg.id, reason, details)
+            }
         )
     }
 
@@ -587,17 +625,26 @@ fun ChatDetailScreen(
                             modifier = Modifier.padding(14.dp)
                         )
                     }
-                } else if (voiceState.isRecording || voiceState.recordedFile != null) {
-                    VoiceRecordingBar(
-                        isRecording = voiceState.isRecording,
-                        elapsedMs = voiceState.elapsedMs,
-                        isPlayingPreview = voiceState.isPreviewPlaying,
-                        onStop = { viewModel.voiceRecorder.stopRecording() },
-                        onCancel = { viewModel.voiceRecorder.cancelRecording() },
-                        onTogglePreview = { viewModel.voiceRecorder.togglePreviewPlayback() },
-                        onSend = { viewModel.sendRecordedVoiceNote() }
-                    )
                 } else {
+                    uiState.replyingToMessage?.let { replyTarget ->
+                        ReplyComposerPreviewBar(
+                            target = replyTarget,
+                            isMineTarget = replyTarget.senderId == viewModel.myUserId,
+                            peerName = peerName,
+                            onCancel = viewModel::cancelReply
+                        )
+                    }
+                    if (voiceState.isRecording || voiceState.recordedFile != null) {
+                        VoiceRecordingBar(
+                            isRecording = voiceState.isRecording,
+                            elapsedMs = voiceState.elapsedMs,
+                            isPlayingPreview = voiceState.isPreviewPlaying,
+                            onStop = { viewModel.voiceRecorder.stopRecording() },
+                            onCancel = { viewModel.voiceRecorder.cancelRecording() },
+                            onTogglePreview = { viewModel.voiceRecorder.togglePreviewPlayback() },
+                            onSend = { viewModel.sendRecordedVoiceNote() }
+                        )
+                    } else {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -689,6 +736,7 @@ fun ChatDetailScreen(
                             }
                         }
                     }
+                    }
                 }
             }
         }
@@ -742,8 +790,12 @@ fun ChatDetailScreen(
 
                         val isMine = msg.senderId == viewModel.myUserId
                         val uploadProgress = uiState.uploadProgressByClientId[msg.clientMessageId]
+                        val repliedMessage = msg.replyToMessageId?.let { messagesById[it] }
                         MessageBubble(
                             message = msg,
+                            repliedMessage = repliedMessage,
+                            myUserId = viewModel.myUserId,
+                            peerName = peerName,
                             isMine = isMine,
                             language = language,
                             networkModule = networkModule,
@@ -751,6 +803,12 @@ fun ChatDetailScreen(
                             isAudioPlaying = uiState.activeAudioMessageId == msg.id && uiState.isAudioPlaying,
                             isDownloading = uiState.downloadingMessageId == msg.id,
                             onLongPress = { selectedMessageForDetails = msg },
+                            onClickQuotedReply = {
+                                val targetIdx = msg.replyToMessageId?.let { messageIndexById[it] }
+                                if (targetIdx != null) {
+                                    scrollScope.launch { listState.animateScrollToItem(targetIdx) }
+                                }
+                            },
                             onRetry = { viewModel.retryMessage(msg) },
                             onCancelUpload = { viewModel.cancelUpload(msg.clientMessageId) },
                             onOpenMedia = {
@@ -808,6 +866,9 @@ private fun DateSeparatorPill(label: String) {
 @Composable
 private fun MessageBubble(
     message: Message,
+    repliedMessage: Message?,
+    myUserId: String?,
+    peerName: String,
     isMine: Boolean,
     language: AppLanguage,
     networkModule: NetworkModule,
@@ -815,6 +876,7 @@ private fun MessageBubble(
     isAudioPlaying: Boolean,
     isDownloading: Boolean,
     onLongPress: () -> Unit,
+    onClickQuotedReply: () -> Unit,
     onRetry: () -> Unit,
     onCancelUpload: () -> Unit,
     onOpenMedia: () -> Unit
@@ -859,11 +921,72 @@ private fun MessageBubble(
             Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
                 if (message.deletedForAllAtMs != null) {
                     Text(
-                        text = "This message was deleted",
+                        text = stringResource(R.string.msg_deleted_placeholder),
                         style = MaterialTheme.typography.bodyMedium,
                         color = contentColor.copy(alpha = 0.7f)
                     )
                 } else {
+                    if (message.replyToMessageId != null) {
+                        val quotedSender = when {
+                            repliedMessage == null -> peerName
+                            repliedMessage.senderId == myUserId -> stringResource(R.string.reply_to_you)
+                            else -> peerName
+                        }
+                        val quotedPreview = when {
+                            repliedMessage == null -> stringResource(R.string.reply_original_unavailable)
+                            repliedMessage.deletedForAllAtMs != null -> stringResource(R.string.msg_deleted_placeholder)
+                            !repliedMessage.bodyText.isNullOrBlank() -> repliedMessage.bodyText
+                            repliedMessage.type == MessageType.IMAGE -> stringResource(R.string.reply_quoted_photo)
+                            repliedMessage.type == MessageType.VIDEO -> stringResource(R.string.reply_quoted_video)
+                            repliedMessage.type == MessageType.VOICE -> stringResource(R.string.reply_quoted_voice)
+                            repliedMessage.type == MessageType.AUDIO -> stringResource(R.string.reply_quoted_audio)
+                            repliedMessage.type == MessageType.FILE -> repliedMessage.media?.originalFilename ?: stringResource(R.string.reply_quoted_file)
+                            else -> stringResource(R.string.reply_original_unavailable)
+                        }
+                        Surface(
+                            color = if (isMine) {
+                                androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.22f)
+                            } else {
+                                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.75f)
+                            },
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(bottom = 6.dp)
+                                .clickable(enabled = repliedMessage != null, onClick = onClickQuotedReply)
+                                .testTag("quoted_reply_${message.id}")
+                        ) {
+                            Row(modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)) {
+                                Box(
+                                    modifier = Modifier
+                                        .width(3.dp)
+                                        .height(32.dp)
+                                        .clip(RoundedCornerShape(2.dp))
+                                        .background(
+                                            if (isMine) ReadTickCyan else MaterialTheme.colorScheme.primary
+                                        )
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Column {
+                                    Text(
+                                        text = quotedSender,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (isMine) ReadTickCyan else MaterialTheme.colorScheme.primary,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        text = quotedPreview,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = contentColor.copy(alpha = 0.85f),
+                                        maxLines = 2,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+                        }
+                    }
                     when (message.type) {
                         MessageType.IMAGE -> {
                             val imageModel: Any? = message.media?.id?.let { networkModule.mediaContentUrl(it) }
@@ -1159,6 +1282,79 @@ private fun VoiceRecordingBar(
                 ) {
                     Icon(Icons.AutoMirrored.Rounded.Send, contentDescription = "Send")
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ReplyComposerPreviewBar(
+    target: Message,
+    isMineTarget: Boolean,
+    peerName: String,
+    onCancel: () -> Unit
+) {
+    val senderLabel = if (isMineTarget) stringResource(R.string.reply_to_you) else peerName
+    val previewText = when {
+        !target.bodyText.isNullOrBlank() -> target.bodyText
+        target.type == MessageType.IMAGE -> stringResource(R.string.reply_quoted_photo)
+        target.type == MessageType.VIDEO -> stringResource(R.string.reply_quoted_video)
+        target.type == MessageType.VOICE -> stringResource(R.string.reply_quoted_voice)
+        target.type == MessageType.AUDIO -> stringResource(R.string.reply_quoted_audio)
+        target.type == MessageType.FILE -> target.media?.originalFilename ?: stringResource(R.string.reply_quoted_file)
+        else -> ""
+    }
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("reply_composer_preview")
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = Icons.AutoMirrored.Rounded.Reply,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(20.dp)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Box(
+                modifier = Modifier
+                    .width(3.dp)
+                    .height(34.dp)
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(MaterialTheme.colorScheme.primary)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = stringResource(R.string.msg_replying_to, senderLabel),
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.primary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = previewText,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            IconButton(
+                onClick = onCancel,
+                modifier = Modifier
+                    .size(48.dp)
+                    .testTag("cancel_reply_button")
+            ) {
+                Icon(Icons.Rounded.Close, contentDescription = stringResource(R.string.action_cancel))
             }
         }
     }
