@@ -1007,6 +1007,37 @@ class CallRepositoryImpl(
     override suspend fun getCallStatus(callId: String): Result<String?> = runCatching {
         api.getCallStatus(callId).status
     }.recoverCatching { throw AppException(errorMapper.map(it)) }
+
+    override suspend fun sendCallSignal(
+        callId: String,
+        type: String,
+        conversationId: String,
+        targetUserId: String,
+        payload: org.json.JSONObject
+    ): Result<Unit> = runCatching {
+        val bodyObj = org.json.JSONObject().apply {
+            put("type", type)
+            if (conversationId.isNotBlank()) put("conversationId", conversationId)
+            if (targetUserId.isNotBlank()) put("targetUserId", targetUserId)
+            put("payload", payload)
+        }
+        api.sendCallSignal(
+            callId = callId,
+            body = bodyObj.toString().toRequestBody("application/json".toMediaTypeOrNull())
+        )
+    }
+
+    override suspend fun pullCallSignals(callId: String, afterMs: Long): Result<List<org.json.JSONObject>> =
+        runCatching {
+            val raw = api.getCallSignals(callId = callId, afterMs = afterMs).string()
+            val root = org.json.JSONObject(raw)
+            val arr = root.optJSONArray("signals") ?: return@runCatching emptyList()
+            buildList(arr.length()) {
+                for (i in 0 until arr.length()) {
+                    arr.optJSONObject(i)?.let { add(it) }
+                }
+            }
+        }
 }
 
 class OwnerRepositoryImpl(

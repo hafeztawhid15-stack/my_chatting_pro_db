@@ -11,6 +11,49 @@ export interface IceServerDto {
   credential?: string;
 }
 
+const ALLOWED_SIGNAL_TYPES = new Set([
+  'call.ringing',
+  'call.accept',
+  'call.reject',
+  'call.offer',
+  'call.answer',
+  'call.ice',
+  'call.end',
+]);
+
+export function normalizeIceUrls(rawUrls: string | string[] | undefined | null): string[] {
+  const rawList = Array.isArray(rawUrls)
+    ? rawUrls
+    : typeof rawUrls === 'string'
+      ? rawUrls
+          .replace(/[\[\]"']/g, ' ')
+          .split(/[\s,;]+/)
+      : [];
+
+  const normalized: string[] = [];
+  for (const item of rawList) {
+    const trimmed = item.trim();
+    if (!trimmed) continue;
+
+    if (/^(stuns?|turns?):[^\s]+$/i.test(trimmed)) {
+      normalized.push(trimmed);
+      continue;
+    }
+
+    // Reject web/socket URLs (common copy-paste mistake such as https://...)
+    if (/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(trimmed)) {
+      continue;
+    }
+
+    // Auto-normalize bare host[:port][?transport=...] into turn:/turns:
+    if (/^[a-zA-Z0-9.-]+(:\d{1,5})?(\?transport=(udp|tcp))?$/i.test(trimmed)) {
+      const prefix = /:443(\?|$)/.test(trimmed) ? 'turns:' : 'turn:';
+      normalized.push(`${prefix}${trimmed}`);
+    }
+  }
+  return Array.from(new Set(normalized));
+}
+
 export class CallsService {
   constructor(
     private readonly env: Env,
@@ -18,7 +61,7 @@ export class CallsService {
   ) {}
 
   async getIceServers(): Promise<{ iceServers: IceServerDto[]; turnConfigured: boolean }> {
-    const primaryStun = this.env.ALLOWED_STUN_URL || 'stun:stun.cloudflare.com:3478';
+    const primaryStun = normalizeIceUrls(this.env.ALLOWED_STUN_URL)[0] || 'stun:stun.cloudflare.com:3478';
     const stunUrls = Array.from(
       new Set([
         primaryStun,
@@ -46,10 +89,26 @@ export class CallsService {
           }
         );
         if (res.ok) {
-          const data = (await res.json()) as { iceServers?: IceServerDto };
-          if (data.iceServers) {
-            iceServers.push(data.iceServers);
-            turnConfigured = true;
+          const data = (await res.json()) as {
+            iceServers?:
+              | { urls?: string | string[]; username?: string; credential?: string }
+              | Array<{ urls?: string | string[]; username?: string; credential?: string }>;
+          };
+          const cfEntries = Array.isArray(data.iceServers)
+            ? data.iceServers
+            : data.iceServers
+              ? [data.iceServers]
+              : [];
+          for (const entry of cfEntries) {
+            const urls = normalizeIceUrls(entry.urls);
+            if (urls.length > 0) {
+              iceServers.push({
+                urls,
+                username: entry.username,
+                credential: entry.credential,
+              });
+              turnConfigured = true;
+            }
           }
         }
       } catch {
@@ -58,12 +117,12 @@ export class CallsService {
     }
 
     if (!turnConfigured && this.env.STATIC_TURN_URLS && this.env.STATIC_TURN_USERNAME && this.env.STATIC_TURN_CREDENTIAL) {
-      const urls = this.env.STATIC_TURN_URLS.split(',').map((u) => u.trim()).filter(Boolean);
+      const urls = normalizeIceUrls(this.env.STATIC_TURN_URLS);
       if (urls.length > 0) {
         iceServers.push({
           urls,
-          username: this.env.STATIC_TURN_USERNAME,
-          credential: this.env.STATIC_TURN_CREDENTIAL,
+          username: this.env.STATIC_TURN_USERNAME.trim(),
+          credential: this.env.STATIC_TURN_CREDENTIAL.trim(),
         });
         turnConfigured = true;
       }
@@ -227,6 +286,78 @@ export class CallsService {
       answeredAtMs: call.answered_at_ms ?? null,
       endedAtMs: call.ended_at_ms ?? null,
     };
+  }
+
+  async relayCallSignal(
+    userId: string,
+    callId: string,
+    input: {
+      type?: string;
+      conversationId?: string;
+      targetUserId?: string;
+      payload?: Record<string, unknown>;
+    }
+  ): Promise<{ ok: true; deliveredTo: number }> {
+    const signalType = input.type ?? '';
+    if (!ALLOWED_SIGNAL_TYPES.has(signalType)) {
+      throw new ApiError(400, 'invalid_signal_type', 'Unsupported call signaling type.');
+    }
+
+    const participants = await this.db.listCallParticipantIds(callId);
+    if (!participants.includes(userId)) {
+      throw new ApiError(403, 'forbidden_call', 'You are not a participant of this call.');
+    }
+
+    const recipients = input.targetUserId
+      ? participants.filter((pid) => pid === input.targetUserId && pid !== userId)
+      : participants.filter((pid) => pid !== userId);
+
+    if (recipients.length === 0) {
+      return { ok: true, deliveredTo: 0 };
+    }
+
+    const now = Date.now();
+    const safePayload: Record<string, unknown> = {
+      ...(input.payload ?? {}),
+      callId,
+      fromUserId: userId,
+    };
+    if (input.conversationId) {
+      safePayload.conversationId = input.conversationId;
+    }
+
+    const envelope: RealtimeEnvelope = {
+      eventId: `sig:${signalType}:${callId}:${crypto.randomUUID()}`,
+      type: signalType as RealtimeEnvelope['type'],
+      timestampMs: now,
+      payload: safePayload,
+    };
+
+    const results = await Promise.allSettled(
+      recipients.map((pid) => dispatchUserEventAndPush(this.env, this.db, pid, envelope))
+    );
+    const deliveredTo = results.filter((r) => r.status === 'fulfilled').length;
+    return { ok: true, deliveredTo };
+  }
+
+  async pullCallSignals(
+    userId: string,
+    callId: string,
+    afterMs = 0
+  ): Promise<{ signals: RealtimeEnvelope[] }> {
+    const isParticipant = await this.db.isCallParticipant(callId, userId);
+    if (!isParticipant) {
+      throw new ApiError(403, 'forbidden_call', 'You are not a participant of this call.');
+    }
+
+    const stub = this.env.USER_COORDINATOR.get(this.env.USER_COORDINATOR.idFromName(userId));
+    const url = `https://do.internal/internal/call-signals?callId=${encodeURIComponent(callId)}&afterMs=${encodeURIComponent(String(afterMs))}`;
+    const res = await stub.fetch(url, { method: 'GET' });
+    if (!res.ok) {
+      return { signals: [] };
+    }
+    const data = (await res.json()) as { signals?: RealtimeEnvelope[] };
+    return { signals: Array.isArray(data.signals) ? data.signals : [] };
   }
 
   async getCallHistory(userId: string, filterRaw?: string, limitRaw?: number) {

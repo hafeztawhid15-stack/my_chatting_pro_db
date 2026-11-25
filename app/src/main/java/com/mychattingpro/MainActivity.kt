@@ -197,6 +197,7 @@ private fun MyChattingProNavRoot(
     val navController = rememberNavController()
     val context = LocalContext.current
     val incomingCall by container.incomingCall.collectAsStateWithLifecycle()
+    var activeCallScreenId by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(Unit) {
         container.securityAlerts.collect { alert ->
@@ -219,6 +220,9 @@ private fun MyChattingProNavRoot(
         val invite = incomingCall ?: return@LaunchedEffect
         // Consume navigation prompt ONLY — ringtone keeps playing until Accept, Reject, or Disconnect
         container.consumeIncomingCallPrompt()
+        if (activeCallScreenId == invite.callId) {
+            return@LaunchedEffect
+        }
         navController.navigate(
             AppRoute.Call(
                 callId = invite.callId,
@@ -238,6 +242,12 @@ private fun MyChattingProNavRoot(
     LaunchedEffect(pendingCallLaunch) {
         val launch = pendingCallLaunch ?: return@LaunchedEffect
         onCallLaunchConsumed()
+        if (activeCallScreenId == launch.callId) {
+            if (launch.autoAccept) {
+                container.requestExternalCallAccept(launch.callId)
+            }
+            return@LaunchedEffect
+        }
         navController.navigate(
             AppRoute.Call(
                 callId = launch.callId,
@@ -662,6 +672,14 @@ private fun MyChattingProNavRoot(
             val route = backStackEntry.toRoute<AppRoute.Call>()
             val callContext = LocalContext.current
             val activity = remember(callContext) { callContext.findActivity() }
+            DisposableEffect(route.callId) {
+                activeCallScreenId = route.callId
+                onDispose {
+                    if (activeCallScreenId == route.callId) {
+                        activeCallScreenId = null
+                    }
+                }
+            }
             DisposableEffect(activity) {
                 if (activity != null) {
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
@@ -694,7 +712,7 @@ private fun MyChattingProNavRoot(
                 container.interstitialAdManager.preload(resetRetry = true)
             }
             val callVm: CallViewModel = viewModel(
-                key = "call_${route.callId}_${route.isIncoming}_${route.autoAccept}",
+                key = "call_${route.callId}_${route.isIncoming}",
                 factory = singleVmFactory {
                     CallViewModel(
                         context = container.appContext,
@@ -714,6 +732,13 @@ private fun MyChattingProNavRoot(
                     )
                 }
             )
+            LaunchedEffect(route.callId, callVm) {
+                container.externalCallAccept.collect { acceptedCallId ->
+                    if (acceptedCallId == route.callId) {
+                        callVm.acceptFromExternalTrigger()
+                    }
+                }
+            }
             CallScreen(
                 viewModel = callVm,
                 peerName = route.peerName,

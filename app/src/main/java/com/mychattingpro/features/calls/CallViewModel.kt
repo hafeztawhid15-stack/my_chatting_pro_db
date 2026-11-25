@@ -67,6 +67,7 @@ class CallViewModel(
     private var durationJob: Job? = null
     private var ringTimeoutJob: Job? = null
     private var statusPollJob: Job? = null
+    private var signalPollJob: Job? = null
     private var connectingWatchdogJob: Job? = null
     private var offerRetryJob: Job? = null
     private var acceptRetryJob: Job? = null
@@ -79,8 +80,13 @@ class CallViewModel(
     private var hasRemoteOffer = false
     private var hasRemoteAnswer = false
     private var pendingOfferSdp: String? = null
+    private var lastSignalTimestampMs: Long = 0L
+    private var iceRestartOnFailAttempted = false
+    private var iceFallbackRelayCount = 0
+    private var lastPeerAcceptedHandledAtMs = 0L
 
     init {
+        webRtcManager.setSignalEmitter(::emitCallSignal)
         listenToSignaling()
         observeNetworkForReconnecting()
         observePeerPresence()
@@ -110,6 +116,57 @@ class CallViewModel(
                 if (!online && (st == WebRtcConnectionStage.CONNECTED || st == WebRtcConnectionStage.CONNECTING)) {
                     _uiState.value = _uiState.value.copy(stage = WebRtcConnectionStage.RECONNECTING)
                 }
+            }
+        }
+    }
+
+    private fun emitCallSignal(type: String, payload: JSONObject) {
+        socketManager.sendSignaling(type, payload)
+        val cid = payload.optString("callId").ifBlank { activeCallId }
+        if (cid.isBlank()) return
+        val shouldRelayHttp = type != "call.ice" ||
+            !socketManager.isConnected() ||
+            iceFallbackRelayCount < 8
+        if (!shouldRelayHttp) return
+        if (type == "call.ice") {
+            iceFallbackRelayCount++
+        }
+        viewModelScope.launch {
+            runCatching {
+                callRepository.sendCallSignal(
+                    callId = cid,
+                    type = type,
+                    conversationId = conversationId,
+                    targetUserId = peerUserId,
+                    payload = payload
+                )
+            }
+        }
+    }
+
+    private fun startSignalPolling(callId: String) {
+        if (callId.isBlank() || signalPollJob?.isActive == true) return
+        signalPollJob = viewModelScope.launch {
+            for (attempt in 0 until 35) {
+                val st = _uiState.value.stage
+                if (st != WebRtcConnectionStage.CALLING &&
+                    st != WebRtcConnectionStage.RINGING &&
+                    st != WebRtcConnectionStage.CONNECTING &&
+                    st != WebRtcConnectionStage.RECONNECTING
+                ) {
+                    break
+                }
+                val signals = runCatching {
+                    callRepository.pullCallSignals(callId, lastSignalTimestampMs).getOrNull().orEmpty()
+                }.getOrDefault(emptyList())
+                for (sig in signals) {
+                    val ts = sig.optLong("timestampMs", 0L)
+                    if (ts > lastSignalTimestampMs) {
+                        lastSignalTimestampMs = ts
+                    }
+                    socketManager.ingestRealtimeEnvelope(sig)
+                }
+                delay(1_500L)
             }
         }
     }
@@ -158,6 +215,7 @@ class CallViewModel(
                         triggerCreateOfferOnce()
                     }
                     startOutgoingPollingAndTimeout(cid)
+                    startSignalPolling(cid)
                 }.onFailure { err ->
                     val appErr = (err as? AppException)?.appError ?: AppError.CallFailure
                     _uiState.value = _uiState.value.copy(
@@ -166,7 +224,7 @@ class CallViewModel(
                     )
                 }
             } else {
-                socketManager.sendSignaling(
+                emitCallSignal(
                     "call.ringing",
                     JSONObject().apply {
                         put("callId", activeCallId)
@@ -215,8 +273,9 @@ class CallViewModel(
             val stage = _uiState.value.stage
             if (stage == WebRtcConnectionStage.CALLING || stage == WebRtcConnectionStage.RINGING) {
                 statusPollJob?.cancel()
+                signalPollJob?.cancel()
                 runCatching { callRepository.updateCallState(callId, "missed") }
-                socketManager.sendSignaling(
+                emitCallSignal(
                     "call.end",
                     JSONObject().apply {
                         put("callId", callId)
@@ -228,6 +287,10 @@ class CallViewModel(
                 _uiState.value = _uiState.value.copy(stage = WebRtcConnectionStage.ENDED)
             }
         }
+    }
+
+    fun acceptFromExternalTrigger() {
+        acceptIncomingCall()
     }
 
     fun acceptIncomingCall() {
@@ -264,6 +327,7 @@ class CallViewModel(
                 return@launch
             }
             peerConnectionReady = true
+            startSignalPolling(activeCallId)
             pendingOfferSdp?.let { offer ->
                 pendingOfferSdp = null
                 hasRemoteOffer = true
@@ -276,7 +340,7 @@ class CallViewModel(
     }
 
     private fun sendAcceptSignal() {
-        socketManager.sendSignaling(
+        emitCallSignal(
             "call.accept",
             JSONObject().apply {
                 put("callId", activeCallId)
@@ -307,7 +371,7 @@ class CallViewModel(
 
         viewModelScope.launch {
             callRepository.updateCallState(activeCallId, "reject")
-            socketManager.sendSignaling(
+            emitCallSignal(
                 "call.reject",
                 JSONObject().apply {
                     put("callId", activeCallId)
@@ -331,7 +395,7 @@ class CallViewModel(
             if (activeCallId.isNotBlank()) {
                 val action = if (!isIncoming && wasNeverConnected) "missed" else "end"
                 callRepository.updateCallState(activeCallId, action)
-                socketManager.sendSignaling(
+                emitCallSignal(
                     "call.end",
                     JSONObject().apply {
                         put("callId", activeCallId)
@@ -380,6 +444,22 @@ class CallViewModel(
             return
         }
 
+        if (stage == WebRtcConnectionStage.FAILED &&
+            peerConnectionReady &&
+            !iceRestartOnFailAttempted &&
+            (hasRemoteOffer || hasRemoteAnswer || !isIncoming)
+        ) {
+            iceRestartOnFailAttempted = true
+            _uiState.value = _uiState.value.copy(stage = WebRtcConnectionStage.CONNECTING)
+            startConnectingWatchdog()
+            if (!isIncoming) {
+                webRtcManager.createAndSendOffer(iceRestart = true)
+            } else {
+                sendAcceptSignal()
+            }
+            return
+        }
+
         if (stage == WebRtcConnectionStage.CONNECTING ||
             stage == WebRtcConnectionStage.CONNECTED ||
             stage == WebRtcConnectionStage.ENDED ||
@@ -398,6 +478,7 @@ class CallViewModel(
             stage == WebRtcConnectionStage.ENDED ||
             stage == WebRtcConnectionStage.FAILED
         ) {
+            signalPollJob?.cancel()
             offerRetryJob?.cancel()
             acceptRetryJob?.cancel()
         }
@@ -428,6 +509,18 @@ class CallViewModel(
             }
             delay(23_000L)
             if (_uiState.value.stage == WebRtcConnectionStage.CONNECTING) {
+                signalPollJob?.cancel()
+                if (activeCallId.isNotBlank()) {
+                    runCatching { callRepository.updateCallState(activeCallId, "end") }
+                    emitCallSignal(
+                        "call.end",
+                        JSONObject().apply {
+                            put("callId", activeCallId)
+                            put("conversationId", conversationId)
+                            put("targetUserId", peerUserId)
+                        }
+                    )
+                }
                 webRtcManager.endSession()
                 _uiState.value = _uiState.value.copy(
                     stage = WebRtcConnectionStage.FAILED,
@@ -473,7 +566,7 @@ class CallViewModel(
                         }
                     }
                     is RealtimeEvent.CallSignal -> {
-                        if (activeCallId.isNotBlank() && event.callId != activeCallId) return@collect
+                        if (activeCallId.isBlank() || event.callId != activeCallId) return@collect
                         when (event.type) {
                             "call.ringing" -> {
                                 if (_uiState.value.stage == WebRtcConnectionStage.CALLING) {
@@ -506,7 +599,10 @@ class CallViewModel(
                                 }
                             }
                             "call.ice" -> {
-                                val sdpMid = event.payload.optString("sdpMid")
+                                val sdpMid = event.payload.opt("sdpMid")
+                                    ?.takeIf { it !== JSONObject.NULL }
+                                    ?.toString()
+                                    ?: ""
                                 val mLineIdx = event.payload.optInt("sdpMLineIndex", 0)
                                 val cand = event.payload.optString("candidate")
                                 if (cand.isNotBlank()) {
@@ -537,11 +633,13 @@ class CallViewModel(
             _uiState.value = _uiState.value.copy(stage = WebRtcConnectionStage.CONNECTING)
             startConnectingWatchdog()
         }
+        val now = System.currentTimeMillis()
         if (peerConnectionReady) {
             if (!offerSent) {
+                lastPeerAcceptedHandledAtMs = now
                 triggerCreateOfferOnce()
-            } else if (!hasRemoteAnswer) {
-                // Re-send existing/fresh offer if callee resent call.accept after PeerConnection finished initializing
+            } else if (!hasRemoteAnswer && (now - lastPeerAcceptedHandledAtMs) > 1_200L) {
+                lastPeerAcceptedHandledAtMs = now
                 webRtcManager.createAndSendOffer()
             }
         } else {
@@ -573,6 +671,7 @@ class CallViewModel(
 
     private fun cancelAllTimers() {
         statusPollJob?.cancel()
+        signalPollJob?.cancel()
         ringTimeoutJob?.cancel()
         connectingWatchdogJob?.cancel()
         offerRetryJob?.cancel()

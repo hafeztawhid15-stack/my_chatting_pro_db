@@ -173,4 +173,13 @@ interface CallRepository {
     suspend fun initiateCall(conversationId: String, calleeId: String, isVideo: Boolean): Result<String>
     suspend fun updateCallState(callId: String, action: String): Result<Unit>
     suspend fun getCallStatus(callId: String): Result<String?> = Result.success(null)
+    suspend fun sendCallSignal(
+        callId: String,
+        type: String,
+        conversationId: String,
+        targetUserId: String,
+        payload: org.json.JSONObject
+    ): Result<Unit> = Result.success(Unit)
+    suspend fun pullCallSignals(callId: String, afterMs: Long): Result<List<org.json.JSONObject>> =
+        Result.success(emptyList())
 }

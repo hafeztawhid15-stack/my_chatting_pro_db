@@ -195,11 +195,12 @@ class AndroidRingtonePlaybackEngine(
             }
         }
         runCatching {
-            if (am.mode == AudioManager.MODE_RINGTONE) {
-                am.mode = previousAudioMode?.takeIf { it != AudioManager.MODE_RINGTONE }
+            val savedMode = previousAudioMode
+            previousAudioMode = null
+            if (savedMode != null && am.mode == AudioManager.MODE_RINGTONE) {
+                am.mode = savedMode.takeIf { it != AudioManager.MODE_RINGTONE }
                     ?: AudioManager.MODE_NORMAL
             }
-            previousAudioMode = null
         }
     }
 

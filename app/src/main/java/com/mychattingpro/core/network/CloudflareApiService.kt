@@ -125,6 +125,18 @@ interface CloudflareApiService {
         @Body body: UpdateCallStateRequestDto
     )
 
+    @POST("v1/calls/{callId}/signal")
+    suspend fun sendCallSignal(
+        @Path("callId") callId: String,
+        @Body body: RequestBody
+    )
+
+    @GET("v1/calls/{callId}/signals")
+    suspend fun getCallSignals(
+        @Path("callId") callId: String,
+        @Query("afterMs") afterMs: Long = 0L
+    ): okhttp3.ResponseBody
+
     @GET("v1/calls/history")
     suspend fun getCallHistory(
         @Query("filter") filter: String? = null,

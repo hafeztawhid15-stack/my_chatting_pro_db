@@ -5,7 +5,9 @@ import com.mychattingpro.core.common.CountryCatalog
 import com.mychattingpro.core.localization.AppLanguage
 import com.mychattingpro.core.localization.DateTimeFormatters
 import com.mychattingpro.data.repository.ErrorMapper
+import com.mychattingpro.domain.models.IceServerConfig
 import com.mychattingpro.features.ads.InterstitialAdManager
+import com.mychattingpro.features.calls.IceServerSanitizer
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import okhttp3.MediaType.Companion.toMediaType
@@ -134,5 +136,36 @@ class CoreLogicUnitTest {
                 loadedAtMs = 500_000L
             )
         )
+    }
+
+    @Test
+    fun `ice server sanitizer repairs bare turn hosts rejects https and preserves default stun servers`() {
+        assertEquals("turn:relay.metered.ca:80", IceServerSanitizer.normalizeIceUrl("relay.metered.ca:80"))
+        assertEquals("turns:global.relay.metered.ca:443?transport=tcp", IceServerSanitizer.normalizeIceUrl("global.relay.metered.ca:443?transport=tcp"))
+        assertEquals("turn:a.relay.metered.ca:80", IceServerSanitizer.normalizeIceUrl("\"turn:a.relay.metered.ca:80\""))
+        assertNull(IceServerSanitizer.normalizeIceUrl("https://relay.metered.ca"))
+        assertNull(IceServerSanitizer.normalizeIceUrl("invalid url with spaces"))
+
+        val sanitized = IceServerSanitizer.sanitize(
+            listOf(
+                IceServerConfig(
+                    urls = listOf(
+                        "https://bad.example.com",
+                        "relay.metered.ca:80, turns:relay.metered.ca:443?transport=tcp"
+                    ),
+                    username = " u1 ",
+                    credential = " p1 "
+                )
+            )
+        )
+
+        assertTrue(sanitized.first().urls.containsAll(IceServerSanitizer.DEFAULT_STUN_URLS))
+        assertEquals(2, sanitized.size)
+        assertEquals(
+            listOf("turn:relay.metered.ca:80", "turns:relay.metered.ca:443?transport=tcp"),
+            sanitized[1].urls
+        )
+        assertEquals("u1", sanitized[1].username)
+        assertEquals("p1", sanitized[1].credential)
     }
 }

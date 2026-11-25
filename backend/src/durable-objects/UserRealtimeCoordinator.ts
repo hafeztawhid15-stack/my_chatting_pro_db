@@ -19,6 +19,9 @@ export class UserRealtimeCoordinator extends DurableObject<Env> {
   private readonly maxBuffer = 100;
   private readonly presenceTimeoutMs = 90_000;
   private lastPingDbUpdateMs = 0;
+  private readonly pairAuthCache = new Map<string, number>();
+  private readonly callParticipantCache = new Map<string, number>();
+  private readonly callSignalBuffer = new Map<string, Array<{ envelope: RealtimeEnvelope; savedAtMs: number }>>();
 
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
@@ -26,15 +29,44 @@ export class UserRealtimeCoordinator extends DurableObject<Env> {
     // Internal HTTP dispatch from Worker routes or ConversationCoordinator
     if (url.pathname === '/internal/push' && request.method === 'POST') {
       const envelope = (await request.json()) as RealtimeEnvelope;
-      const isEphemeral =
-        envelope.type === 'presence.update' ||
-        envelope.type === 'typing.start' ||
-        envelope.type === 'typing.stop';
-      if (!isEphemeral) {
+      const deliveredCount = this.broadcastToUserSockets(envelope);
+      const isCallSignal =
+        envelope.type === 'call.ringing' ||
+        envelope.type === 'call.accept' ||
+        envelope.type === 'call.reject' ||
+        envelope.type === 'call.offer' ||
+        envelope.type === 'call.answer' ||
+        envelope.type === 'call.ice' ||
+        envelope.type === 'call.end' ||
+        envelope.type === 'call.state' ||
+        envelope.type === 'call.missed';
+      if (isCallSignal) {
+        this.recordCallSignal(envelope);
+      }
+
+      const isPersistent =
+        envelope.type !== 'presence.update' &&
+        envelope.type !== 'typing.start' &&
+        envelope.type !== 'typing.stop' &&
+        envelope.type !== 'call.ice' &&
+        envelope.type !== 'call.offer' &&
+        envelope.type !== 'call.answer' &&
+        envelope.type !== 'call.ringing' &&
+        envelope.type !== 'call.accept';
+      if (isPersistent) {
         await this.bufferEvent(envelope);
       }
-      const deliveredCount = this.broadcastToUserSockets(envelope);
       return Response.json({ ok: true, deliveredCount });
+    }
+
+    if (url.pathname === '/internal/call-signals' && request.method === 'GET') {
+      const callId = url.searchParams.get('callId') ?? '';
+      const afterMs = Number.parseInt(url.searchParams.get('afterMs') ?? '0', 10);
+      const signals = this.getBufferedCallSignals(
+        callId,
+        Number.isFinite(afterMs) && afterMs > 0 ? afterMs : 0
+      );
+      return Response.json({ signals });
     }
 
     if (url.pathname === '/internal/presence' && request.method === 'GET') {
@@ -94,16 +126,18 @@ export class UserRealtimeCoordinator extends DurableObject<Env> {
         const recentCallEvents = (await this.getBufferedEventsSince(now - 45_000)).filter(
           (ev) =>
             ev.type === 'call.invite' ||
-            ev.type === 'call.ringing' ||
-            ev.type === 'call.accept' ||
-            ev.type === 'call.offer' ||
-            ev.type === 'call.answer' ||
-            ev.type === 'call.ice' ||
-            ev.type === 'call.state'
+            ev.type === 'call.state' ||
+            ev.type === 'call.missed'
         );
         for (const ev of recentCallEvents) {
           server.send(JSON.stringify(ev));
         }
+      }
+
+      // Also replay any active in-memory call signals from the last 45s
+      const replayCutoff = Number.isFinite(sinceMsParam) && sinceMsParam > now - 45_000 ? sinceMsParam : now - 45_000;
+      for (const sig of this.getAllRecentCallSignals(replayCutoff)) {
+        server.send(JSON.stringify(sig));
       }
 
       return new Response(null, { status: 101, webSocket: client });
@@ -192,6 +226,9 @@ export class UserRealtimeCoordinator extends DurableObject<Env> {
         for (const ev of missed) {
           ws.send(JSON.stringify(ev));
         }
+        for (const sig of this.getAllRecentCallSignals(sinceMs)) {
+          ws.send(JSON.stringify(sig));
+        }
       }
       return;
     }
@@ -199,7 +236,6 @@ export class UserRealtimeCoordinator extends DurableObject<Env> {
     // Typing indicators & WebRTC signaling forwarded to target user's Durable Object
     const targetUserId = typeof parsed.payload?.targetUserId === 'string' ? parsed.payload.targetUserId : null;
     const conversationId = typeof parsed.payload?.conversationId === 'string' ? parsed.payload.conversationId : null;
-
     const callId = typeof parsed.payload?.callId === 'string' ? parsed.payload.callId : null;
 
     if (
@@ -214,34 +250,136 @@ export class UserRealtimeCoordinator extends DurableObject<Env> {
         parsed.type === 'call.ice' ||
         parsed.type === 'call.end')
     ) {
-      const db = createSupabaseDb(this.env);
-      // Verify both users belong to the conversation & are not blocked (or are participants on the call)
-      if (conversationId) {
-        const allowed = await db.checkConversationPair(conversationId, attachment.userId, targetUserId);
+      try {
+        const allowed = await this.isForwardingAuthorized(
+          attachment.userId,
+          targetUserId,
+          conversationId,
+          callId,
+          parsed.type
+        );
         if (!allowed) return;
-      } else if (parsed.type.startsWith('call.') && callId) {
-        const isParticipant = await db.isCallParticipant(callId, attachment.userId);
-        if (!isParticipant) return;
+
+        const envelope: RealtimeEnvelope = {
+          eventId: crypto.randomUUID(),
+          type: parsed.type,
+          timestampMs: Date.now(),
+          payload: {
+            ...(parsed.payload ?? {}),
+            fromUserId: attachment.userId,
+          },
+        };
+
+        const targetStub = this.env.USER_COORDINATOR.get(
+          this.env.USER_COORDINATOR.idFromName(targetUserId)
+        );
+        await targetStub.fetch('https://do.internal/internal/push', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(envelope),
+        });
+      } catch {
+        // Never allow a single signal dispatch error to crash the WebSocket handler
       }
+    }
+  }
 
-      const envelope: RealtimeEnvelope = {
-        eventId: crypto.randomUUID(),
-        type: parsed.type,
-        timestampMs: Date.now(),
-        payload: {
-          ...(parsed.payload ?? {}),
-          fromUserId: attachment.userId,
-        },
-      };
+  private async isForwardingAuthorized(
+    userId: string,
+    targetUserId: string,
+    conversationId: string | null,
+    callId: string | null,
+    type: string
+  ): Promise<boolean> {
+    const now = Date.now();
+    const db = createSupabaseDb(this.env);
 
-      const targetStub = this.env.USER_COORDINATOR.get(
-        this.env.USER_COORDINATOR.idFromName(targetUserId)
-      );
-      await targetStub.fetch('https://do.internal/internal/push', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(envelope),
-      });
+    if (conversationId) {
+      const cacheKey = `${conversationId}:${userId}:${targetUserId}`;
+      const cachedExpiry = this.pairAuthCache.get(cacheKey);
+      if (cachedExpiry && cachedExpiry > now) {
+        return true;
+      }
+      const allowed = await db.checkConversationPair(conversationId, userId, targetUserId);
+      if (allowed) {
+        if (this.pairAuthCache.size > 100) {
+          this.pairAuthCache.clear();
+        }
+        this.pairAuthCache.set(cacheKey, now + 60_000);
+        return true;
+      }
+      // Fallback for calls when conversation check failed but call participant check passes
+      if (!type.startsWith('call.') || !callId) {
+        return false;
+      }
+    }
+
+    if (type.startsWith('call.') && callId) {
+      const callKey = `${callId}:${userId}`;
+      const cachedExpiry = this.callParticipantCache.get(callKey);
+      if (cachedExpiry && cachedExpiry > now) {
+        return true;
+      }
+      const isParticipant = await db.isCallParticipant(callId, userId);
+      if (isParticipant) {
+        if (this.callParticipantCache.size > 100) {
+          this.callParticipantCache.clear();
+        }
+        this.callParticipantCache.set(callKey, now + 60_000);
+      }
+      return isParticipant;
+    }
+
+    return false;
+  }
+
+  private recordCallSignal(envelope: RealtimeEnvelope): void {
+    const callId = typeof envelope.payload?.callId === 'string' ? envelope.payload.callId : '';
+    if (!callId) return;
+    const now = Date.now();
+    this.pruneExpiredCallSignals(now);
+    const list = this.callSignalBuffer.get(callId) ?? [];
+    list.push({ envelope, savedAtMs: now });
+    if (list.length > 120) {
+      list.splice(0, list.length - 120);
+    }
+    this.callSignalBuffer.set(callId, list);
+  }
+
+  private getBufferedCallSignals(callId: string, afterMs: number): RealtimeEnvelope[] {
+    if (!callId) return [];
+    const now = Date.now();
+    this.pruneExpiredCallSignals(now);
+    const list = this.callSignalBuffer.get(callId) ?? [];
+    return list
+      .filter((item) => item.envelope.timestampMs > afterMs)
+      .map((item) => item.envelope);
+  }
+
+  private getAllRecentCallSignals(afterMs: number): RealtimeEnvelope[] {
+    const now = Date.now();
+    this.pruneExpiredCallSignals(now);
+    const out: RealtimeEnvelope[] = [];
+    for (const list of this.callSignalBuffer.values()) {
+      for (const item of list) {
+        if (item.envelope.timestampMs > afterMs) {
+          out.push(item.envelope);
+        }
+      }
+    }
+    out.sort((a, b) => a.timestampMs - b.timestampMs);
+    return out;
+  }
+
+  private pruneExpiredCallSignals(nowMs: number): void {
+    const cutoff = nowMs - 120_000;
+    for (const [cid, list] of this.callSignalBuffer.entries()) {
+      const kept = list.filter((item) => item.savedAtMs >= cutoff);
+      if (kept.length === 0) {
+        this.callSignalBuffer.delete(cid);
+      } else if (kept.length !== list.length) {
+        this.callSignalBuffer.set(cid, kept);
+      }
     }
   }
 

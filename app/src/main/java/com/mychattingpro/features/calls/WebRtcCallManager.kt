@@ -5,6 +5,7 @@ import android.media.AudioAttributes
 import android.media.AudioDeviceInfo
 import android.media.AudioFocusRequest
 import android.media.AudioManager
+import android.media.MediaRecorder
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -40,9 +41,72 @@ enum class WebRtcConnectionStage {
     IDLE, CALLING, RINGING, CONNECTING, CONNECTED, RECONNECTING, ENDED, FAILED
 }
 
+object IceServerSanitizer {
+    val DEFAULT_STUN_URLS = listOf(
+        "stun:stun.cloudflare.com:3478",
+        "stun:stun.l.google.com:19302",
+        "stun:stun1.l.google.com:19302",
+        "stun:stun2.l.google.com:19302"
+    )
+
+    private val validSchemeRegex = Regex("^(stuns?|turns?):[^\\s]+$", RegexOption.IGNORE_CASE)
+    private val otherSchemeRegex = Regex("^[a-zA-Z][a-zA-Z0-9+.-]*://.*")
+    private val hostPortRegex = Regex("^[a-zA-Z0-9.-]+(:\\d{1,5})?(\\?transport=(udp|tcp))?$", RegexOption.IGNORE_CASE)
+
+    fun normalizeIceUrl(raw: String): String? {
+        val cleaned = raw.trim().trim('"', '\'', '[', ']', ',', ';')
+        if (cleaned.isEmpty()) return null
+        if (validSchemeRegex.matches(cleaned)) return cleaned
+        if (otherSchemeRegex.matches(cleaned)) return null
+        if (hostPortRegex.matches(cleaned)) {
+            val prefix = if (Regex(":443(\\?|$)").containsMatchIn(cleaned)) "turns:" else "turn:"
+            return "$prefix$cleaned"
+        }
+        return null
+    }
+
+    fun sanitize(configs: List<IceServerConfig>): List<IceServerConfig> {
+        val stunUrls = linkedSetOf<String>()
+        val turnConfigs = mutableListOf<IceServerConfig>()
+
+        for (cfg in configs) {
+            val expanded = cfg.urls
+                .flatMap {
+                    it.replace("[", " ")
+                        .replace("]", " ")
+                        .replace("\"", " ")
+                        .replace("'", " ")
+                        .split(Regex("[\\s,;]+"))
+                }
+                .mapNotNull(::normalizeIceUrl)
+                .distinct()
+            if (expanded.isEmpty()) continue
+
+            val user = cfg.username?.trim()?.takeIf { it.isNotEmpty() }
+            val cred = cfg.credential?.trim()?.takeIf { it.isNotEmpty() }
+            val hasTurn = expanded.any {
+                it.startsWith("turn:", ignoreCase = true) || it.startsWith("turns:", ignoreCase = true)
+            }
+
+            if (hasTurn || (user != null && cred != null)) {
+                turnConfigs += IceServerConfig(
+                    urls = expanded,
+                    username = user,
+                    credential = cred
+                )
+            } else {
+                stunUrls.addAll(expanded)
+            }
+        }
+
+        stunUrls.addAll(DEFAULT_STUN_URLS)
+        return listOf(IceServerConfig(urls = stunUrls.toList())) + turnConfigs
+    }
+}
+
 /**
  * Genuine WebRTC Audio & Video Call Engine powered by Stream WebRTC Android (`org.webrtc.*`)
- * and Cloudflare Durable Objects WebSocket signaling.
+ * and Cloudflare Durable Objects WebSocket + HTTP fallback signaling.
  */
 open class WebRtcCallManager(
     private val context: Context,
@@ -77,10 +141,29 @@ open class WebRtcCallManager(
     private var hasRemoteDescription = false
     private var hasConnectedInSession = false
     private var isSpeakerPreferred = false
+    @Volatile
+    private var offerCreationInFlight = false
+    private var lastAppliedRemoteOfferSdp: String? = null
+    private var lastSentLocalAnswerSdp: String? = null
+    @Volatile
+    private var customSignalEmitter: ((type: String, payload: JSONObject) -> Unit)? = null
 
     private val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
     private var audioFocusRequest: AudioFocusRequest? = null
     private val audioFocusChangeListener = AudioManager.OnAudioFocusChangeListener { }
+
+    open fun setSignalEmitter(emitter: ((type: String, payload: JSONObject) -> Unit)?) {
+        customSignalEmitter = emitter
+    }
+
+    private fun emitSignal(type: String, payload: JSONObject) {
+        val emitter = customSignalEmitter
+        if (emitter != null) {
+            emitter(type, payload)
+        } else {
+            socketManager.sendSignaling(type, payload)
+        }
+    }
 
     open fun attachVideoSinks(local: VideoSink?, remote: VideoSink?) {
         mainHandler.post {
@@ -109,6 +192,9 @@ open class WebRtcCallManager(
         isSpeakerPreferred = isVideo
         hasRemoteDescription = false
         hasConnectedInSession = false
+        offerCreationInFlight = false
+        lastAppliedRemoteOfferSdp = null
+        lastSentLocalAnswerSdp = null
 
         synchronized(pendingIceCandidates) {
             pendingIceCandidates.clear()
@@ -123,30 +209,28 @@ open class WebRtcCallManager(
                 internalCleanupPeerResources()
                 ensureFactoryInitialized()
 
-                val effectiveServers = iceServers.ifEmpty {
-                    listOf(
-                        IceServerConfig(
-                            urls = listOf(
-                                "stun:stun.cloudflare.com:3478",
-                                "stun:stun.l.google.com:19302",
-                                "stun:stun1.l.google.com:19302",
-                                "stun:stun2.l.google.com:19302"
-                            )
-                        )
-                    )
-                }
-                val rtcIceServers = effectiveServers.map { cfg ->
-                    val builder = PeerConnection.IceServer.builder(cfg.urls)
-                    if (!cfg.username.isNullOrBlank() && !cfg.credential.isNullOrBlank()) {
-                        builder.setUsername(cfg.username).setPassword(cfg.credential)
+                val sanitizedConfigs = IceServerSanitizer.sanitize(iceServers)
+                val rtcIceServers = sanitizedConfigs.mapNotNull { cfg ->
+                    runCatching {
+                        val builder = PeerConnection.IceServer.builder(cfg.urls)
+                        if (!cfg.username.isNullOrBlank() && !cfg.credential.isNullOrBlank()) {
+                            builder.setUsername(cfg.username).setPassword(cfg.credential)
+                        }
+                        builder.createIceServer()
+                    }.getOrElse { err ->
+                        SafeLogger.w("WebRTC", "Skipping invalid ICE server config: ${err.javaClass.simpleName}")
+                        null
                     }
-                    builder.createIceServer()
+                }.ifEmpty {
+                    IceServerSanitizer.DEFAULT_STUN_URLS.mapNotNull { stunUrl ->
+                        runCatching { PeerConnection.IceServer.builder(stunUrl).createIceServer() }.getOrNull()
+                    }
                 }
 
                 val rtcConfig = PeerConnection.RTCConfiguration(rtcIceServers).apply {
                     sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN
                     continualGatheringPolicy = PeerConnection.ContinualGatheringPolicy.GATHER_CONTINUALLY
-                    bundlePolicy = PeerConnection.BundlePolicy.BALANCED
+                    bundlePolicy = PeerConnection.BundlePolicy.MAXBUNDLE
                     rtcpMuxPolicy = PeerConnection.RtcpMuxPolicy.REQUIRE
                     tcpCandidatePolicy = PeerConnection.TcpCandidatePolicy.ENABLED
                     iceCandidatePoolSize = 4
@@ -161,11 +245,11 @@ open class WebRtcCallManager(
                                 put("callId", callId)
                                 put("conversationId", conversationId)
                                 put("targetUserId", peerUserId)
-                                put("sdpMid", candidate.sdpMid)
+                                put("sdpMid", candidate.sdpMid ?: "")
                                 put("sdpMLineIndex", candidate.sdpMLineIndex)
                                 put("candidate", candidate.sdp)
                             }
-                            socketManager.sendSignaling("call.ice", payload)
+                            emitSignal("call.ice", payload)
                         }
 
                         override fun onIceConnectionChange(state: PeerConnection.IceConnectionState?) {
@@ -291,6 +375,7 @@ open class WebRtcCallManager(
         rtcExecutor.execute {
             if (gen != sessionGen.get()) return@execute
             val pc = peerConnection ?: return@execute
+            if (offerCreationInFlight) return@execute
             val state = pc.signalingState()
             if (state != PeerConnection.SignalingState.STABLE && !iceRestart) {
                 val existingLocalSdp = pc.localDescription
@@ -299,7 +384,16 @@ open class WebRtcCallManager(
                 }
                 return@execute
             }
+            if (state == PeerConnection.SignalingState.STABLE && !iceRestart) {
+                val existingLocalSdp = pc.localDescription
+                val existingRemoteSdp = pc.remoteDescription
+                if (existingLocalSdp?.type == SessionDescription.Type.OFFER && existingRemoteSdp == null) {
+                    sendOfferPayload(existingLocalSdp.description)
+                    return@execute
+                }
+            }
 
+            offerCreationInFlight = true
             val constraints = MediaConstraints().apply {
                 mandatory.add(MediaConstraints.KeyValuePair("OfferToReceiveAudio", "true"))
                 mandatory.add(MediaConstraints.KeyValuePair("OfferToReceiveVideo", if (isVideoCall) "true" else "false"))
@@ -310,15 +404,35 @@ open class WebRtcCallManager(
             pc.createOffer(object : SdpObserverAdapter() {
                 override fun onCreateSuccess(sdp: SessionDescription) {
                     rtcExecutor.execute {
-                        if (gen != sessionGen.get()) return@execute
-                        val activePc = peerConnection ?: return@execute
+                        if (gen != sessionGen.get()) {
+                            offerCreationInFlight = false
+                            return@execute
+                        }
+                        val activePc = peerConnection
+                        if (activePc == null) {
+                            offerCreationInFlight = false
+                            return@execute
+                        }
                         activePc.setLocalDescription(object : SdpObserverAdapter() {
                             override fun onSetSuccess() {
-                                if (gen != sessionGen.get()) return
-                                sendOfferPayload(activePc.localDescription?.description ?: sdp.description)
+                                rtcExecutor.execute {
+                                    offerCreationInFlight = false
+                                    if (gen != sessionGen.get()) return@execute
+                                    sendOfferPayload(activePc.localDescription?.description ?: sdp.description)
+                                }
+                            }
+
+                            override fun onSetFailure(err: String?) {
+                                super.onSetFailure(err)
+                                rtcExecutor.execute { offerCreationInFlight = false }
                             }
                         }, sdp)
                     }
+                }
+
+                override fun onCreateFailure(err: String?) {
+                    super.onCreateFailure(err)
+                    rtcExecutor.execute { offerCreationInFlight = false }
                 }
             }, constraints)
         }
@@ -331,7 +445,17 @@ open class WebRtcCallManager(
             put("targetUserId", currentPeerUserId)
             put("sdp", sdpDescription)
         }
-        socketManager.sendSignaling("call.offer", payload)
+        emitSignal("call.offer", payload)
+    }
+
+    private fun sendAnswerPayload(sdpDescription: String) {
+        val payload = JSONObject().apply {
+            put("callId", currentCallId)
+            put("conversationId", currentConversationId)
+            put("targetUserId", currentPeerUserId)
+            put("sdp", sdpDescription)
+        }
+        emitSignal("call.answer", payload)
     }
 
     open fun handleRemoteOfferAndSendAnswer(sdpText: String) {
@@ -340,6 +464,14 @@ open class WebRtcCallManager(
             if (gen != sessionGen.get()) return@execute
             val pc = peerConnection ?: return@execute
             val sigState = pc.signalingState()
+            if (sigState == PeerConnection.SignalingState.STABLE &&
+                hasRemoteDescription &&
+                sdpText == lastAppliedRemoteOfferSdp &&
+                lastSentLocalAnswerSdp != null
+            ) {
+                sendAnswerPayload(lastSentLocalAnswerSdp!!)
+                return@execute
+            }
             if (sigState == PeerConnection.SignalingState.HAVE_LOCAL_OFFER) {
                 // Rollback any stale local offer before applying remote offer
                 pc.setLocalDescription(object : SdpObserverAdapter() {
@@ -376,14 +508,13 @@ open class WebRtcCallManager(
                                 val activePc = peerConnection ?: return@execute
                                 activePc.setLocalDescription(object : SdpObserverAdapter() {
                                     override fun onSetSuccess() {
-                                        if (gen != sessionGen.get()) return
-                                        val payload = JSONObject().apply {
-                                            put("callId", currentCallId)
-                                            put("conversationId", currentConversationId)
-                                            put("targetUserId", currentPeerUserId)
-                                            put("sdp", activePc.localDescription?.description ?: answer.description)
+                                        rtcExecutor.execute {
+                                            if (gen != sessionGen.get()) return@execute
+                                            lastAppliedRemoteOfferSdp = sdpText
+                                            val answerSdp = activePc.localDescription?.description ?: answer.description
+                                            lastSentLocalAnswerSdp = answerSdp
+                                            sendAnswerPayload(answerSdp)
                                         }
-                                        socketManager.sendSignaling("call.answer", payload)
                                     }
                                 }, answer)
                             }
@@ -469,10 +600,14 @@ open class WebRtcCallManager(
                     }
                     if (preferredDevice != null) {
                         audioManager.setCommunicationDevice(preferredDevice)
+                    } else {
+                        @Suppress("DEPRECATION")
+                        audioManager.isSpeakerphoneOn = speakerOn
                     }
+                } else {
+                    @Suppress("DEPRECATION")
+                    audioManager.isSpeakerphoneOn = speakerOn
                 }
-                @Suppress("DEPRECATION")
-                audioManager.isSpeakerphoneOn = speakerOn
             }
         }
     }
@@ -493,11 +628,11 @@ open class WebRtcCallManager(
             internalCleanupPeerResources()
             runCatching { factory?.dispose() }
             factory = null
+            runCatching { eglBase.release() }
         }
         mainHandler.post {
             restoreAudioRoutingAndFocus()
         }
-        runCatching { eglBase.release() }
     }
 
     private fun internalCleanupPeerResources() {
@@ -527,6 +662,9 @@ open class WebRtcCallManager(
         peerConnection = null
         hasRemoteDescription = false
         hasConnectedInSession = false
+        offerCreationInFlight = false
+        lastAppliedRemoteOfferSdp = null
+        lastSentLocalAnswerSdp = null
         synchronized(pendingIceCandidates) {
             pendingIceCandidates.clear()
         }
@@ -584,8 +722,15 @@ open class WebRtcCallManager(
             .createInitializationOptions()
         PeerConnectionFactory.initialize(initOptions)
 
+        val voiceAttributes = AudioAttributes.Builder()
+            .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
+            .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+            .build()
+
         val audioModule = runCatching {
             JavaAudioDeviceModule.builder(context)
+                .setAudioSource(MediaRecorder.AudioSource.VOICE_COMMUNICATION)
+                .setAudioAttributes(voiceAttributes)
                 .setUseHardwareAcousticEchoCanceler(JavaAudioDeviceModule.isBuiltInAcousticEchoCancelerSupported())
                 .setUseHardwareNoiseSuppressor(JavaAudioDeviceModule.isBuiltInNoiseSuppressorSupported())
                 .setUseStereoInput(false)
@@ -611,13 +756,8 @@ open class WebRtcCallManager(
 
         val audioConstraints = MediaConstraints().apply {
             mandatory.add(MediaConstraints.KeyValuePair("googEchoCancellation", "true"))
-            mandatory.add(MediaConstraints.KeyValuePair("googEchoCancellation2", "true"))
             mandatory.add(MediaConstraints.KeyValuePair("googAutoGainControl", "true"))
-            mandatory.add(MediaConstraints.KeyValuePair("googAutoGainControl2", "true"))
             mandatory.add(MediaConstraints.KeyValuePair("googNoiseSuppression", "true"))
-            mandatory.add(MediaConstraints.KeyValuePair("googNoiseSuppression2", "true"))
-            mandatory.add(MediaConstraints.KeyValuePair("googHighpassFilter", "true"))
-            mandatory.add(MediaConstraints.KeyValuePair("googTypingNoiseDetection", "true"))
             mandatory.add(MediaConstraints.KeyValuePair("googAudioMirroring", "false"))
         }
         val audioSrc = f.createAudioSource(audioConstraints)

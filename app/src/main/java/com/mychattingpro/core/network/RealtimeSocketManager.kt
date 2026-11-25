@@ -158,6 +158,9 @@ class RealtimeSocketManager(
         _connectionState.value = SocketConnectionState.DISCONNECTED
     }
 
+    fun isConnected(): Boolean =
+        activeSocket != null && _connectionState.value == SocketConnectionState.CONNECTED
+
     fun sendSignaling(type: String, payload: JSONObject) {
         val envelope = JSONObject().apply {
             put("type", type)
@@ -170,8 +173,14 @@ class RealtimeSocketManager(
         if (type.startsWith("call.")) {
             shouldStayConnected = true
             synchronized(pendingOutboundSignals) {
-                if (pendingOutboundSignals.size >= 48) {
-                    pendingOutboundSignals.removeAt(0)
+                if (pendingOutboundSignals.size >= 128) {
+                    // Evict an older ICE candidate first so critical offer/answer/accept frames are preserved
+                    val iceIdx = pendingOutboundSignals.indexOfFirst { it.contains("\"call.ice\"") }
+                    if (iceIdx >= 0) {
+                        pendingOutboundSignals.removeAt(iceIdx)
+                    } else {
+                        pendingOutboundSignals.removeAt(0)
+                    }
                 }
                 pendingOutboundSignals.add(envelope)
             }
@@ -357,9 +366,20 @@ class RealtimeSocketManager(
         }
     }
 
+    fun ingestRealtimeEnvelope(root: JSONObject) {
+        handleIncomingJson(root)
+    }
+
     private fun handleIncomingFrame(raw: String) {
         try {
-            val root = JSONObject(raw)
+            handleIncomingJson(JSONObject(raw))
+        } catch (e: Exception) {
+            SafeLogger.e("RealtimeWS", "Failed to parse event", e.javaClass.simpleName)
+        }
+    }
+
+    private fun handleIncomingJson(root: JSONObject) {
+        try {
             val eventId = root.optString("eventId")
             val type = root.optString("type")
             val ts = root.optLong("timestampMs", 0L)

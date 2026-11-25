@@ -142,6 +142,9 @@ class AppContainer(context: Context) {
     private val _securityAlerts = MutableSharedFlow<RealtimeEvent.SecurityAlert>(extraBufferCapacity = 16)
     val securityAlerts: SharedFlow<RealtimeEvent.SecurityAlert> = _securityAlerts.asSharedFlow()
 
+    private val _externalCallAccept = MutableSharedFlow<String>(extraBufferCapacity = 8)
+    val externalCallAccept: SharedFlow<String> = _externalCallAccept.asSharedFlow()
+
     var activeConversationId: String? = null
 
     init {
@@ -260,6 +263,12 @@ class AppContainer(context: Context) {
                     else -> Unit
                 }
             }
+        }
+    }
+
+    fun requestExternalCallAccept(callId: String) {
+        if (callId.isNotBlank()) {
+            _externalCallAccept.tryEmit(callId)
         }
     }
 

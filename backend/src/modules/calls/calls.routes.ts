@@ -58,3 +58,31 @@ callsRoutes.post('/:callId/state', authMiddleware, async (c) => {
   const result = await service.updateCallState(auth.userId, callId, action);
   return c.json(result);
 });
+
+callsRoutes.post('/:callId/signal', authMiddleware, async (c) => {
+  const auth = c.get('auth');
+  const callId = c.req.param('callId') ?? '';
+  const body = await c.req.json<{
+    type?: string;
+    conversationId?: string;
+    targetUserId?: string;
+    payload?: Record<string, unknown>;
+  }>();
+  const service = new CallsService(c.env, c.get('db'));
+  const result = await service.relayCallSignal(auth.userId, callId, body);
+  return c.json(result);
+});
+
+callsRoutes.get('/:callId/signals', authMiddleware, async (c) => {
+  const auth = c.get('auth');
+  const callId = c.req.param('callId') ?? '';
+  const afterRaw = c.req.query('afterMs');
+  const afterMs = afterRaw ? Number.parseInt(afterRaw, 10) : 0;
+  const service = new CallsService(c.env, c.get('db'));
+  const result = await service.pullCallSignals(
+    auth.userId,
+    callId,
+    Number.isFinite(afterMs) && afterMs > 0 ? afterMs : 0
+  );
+  return c.json(result);
+});
