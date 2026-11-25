@@ -168,4 +168,24 @@ class CoreLogicUnitTest {
         assertEquals("u1", sanitized[1].username)
         assertEquals("p1", sanitized[1].credential)
     }
+
+    @Test
+    fun `bubble aspect ratio preserves portrait and landscape bounds cleanly`() {
+        assertNull(com.mychattingpro.features.media.MediaUploadHelper.computeBubbleAspectRatio(null, 100))
+        assertNull(com.mychattingpro.features.media.MediaUploadHelper.computeBubbleAspectRatio(0, 100))
+        assertEquals(0.6f, com.mychattingpro.features.media.MediaUploadHelper.computeBubbleAspectRatio(300, 1200)!!, 0.001f)
+        assertEquals(1.9f, com.mychattingpro.features.media.MediaUploadHelper.computeBubbleAspectRatio(1920, 400)!!, 0.001f)
+        assertEquals(1.333f, com.mychattingpro.features.media.MediaUploadHelper.computeBubbleAspectRatio(1600, 1200)!!, 0.01f)
+    }
+
+    @Test
+    fun `error mapper maps user_blocked backend code to UserBlocked`() {
+        val moshi = Moshi.Builder().addLast(KotlinJsonAdapterFactory()).build()
+        val mapper = ErrorMapper(moshi)
+        val blockedJson = """{"error":"user_blocked","message":"Messaging unavailable"}"""
+        val ex = HttpException(
+            Response.error<Any>(403, blockedJson.toResponseBody("application/json".toMediaType()))
+        )
+        assertTrue(mapper.map(ex) is AppError.UserBlocked)
+    }
 }

@@ -514,6 +514,32 @@ class ChatRepositoryImpl(
                     is RealtimeEvent.PresenceChanged -> {
                         conversationDao.updatePeerPresence(event.userId, event.isOnline, event.lastSeenMs)
                     }
+                    is RealtimeEvent.BlockStatusChanged -> {
+                        val myId = tokenStore.currentSessionOrNull()?.userId ?: tokenStore.getSession()?.userId
+                        if (myId != null) {
+                            if (event.actorUserId == myId) {
+                                conversationDao.updateBlockedByMe(event.targetUserId, event.isBlockedByActor)
+                            } else if (event.targetUserId == myId) {
+                                conversationDao.updateHasBlockedMe(event.actorUserId, event.isBlockedByActor)
+                            }
+                            runCatching { refreshConversations() }
+                            if (privateChatLockManager?.currentTokenOrNull() != null) {
+                                runCatching {
+                                    val resp = api.listPrivateConversations()
+                                    val entities = resp.conversations.map { it.toEntity(forcePrivate = true) }
+                                    if (entities.isEmpty()) {
+                                        conversationDao.deleteAllByPrivacy(isPrivate = true)
+                                    } else {
+                                        conversationDao.deleteMissingByPrivacy(
+                                            isPrivate = true,
+                                            activeIds = entities.map { it.id }
+                                        )
+                                        conversationDao.upsertAll(entities)
+                                    }
+                                }
+                            }
+                        }
+                    }
                     else -> Unit
                 }
             }
@@ -792,7 +818,9 @@ class MessageRepositoryImpl(
                 pendingEntity.copy(
                     mediaFilename = prepared.filename,
                     mediaMimeType = prepared.mimeType,
-                    mediaSizeBytes = prepared.sizeBytes
+                    mediaSizeBytes = prepared.sizeBytes,
+                    mediaWidth = prepared.width,
+                    mediaHeight = prepared.height
                 )
             )
 
@@ -806,8 +834,10 @@ class MessageRepositoryImpl(
             val catBody = category.toRequestBody("text/plain".toMediaTypeOrNull())
             val convBody = conversationId.toRequestBody("text/plain".toMediaTypeOrNull())
             val durBody = durationMs?.toString()?.toRequestBody("text/plain".toMediaTypeOrNull())
+            val widthBody = prepared.width?.toString()?.toRequestBody("text/plain".toMediaTypeOrNull())
+            val heightBody = prepared.height?.toString()?.toRequestBody("text/plain".toMediaTypeOrNull())
 
-            val uploadResp = api.uploadMedia(part, catBody, convBody, durBody)
+            val uploadResp = api.uploadMedia(part, catBody, convBody, durBody, widthBody, heightBody)
             val msgResp = api.sendMessage(
                 SendMessageRequestDto(
                     conversationId = conversationId,
@@ -877,6 +907,10 @@ class MessageRepositoryImpl(
         var retriedCount = 0
         for (entity in pending) {
             if (entity.isPrivate && privateChatLockManager?.currentTokenOrNull() == null) {
+                continue
+            }
+            val conv = conversationDao.getById(entity.conversationId)
+            if (conv != null && (conv.isBlockedByMe || conv.hasBlockedMe)) {
                 continue
             }
             val domain = entity.toDomain()
@@ -1493,7 +1527,9 @@ class PrivateChatRepositoryImpl(
                 pendingEntity.copy(
                     mediaFilename = prepared.filename,
                     mediaMimeType = prepared.mimeType,
-                    mediaSizeBytes = prepared.sizeBytes
+                    mediaSizeBytes = prepared.sizeBytes,
+                    mediaWidth = prepared.width,
+                    mediaHeight = prepared.height
                 )
             )
 
@@ -1507,8 +1543,10 @@ class PrivateChatRepositoryImpl(
             val catBody = category.toRequestBody("text/plain".toMediaTypeOrNull())
             val convBody = conversationId.toRequestBody("text/plain".toMediaTypeOrNull())
             val durBody = durationMs?.toString()?.toRequestBody("text/plain".toMediaTypeOrNull())
+            val widthBody = prepared.width?.toString()?.toRequestBody("text/plain".toMediaTypeOrNull())
+            val heightBody = prepared.height?.toString()?.toRequestBody("text/plain".toMediaTypeOrNull())
 
-            val uploadResp = api.uploadMedia(part, catBody, convBody, durBody)
+            val uploadResp = api.uploadMedia(part, catBody, convBody, durBody, widthBody, heightBody)
             val msgResp = api.sendPrivateMessage(
                 SendMessageRequestDto(
                     conversationId = conversationId,
@@ -1687,6 +1725,8 @@ private fun MessageDto.toEntity(myUserId: String?, forcePrivate: Boolean = isPri
         mediaMimeType = media?.mimeType,
         mediaSizeBytes = media?.sizeBytes,
         mediaDurationMs = media?.durationMs,
+        mediaWidth = media?.width,
+        mediaHeight = media?.height,
         localStatus = if (senderId == myUserId) status else "DELIVERED",
         localUri = null,
         uploadProgress = null,
@@ -1713,7 +1753,9 @@ private fun MessageEntity.toDomain() = Message(
             originalFilename = mediaFilename,
             mimeType = mediaMimeType,
             sizeBytes = mediaSizeBytes ?: 0L,
-            durationMs = mediaDurationMs
+            durationMs = mediaDurationMs,
+            width = mediaWidth,
+            height = mediaHeight
         )
     } else {
         null

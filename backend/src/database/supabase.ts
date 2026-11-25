@@ -436,6 +436,11 @@ export interface DatabaseClient {
     durationSeconds: number
   ): Promise<void>;
   listCallParticipantIds(callId: string): Promise<string[]>;
+  finishActiveCallsBetweenUsers(
+    userA: string,
+    userB: string,
+    nowMs: number
+  ): Promise<Array<{ callId: string; conversationId: string; participantIds: string[] }>>;
   listUserCalls(userId: string, filter: string, limit: number): Promise<CallHistoryQueryRow[]>;
 
   listBlockedUsers(userId: string): Promise<BlockedUserRow[]>;
@@ -1484,6 +1489,64 @@ export class SupabaseDatabase implements DatabaseClient {
       { method: 'GET', headers: this.headers() }
     );
     return rows.map((r) => r.user_id);
+  }
+
+  async finishActiveCallsBetweenUsers(
+    userA: string,
+    userB: string,
+    nowMs: number
+  ): Promise<Array<{ callId: string; conversationId: string; participantIds: string[] }>> {
+    const [rowsA, rowsB] = await Promise.all([
+      this.requestJson<Array<{ call_id: string }>>(
+        `/call_participants?select=call_id&user_id=eq.${this.enc(userA)}`,
+        { method: 'GET', headers: this.headers() }
+      ),
+      this.requestJson<Array<{ call_id: string }>>(
+        `/call_participants?select=call_id&user_id=eq.${this.enc(userB)}`,
+        { method: 'GET', headers: this.headers() }
+      ),
+    ]);
+    const setB = new Set(rowsB.map((r) => r.call_id));
+    const sharedCallIds = Array.from(new Set(rowsA.map((r) => r.call_id).filter((id) => setB.has(id))));
+    if (sharedCallIds.length === 0) return [];
+
+    const inList = sharedCallIds.slice(0, 50).map((id) => this.enc(id)).join(',');
+    const activeCalls = await this.requestJson<
+      Array<{ id: string; conversation_id: string; status: string; answered_at_ms: number | null }>
+    >(
+      `/calls?select=id,conversation_id,status,answered_at_ms&id=in.(${inList})&status=in.(ringing,accepted)`,
+      { method: 'GET', headers: this.headers() }
+    );
+    if (activeCalls.length === 0) return [];
+
+    const terminated: Array<{ callId: string; conversationId: string; participantIds: string[] }> = [];
+    for (const call of activeCalls) {
+      const durationSeconds =
+        call.answered_at_ms && nowMs > call.answered_at_ms
+          ? Math.floor((nowMs - call.answered_at_ms) / 1000)
+          : 0;
+      const participants = await this.listCallParticipantIds(call.id);
+      await this.requestJson<unknown>(`/calls?id=eq.${this.enc(call.id)}`, {
+        method: 'PATCH',
+        headers: this.headers({ Prefer: 'return=minimal' }),
+        body: JSON.stringify({
+          status: 'ended',
+          ended_at_ms: nowMs,
+          duration_seconds: durationSeconds,
+        }),
+      });
+      await this.requestJson<unknown>(`/call_participants?call_id=eq.${this.enc(call.id)}`, {
+        method: 'PATCH',
+        headers: this.headers({ Prefer: 'return=minimal' }),
+        body: JSON.stringify({ state: 'left', left_at_ms: nowMs }),
+      });
+      terminated.push({
+        callId: call.id,
+        conversationId: call.conversation_id,
+        participantIds: participants,
+      });
+    }
+    return terminated;
   }
 
   async listUserCalls(userId: string, filter: string, limit: number): Promise<CallHistoryQueryRow[]> {

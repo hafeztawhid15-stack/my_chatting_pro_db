@@ -38,12 +38,26 @@ open class EncryptedTokenStore(private val context: Context) {
     private val keyCipherPayload = stringPreferencesKey("encrypted_session_blob")
     private val keyOwnerMonitorCipher = stringPreferencesKey("encrypted_owner_key_blob")
 
+    @Volatile
+    private var cachedSession: StoredSession? = null
+
+    @Volatile
+    private var hasLoadedSession = false
+
+    fun currentSessionOrNull(): StoredSession? = if (hasLoadedSession) cachedSession else null
+
     open val sessionFlow: Flow<StoredSession?> = context.tokenDataStore.data.map { prefs ->
-        val encoded = prefs[keyCipherPayload] ?: return@map null
-        decryptSession(encoded)
+        val encoded = prefs[keyCipherPayload]
+        val parsed = encoded?.let { decryptSession(it) }
+        cachedSession = parsed
+        hasLoadedSession = true
+        parsed
     }
 
-    open suspend fun getSession(): StoredSession? = sessionFlow.first()
+    open suspend fun getSession(): StoredSession? {
+        if (hasLoadedSession) return cachedSession
+        return sessionFlow.first()
+    }
 
     open suspend fun saveSession(session: StoredSession) {
         val raw = listOf(
@@ -57,6 +71,8 @@ open class EncryptedTokenStore(private val context: Context) {
         ).joinToString("|")
 
         val encrypted = encryptString(raw)
+        cachedSession = session
+        hasLoadedSession = true
         context.tokenDataStore.edit { prefs ->
             prefs[keyCipherPayload] = encrypted
         }
@@ -95,6 +111,8 @@ open class EncryptedTokenStore(private val context: Context) {
     }
 
     open suspend fun clearSession() {
+        cachedSession = null
+        hasLoadedSession = true
         context.tokenDataStore.edit { it.clear() }
     }
 

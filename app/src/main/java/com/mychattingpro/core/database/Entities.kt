@@ -4,7 +4,13 @@ import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
 
-@Entity(tableName = "cached_conversations")
+@Entity(
+    tableName = "cached_conversations",
+    indices = [
+        Index(value = ["isPrivate", "isPinned", "updatedAtMs"]),
+        Index(value = ["peerUserId"])
+    ]
+)
 data class ConversationEntity(
     @PrimaryKey val id: String,
     val type: String,
@@ -55,6 +61,8 @@ data class MessageEntity(
     val mediaMimeType: String?,
     val mediaSizeBytes: Long?,
     val mediaDurationMs: Long?,
+    val mediaWidth: Int? = null,
+    val mediaHeight: Int? = null,
     val localStatus: String, // SENDING, SENT, DELIVERED, READ, FAILED
     val localUri: String?,
     val uploadProgress: Float?,

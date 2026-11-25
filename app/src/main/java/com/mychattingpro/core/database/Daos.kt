@@ -53,6 +53,9 @@ interface ConversationDao {
     @Query("UPDATE cached_conversations SET isBlockedByMe = :blocked WHERE peerUserId = :peerUserId")
     suspend fun updateBlockedByMe(peerUserId: String, blocked: Boolean)
 
+    @Query("UPDATE cached_conversations SET hasBlockedMe = :blocked, peerIsOnline = CASE WHEN :blocked = 1 THEN 0 ELSE peerIsOnline END, peerLastSeenMs = CASE WHEN :blocked = 1 THEN NULL ELSE peerLastSeenMs END WHERE peerUserId = :peerUserId")
+    suspend fun updateHasBlockedMe(peerUserId: String, blocked: Boolean)
+
     @Query("UPDATE cached_conversations SET isPrivate = :isPrivate WHERE id = :conversationId")
     suspend fun updatePrivateState(conversationId: String, isPrivate: Boolean)
 

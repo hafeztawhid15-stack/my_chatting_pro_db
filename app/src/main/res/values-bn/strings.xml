@@ -110,11 +110,17 @@
     <string name="action_unblock_user">আনব্লক করুন</string>
     <string name="action_report_user">ব্যবহারকারী রিপোর্ট করুন</string>
     <string name="blocked_banner">আপনি এই ব্যবহারকারীকে ব্লক করেছেন। মেসেজ বা কল করতে আনব্লক করুন।</string>
+    <string name="blocked_interaction_unavailable">একে অপরকে ব্লক থাকা অবস্থায় মেসেজ বা কল করা যাবে না।</string>
 
     <string name="attach_image">ছবি</string>
     <string name="attach_video">ভিডিও</string>
     <string name="attach_file">ফাইল / ডকুমেন্ট</string>
     <string name="attach_voice">ভয়েস নোট</string>
+    <string name="voice_loading">অডিও লোড হচ্ছে…</string>
+    <string name="voice_play_error">অডিও চালানো যায়নি</string>
+    <string name="media_load_error">মিডিয়া লোড করা যায়নি</string>
+    <string name="media_retry">আবার চেষ্টা করুন</string>
+    <string name="video_playback_error">ভিডিওটি চালানো যায়নি। আবার লোড করতে রিট্রাই চাপুন।</string>
     <string name="dangerous_file_title">নিরাপত্তা সতর্কতা</string>
     <string name="dangerous_file_warning">এই ফাইলটি (%1$s) একটি এক্সিকিউটেবল বা আর্কাইভ (%2$s)। শুধুমাত্র বিশ্বস্ত ব্যক্তির ফাইল ডাউনলোড ও ওপেন করুন।</string>
     <string name="action_download_open">ডাউনলোড ও খুলুন</string>
@@ -137,6 +143,7 @@
     <string name="call_speaker">স্পিকার</string>
     <string name="call_flip_camera">ক্যামেরা ঘোরান</string>
     <string name="call_camera_off">ক্যামেরা বন্ধ</string>
+    <string name="call_swap_video">ভিডিও বদলান</string>
 
     <string name="settings_owner_label">ডেভেলপার ও স্বত্বাধিকারী</string>
     <string name="settings_owner_name">TAWHID SHAKH</string>

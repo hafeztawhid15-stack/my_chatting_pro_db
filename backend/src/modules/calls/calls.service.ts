@@ -211,6 +211,7 @@ export class CallsService {
     const otherParticipants = participants.filter((pid) => pid !== userId);
 
     if (action === 'accept') {
+      await this.assertNoBlockWithPeers(userId, otherParticipants, callId);
       await this.db.acceptCallTx(callId, userId, now);
       const envelope: RealtimeEnvelope = {
         eventId: `call_state:${callId}:accepted:${now}`,
@@ -316,6 +317,10 @@ export class CallsService {
       return { ok: true, deliveredTo: 0 };
     }
 
+    if (signalType !== 'call.end' && signalType !== 'call.reject') {
+      await this.assertNoBlockWithPeers(userId, recipients, callId);
+    }
+
     const now = Date.now();
     const safePayload: Record<string, unknown> = {
       ...(input.payload ?? {}),
@@ -345,10 +350,13 @@ export class CallsService {
     callId: string,
     afterMs = 0
   ): Promise<{ signals: RealtimeEnvelope[] }> {
-    const isParticipant = await this.db.isCallParticipant(callId, userId);
-    if (!isParticipant) {
+    const participants = await this.db.listCallParticipantIds(callId);
+    if (!participants.includes(userId)) {
       throw new ApiError(403, 'forbidden_call', 'You are not a participant of this call.');
     }
+
+    const otherParticipants = participants.filter((pid) => pid !== userId);
+    await this.assertNoBlockWithPeers(userId, otherParticipants, callId);
 
     const stub = this.env.USER_COORDINATOR.get(this.env.USER_COORDINATOR.idFromName(userId));
     const url = `https://do.internal/internal/call-signals?callId=${encodeURIComponent(callId)}&afterMs=${encodeURIComponent(String(afterMs))}`;
@@ -358,6 +366,59 @@ export class CallsService {
     }
     const data = (await res.json()) as { signals?: RealtimeEnvelope[] };
     return { signals: Array.isArray(data.signals) ? data.signals : [] };
+  }
+
+  async terminateActiveCallsBetween(userA: string, userB: string, actorUserId: string): Promise<void> {
+    const now = Date.now();
+    const terminated = await this.db.finishActiveCallsBetweenUsers(userA, userB, now);
+    if (terminated.length === 0) return;
+
+    await Promise.allSettled(
+      terminated.flatMap((call) => {
+        const stateEnvelope: RealtimeEnvelope = {
+          eventId: `call_state:${call.callId}:ended_block:${now}`,
+          type: 'call.state',
+          timestampMs: now,
+          payload: {
+            callId: call.callId,
+            conversationId: call.conversationId,
+            status: 'ended',
+            reason: 'user_blocked',
+            byUserId: actorUserId,
+          },
+        };
+        const endEnvelope: RealtimeEnvelope = {
+          eventId: `call_end:${call.callId}:block:${now}`,
+          type: 'call.end',
+          timestampMs: now,
+          payload: {
+            callId: call.callId,
+            conversationId: call.conversationId,
+            reason: 'user_blocked',
+            fromUserId: actorUserId,
+          },
+        };
+        return call.participantIds.flatMap((pid) => [
+          dispatchUserEventAndPush(this.env, this.db, pid, stateEnvelope),
+          dispatchUserEventAndPush(this.env, this.db, pid, endEnvelope),
+        ]);
+      })
+    );
+  }
+
+  private async assertNoBlockWithPeers(
+    userId: string,
+    peerIds: string[],
+    callId?: string
+  ): Promise<void> {
+    for (const pid of peerIds) {
+      if (await this.db.isBlockedBetween(userId, pid)) {
+        if (callId) {
+          await this.db.finishActiveCallsBetweenUsers(userId, pid, Date.now()).catch(() => undefined);
+        }
+        throw new ApiError(403, 'user_blocked', 'Calling is unavailable because a block exists.');
+      }
+    }
   }
 
   async getCallHistory(userId: string, filterRaw?: string, limitRaw?: number) {

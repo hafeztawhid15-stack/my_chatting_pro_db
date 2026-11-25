@@ -1,7 +1,10 @@
 package com.mychattingpro
 
+import android.app.Activity
 import android.app.Application
 import android.content.Context
+import android.os.Bundle
+import com.example.R
 import com.mychattingpro.core.database.MyChattingProDatabase
 import com.mychattingpro.core.datastore.AppPreferencesDataStore
 import com.mychattingpro.core.network.NetworkModule
@@ -145,7 +148,11 @@ class AppContainer(context: Context) {
     private val _externalCallAccept = MutableSharedFlow<String>(extraBufferCapacity = 8)
     val externalCallAccept: SharedFlow<String> = _externalCallAccept.asSharedFlow()
 
+    @Volatile
     var activeConversationId: String? = null
+
+    @Volatile
+    var isAppInForeground: Boolean = false
 
     init {
         appScope.launch {
@@ -213,12 +220,15 @@ class AppContainer(context: Context) {
                         }
                     }
                     is RealtimeEvent.MessageNew -> {
-                        val myId = tokenStore.getSession()?.userId
+                        val myId = tokenStore.currentSessionOrNull()?.userId ?: tokenStore.getSession()?.userId
                         if (myId != null &&
                             event.message.senderId != myId &&
                             event.message.conversationId != activeConversationId
                         ) {
                             val conv = database.conversationDao().getById(event.message.conversationId)
+                            if (conv?.isBlockedByMe == true || conv?.hasBlockedMe == true) {
+                                return@collect
+                            }
                             val mutedUntil = conv?.mutedUntilMs
                             if (mutedUntil != null && mutedUntil > System.currentTimeMillis()) {
                                 return@collect
@@ -229,20 +239,43 @@ class AppContainer(context: Context) {
                                     prefs = prefs,
                                     mutedUntilMs = conv?.mutedUntilMs,
                                     customSoundUri = conv?.customSoundUri,
-                                    eventId = event.message.id
+                                    eventId = event.message.id,
+                                    isAppForeground = isAppInForeground
                                 )
                             } else {
                                 val senderTitle = conv?.peerDisplayName?.ifBlank { "MY CHATTING PRO" } ?: "MY CHATTING PRO"
+                                val previewBody = event.message.bodyText?.takeIf { it.isNotBlank() }
+                                    ?: when (event.message.messageType.lowercase()) {
+                                        "image" -> appContext.getString(R.string.reply_quoted_photo)
+                                        "video" -> appContext.getString(R.string.reply_quoted_video)
+                                        "voice" -> appContext.getString(R.string.reply_quoted_voice)
+                                        "audio" -> appContext.getString(R.string.reply_quoted_audio)
+                                        "file" -> event.message.media?.originalFilename
+                                            ?.takeIf { it.isNotBlank() }
+                                            ?: appContext.getString(R.string.reply_quoted_file)
+                                        else -> appContext.getString(R.string.notif_new_message_body)
+                                    }
                                 notificationManager.showNewMessageNotification(
                                     senderName = senderTitle,
                                     conversationId = event.message.conversationId,
-                                    previewText = event.message.bodyText,
+                                    previewText = previewBody,
                                     prefs = prefs,
                                     mutedUntilMs = conv?.mutedUntilMs,
                                     customSoundUri = conv?.customSoundUri,
-                                    eventId = event.message.id
+                                    eventId = event.message.id,
+                                    isAppForeground = isAppInForeground
                                 )
                             }
+                        }
+                    }
+                    is RealtimeEvent.BlockStatusChanged -> {
+                        val currentCall = _incomingCall.value
+                        if (currentCall != null &&
+                            event.blockedBetween &&
+                            (currentCall.callerId == event.actorUserId || currentCall.callerId == event.targetUserId)
+                        ) {
+                            stopIncomingCallAlert(currentCall.callId)
+                            _incomingCall.value = null
                         }
                     }
                     is RealtimeEvent.SecurityAlert -> {
@@ -318,9 +351,28 @@ class MyChattingProApp : Application() {
     lateinit var container: AppContainer
         private set
 
+    private var startedActivityCount = 0
+
     override fun onCreate() {
         super.onCreate()
         container = AppContainer(this)
+        registerActivityLifecycleCallbacks(object : ActivityLifecycleCallbacks {
+            override fun onActivityStarted(activity: Activity) {
+                startedActivityCount++
+                container.isAppInForeground = startedActivityCount > 0
+            }
+
+            override fun onActivityStopped(activity: Activity) {
+                startedActivityCount = (startedActivityCount - 1).coerceAtLeast(0)
+                container.isAppInForeground = startedActivityCount > 0
+            }
+
+            override fun onActivityCreated(activity: Activity, savedInstanceState: Bundle?) {}
+            override fun onActivityResumed(activity: Activity) {}
+            override fun onActivityPaused(activity: Activity) {}
+            override fun onActivitySaveInstanceState(activity: Activity, outState: Bundle) {}
+            override fun onActivityDestroyed(activity: Activity) {}
+        })
         container.interstitialAdManager.attachApplication(this)
         container.interstitialAdManager.initialize()
         BackgroundSyncJobService.schedule(this)

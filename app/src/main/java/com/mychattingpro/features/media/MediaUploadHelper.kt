@@ -6,6 +6,7 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Matrix
 import android.media.ExifInterface
+import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
@@ -27,7 +28,9 @@ data class PreparedMediaFile(
     val file: File,
     val filename: String,
     val mimeType: String,
-    val sizeBytes: Long
+    val sizeBytes: Long,
+    val width: Int? = null,
+    val height: Int? = null
 )
 
 object MediaUploadHelper {
@@ -36,6 +39,11 @@ object MediaUploadHelper {
     private const val MAX_IMAGE_BYTES: Long = 10L * 1024L * 1024L
     private val dangerousExtensions = setOf("apk", "exe", "bat", "cmd", "sh", "msi", "zip", "rar")
     private val directImageMimes = setOf("image/jpeg", "image/jpg", "image/png", "image/webp", "image/gif")
+
+    fun computeBubbleAspectRatio(width: Int?, height: Int?): Float? {
+        if (width == null || height == null || width <= 0 || height <= 0) return null
+        return (width.toFloat() / height.toFloat()).coerceIn(0.6f, 1.9f)
+    }
 
     fun isDangerousFile(filename: String): Boolean {
         val ext = filename.substringAfterLast('.', "").lowercase()
@@ -99,6 +107,19 @@ object MediaUploadHelper {
             throw AppException(AppError.StorageFailure)
         }
 
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(stagedFile.absolutePath, bounds)
+        val orientation = runCatching {
+            ExifInterface(stagedFile.absolutePath).getAttributeInt(
+                ExifInterface.TAG_ORIENTATION,
+                ExifInterface.ORIENTATION_NORMAL
+            )
+        }.getOrDefault(ExifInterface.ORIENTATION_NORMAL)
+        val rawW = bounds.outWidth.takeIf { it > 0 }
+        val rawH = bounds.outHeight.takeIf { it > 0 }
+        val rotated90 = orientation == ExifInterface.ORIENTATION_ROTATE_90 ||
+            orientation == ExifInterface.ORIENTATION_ROTATE_270
+
         // Preserve animated GIFs or already-valid raw images if bitmap decode isn't needed/fails
         if (inferredMime == "image/gif" && stagedFile.length() <= MAX_IMAGE_BYTES) {
             val gifFile = File(tempDir, "img_${UUID.randomUUID()}.gif")
@@ -107,20 +128,12 @@ object MediaUploadHelper {
                     file = gifFile,
                     filename = originalName.substringBeforeLast('.') + ".gif",
                     mimeType = "image/gif",
-                    sizeBytes = gifFile.length()
+                    sizeBytes = gifFile.length(),
+                    width = rawW,
+                    height = rawH
                 )
             }
         }
-
-        val orientation = runCatching {
-            ExifInterface(stagedFile.absolutePath).getAttributeInt(
-                ExifInterface.TAG_ORIENTATION,
-                ExifInterface.ORIENTATION_NORMAL
-            )
-        }.getOrDefault(ExifInterface.ORIENTATION_NORMAL)
-
-        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        BitmapFactory.decodeFile(stagedFile.absolutePath, bounds)
 
         var sampleSize = 1
         while (bounds.outWidth > 0 && bounds.outHeight > 0 &&
@@ -159,7 +172,9 @@ object MediaUploadHelper {
                         file = directFile,
                         filename = originalName.substringBeforeLast('.') + ".$ext",
                         mimeType = normalizedMime,
-                        sizeBytes = directFile.length()
+                        sizeBytes = directFile.length(),
+                        width = if (rotated90) rawH else rawW,
+                        height = if (rotated90) rawW else rawH
                     )
                 }
             }
@@ -169,6 +184,8 @@ object MediaUploadHelper {
         }
 
         val orientedBitmap = applyExifOrientation(decoded, orientation)
+        val outWidth = orientedBitmap.width.takeIf { it > 0 }
+        val outHeight = orientedBitmap.height.takeIf { it > 0 }
 
         try {
             FileOutputStream(outFile).use { fos ->
@@ -196,7 +213,9 @@ object MediaUploadHelper {
             file = outFile,
             filename = jpegName,
             mimeType = "image/jpeg",
-            sizeBytes = outFile.length()
+            sizeBytes = outFile.length(),
+            width = outWidth,
+            height = outHeight
         )
     }
 
@@ -233,11 +252,38 @@ object MediaUploadHelper {
             throw AppException(AppError.StorageFailure)
         }
 
+        var mediaWidth: Int? = null
+        var mediaHeight: Int? = null
+        if (mimeType.startsWith("video/", ignoreCase = true)) {
+            runCatching {
+                val retriever = MediaMetadataRetriever()
+                try {
+                    retriever.setDataSource(outFile.absolutePath)
+                    val w = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toIntOrNull()
+                    val h = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toIntOrNull()
+                    val rot = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)?.toIntOrNull() ?: 0
+                    if (w != null && h != null && w > 0 && h > 0) {
+                        if (rot == 90 || rot == 270) {
+                            mediaWidth = h
+                            mediaHeight = w
+                        } else {
+                            mediaWidth = w
+                            mediaHeight = h
+                        }
+                    }
+                } finally {
+                    retriever.release()
+                }
+            }
+        }
+
         PreparedMediaFile(
             file = outFile,
             filename = displayName,
             mimeType = mimeType,
-            sizeBytes = outFile.length()
+            sizeBytes = outFile.length(),
+            width = mediaWidth,
+            height = mediaHeight
         )
     }
 

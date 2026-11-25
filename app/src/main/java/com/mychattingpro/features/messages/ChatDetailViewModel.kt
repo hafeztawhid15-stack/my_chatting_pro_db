@@ -64,6 +64,11 @@ data class ChatDetailUiState(
     val uploadProgressByClientId: Map<String, Float> = emptyMap(),
     val activeAudioMessageId: String? = null,
     val isAudioPlaying: Boolean = false,
+    val isAudioPaused: Boolean = false,
+    val isAudioLoading: Boolean = false,
+    val audioPositionMs: Long = 0L,
+    val audioDurationMs: Long = 0L,
+    val audioErrorMessageId: String? = null,
     val pendingMediaPreviewUri: Uri? = null,
     val pendingMediaIsVideo: Boolean = false,
     val downloadingMessageId: String? = null,
@@ -127,7 +132,10 @@ class ChatDetailViewModel(
         private set
 
     private val uploadJobs = mutableMapOf<String, Job>()
+    private val submittedReadIds = java.util.Collections.synchronizedSet(mutableSetOf<String>())
     private var typingTimeoutJob: Job? = null
+    private var audioLoadJob: Job? = null
+    private var audioProgressJob: Job? = null
     private var audioPlayer: MediaPlayer? = null
     private var playbackFocusRequest: AudioFocusRequest? = null
     private val playbackFocusListener = AudioManager.OnAudioFocusChangeListener { }
@@ -142,7 +150,7 @@ class ChatDetailViewModel(
         }
 
         viewModelScope.launch {
-            myUserId = tokenStore.getSession()?.userId
+            myUserId = tokenStore.currentSessionOrNull()?.userId ?: tokenStore.getSession()?.userId
             val res = if (isPrivate && privateChatRepository != null) {
                 privateChatRepository.loadLatestPrivateMessages(conversationId)
             } else {
@@ -156,18 +164,30 @@ class ChatDetailViewModel(
             }
         }
 
-        // Mark incoming messages read whenever messages update
+        // Mark incoming messages read (deduplicated) and reveal cached messages immediately
         viewModelScope.launch {
             messages.collect { list ->
-                val mine = myUserId ?: return@collect
+                if (list.isNotEmpty() && _uiState.value.isLoadingInitial) {
+                    _uiState.value = _uiState.value.copy(isLoadingInitial = false)
+                }
+                val mine = myUserId ?: tokenStore.currentSessionOrNull()?.userId ?: return@collect
                 val unreadIds = list
-                    .filter { it.senderId != mine && it.readAtMs == null && !it.id.startsWith("pending_") }
+                    .filter {
+                        it.senderId != mine &&
+                            it.readAtMs == null &&
+                            !it.id.startsWith("pending_") &&
+                            !submittedReadIds.contains(it.id)
+                    }
                     .map { it.id }
                 if (unreadIds.isNotEmpty()) {
-                    if (isPrivate && privateChatRepository != null) {
+                    submittedReadIds.addAll(unreadIds)
+                    val receiptRes = if (isPrivate && privateChatRepository != null) {
                         privateChatRepository.markPrivateReceipts(conversationId, unreadIds, read = true)
                     } else {
                         messageRepository.markReceipts(conversationId, unreadIds, read = true)
+                    }
+                    receiptRes.onFailure {
+                        submittedReadIds.removeAll(unreadIds.toSet())
                     }
                 }
             }
@@ -185,16 +205,20 @@ class ChatDetailViewModel(
             }
         }
 
-        // Periodic presence refresh while conversation screen is open
+        // Presence heartbeat & smart fallback refresh (skip frequent HTTP polling when WS is healthy)
         viewModelScope.launch {
+            var pollCycle = 0
             while (isActive) {
                 delay(25_000L)
+                pollCycle++
                 if (networkMonitor.isOnline.value) {
                     socketManager.sendPresencePing()
-                    if (isPrivate && privateChatRepository != null) {
-                        privateChatRepository.refreshPrivateConversations()
-                    } else {
-                        chatRepository.refreshConversations()
+                    if (!socketManager.isConnected() || pollCycle % 4 == 0) {
+                        if (isPrivate && privateChatRepository != null) {
+                            privateChatRepository.refreshPrivateConversations()
+                        } else {
+                            chatRepository.refreshConversations()
+                        }
                     }
                 }
             }
@@ -416,9 +440,33 @@ class ChatDetailViewModel(
     }
 
     fun toggleVoiceMessagePlayback(message: Message) {
-        if (_uiState.value.activeAudioMessageId == message.id && _uiState.value.isAudioPlaying) {
-            stopAudioPlayback()
-            return
+        val currentState = _uiState.value
+        if (currentState.activeAudioMessageId == message.id) {
+            if (currentState.isAudioLoading) return
+            val existingPlayer = audioPlayer
+            if (existingPlayer != null) {
+                if (currentState.isAudioPlaying) {
+                    runCatching { existingPlayer.pause() }
+                    audioProgressJob?.cancel()
+                    audioProgressJob = null
+                    _uiState.value = _uiState.value.copy(
+                        isAudioPlaying = false,
+                        isAudioPaused = true
+                    )
+                    return
+                } else if (currentState.isAudioPaused) {
+                    val am = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+                    if (am != null) requestPlaybackFocus(am)
+                    runCatching { existingPlayer.start() }
+                    _uiState.value = _uiState.value.copy(
+                        isAudioPlaying = true,
+                        isAudioPaused = false,
+                        audioErrorMessageId = null
+                    )
+                    startAudioProgressTicker(message.id)
+                    return
+                }
+            }
         }
 
         val mediaId = message.media?.id
@@ -426,13 +474,19 @@ class ChatDetailViewModel(
         if (mediaId == null && localUriString.isNullOrBlank()) return
 
         stopAudioPlayback()
+        val initialDurationMs = (message.media?.durationMs ?: 0L).coerceAtLeast(0L)
         _uiState.value = _uiState.value.copy(
             activeAudioMessageId = message.id,
-            isAudioPlaying = true,
+            isAudioPlaying = false,
+            isAudioPaused = false,
+            isAudioLoading = true,
+            audioPositionMs = 0L,
+            audioDurationMs = initialDurationMs,
+            audioErrorMessageId = null,
             error = null
         )
 
-        viewModelScope.launch {
+        audioLoadJob = viewModelScope.launch {
             val resolvedFile = withContext(Dispatchers.IO) {
                 // 1. Prefer valid local file if available (for instant playback of own or cached notes)
                 if (!localUriString.isNullOrBlank()) {
@@ -455,8 +509,7 @@ class ChatDetailViewModel(
 
                 // 2. Download via authenticated Cloudflare /v1/media/{id}/content (carries JWT & Private unlock token)
                 val primaryUrl = "${baseUrl}v1/media/$mediaId/content"
-                val primarySuccess = downloadAudioToFile(primaryUrl, cachedFile)
-                if (primarySuccess) {
+                if (downloadAudioToFile(primaryUrl, cachedFile)) {
                     return@withContext Result.success(cachedFile)
                 }
 
@@ -469,78 +522,124 @@ class ChatDetailViewModel(
                 Result.failure(IllegalStateException("Failed to fetch voice audio"))
             }
 
+            if (_uiState.value.activeAudioMessageId != message.id) return@launch
+
             resolvedFile.onSuccess { audioFile ->
-                runCatching {
-                    val am = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
-                    if (am != null) {
-                        @Suppress("DEPRECATION")
-                        am.isSpeakerphoneOn = false
-                        am.mode = AudioManager.MODE_NORMAL
-                        requestPlaybackFocus(am)
-                    }
-                    val attrs = AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_MEDIA)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                        .build()
-                    val player = MediaPlayer().apply {
-                        setAudioAttributes(attrs)
+                startPreparedMediaPlayer(
+                    messageId = message.id,
+                    configureDataSource = { player ->
                         FileInputStream(audioFile).use { fis ->
-                            setDataSource(fis.fd)
+                            player.setDataSource(fis.fd)
                         }
-                        setVolume(1.0f, 1.0f)
-                        setOnPreparedListener { mp -> mp.start() }
-                        setOnCompletionListener {
-                            stopAudioPlayback()
-                        }
-                        setOnErrorListener { _, _, _ ->
-                            stopAudioPlayback()
-                            _uiState.value = _uiState.value.copy(error = AppError.StorageFailure)
-                            true
-                        }
-                        prepareAsync()
                     }
-                    audioPlayer = player
-                }.onFailure {
-                    stopAudioPlayback()
-                    _uiState.value = _uiState.value.copy(error = AppError.StorageFailure)
-                }
+                )
             }.onFailure {
                 // Handle content:// localUri directly if File copy wasn't used
                 if (!localUriString.isNullOrBlank() && Uri.parse(localUriString).scheme == "content") {
-                    runCatching {
-                        val am = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
-                        if (am != null) {
-                            @Suppress("DEPRECATION")
-                            am.isSpeakerphoneOn = false
-                            am.mode = AudioManager.MODE_NORMAL
-                            requestPlaybackFocus(am)
+                    startPreparedMediaPlayer(
+                        messageId = message.id,
+                        configureDataSource = { player ->
+                            player.setDataSource(context, Uri.parse(localUriString))
                         }
-                        val attrs = AudioAttributes.Builder()
-                            .setUsage(AudioAttributes.USAGE_MEDIA)
-                            .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                            .build()
-                        val player = MediaPlayer().apply {
-                            setAudioAttributes(attrs)
-                            setDataSource(context, Uri.parse(localUriString))
-                            setVolume(1.0f, 1.0f)
-                            setOnPreparedListener { mp -> mp.start() }
-                            setOnCompletionListener { stopAudioPlayback() }
-                            setOnErrorListener { _, _, _ ->
-                                stopAudioPlayback()
-                                _uiState.value = _uiState.value.copy(error = AppError.StorageFailure)
-                                true
-                            }
-                            prepareAsync()
-                        }
-                        audioPlayer = player
-                    }.onFailure {
-                        stopAudioPlayback()
-                        _uiState.value = _uiState.value.copy(error = AppError.StorageFailure)
-                    }
+                    )
                 } else {
                     stopAudioPlayback()
-                    _uiState.value = _uiState.value.copy(error = AppError.StorageFailure)
+                    _uiState.value = _uiState.value.copy(
+                        audioErrorMessageId = message.id,
+                        error = AppError.StorageFailure
+                    )
                 }
+            }
+        }
+    }
+
+    fun seekVoiceMessage(messageId: String, positionMs: Long) {
+        val state = _uiState.value
+        val player = audioPlayer ?: return
+        if (state.activeAudioMessageId != messageId || state.isAudioLoading) return
+        val maxDur = state.audioDurationMs.coerceAtLeast(0L)
+        val clamped = positionMs.coerceIn(0L, maxDur)
+        runCatching { player.seekTo(clamped.toInt()) }
+        _uiState.value = _uiState.value.copy(audioPositionMs = clamped)
+    }
+
+    private fun startPreparedMediaPlayer(
+        messageId: String,
+        configureDataSource: (MediaPlayer) -> Unit
+    ) {
+        runCatching {
+            val am = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+            if (am != null) {
+                @Suppress("DEPRECATION")
+                am.isSpeakerphoneOn = false
+                am.mode = AudioManager.MODE_NORMAL
+                requestPlaybackFocus(am)
+            }
+            val attrs = AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_MEDIA)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                .build()
+            val player = MediaPlayer().apply {
+                setAudioAttributes(attrs)
+                configureDataSource(this)
+                setVolume(1.0f, 1.0f)
+                setOnPreparedListener { mp ->
+                    if (_uiState.value.activeAudioMessageId != messageId) {
+                        runCatching { mp.release() }
+                        return@setOnPreparedListener
+                    }
+                    val realDuration = mp.duration.takeIf { it > 0 }?.toLong()
+                        ?: _uiState.value.audioDurationMs
+                    mp.start()
+                    _uiState.value = _uiState.value.copy(
+                        isAudioLoading = false,
+                        isAudioPlaying = true,
+                        isAudioPaused = false,
+                        audioDurationMs = realDuration,
+                        audioPositionMs = 0L,
+                        audioErrorMessageId = null
+                    )
+                    startAudioProgressTicker(messageId)
+                }
+                setOnCompletionListener {
+                    stopAudioPlayback()
+                }
+                setOnErrorListener { _, _, _ ->
+                    stopAudioPlayback()
+                    _uiState.value = _uiState.value.copy(
+                        audioErrorMessageId = messageId,
+                        error = AppError.StorageFailure
+                    )
+                    true
+                }
+                prepareAsync()
+            }
+            audioPlayer = player
+        }.onFailure {
+            stopAudioPlayback()
+            _uiState.value = _uiState.value.copy(
+                audioErrorMessageId = messageId,
+                error = AppError.StorageFailure
+            )
+        }
+    }
+
+    private fun startAudioProgressTicker(messageId: String) {
+        audioProgressJob?.cancel()
+        audioProgressJob = viewModelScope.launch {
+            while (isActive) {
+                val player = audioPlayer
+                val current = _uiState.value
+                if (player == null || current.activeAudioMessageId != messageId || !current.isAudioPlaying) {
+                    break
+                }
+                val pos = runCatching { player.currentPosition.toLong() }.getOrDefault(current.audioPositionMs)
+                val dur = runCatching { player.duration.toLong() }.getOrDefault(0L)
+                _uiState.value = _uiState.value.copy(
+                    audioPositionMs = pos.coerceAtLeast(0L),
+                    audioDurationMs = if (dur > 0L) dur else current.audioDurationMs
+                )
+                delay(100L)
             }
         }
     }
@@ -1030,6 +1129,10 @@ class ChatDetailViewModel(
     }
 
     private fun stopAudioPlayback() {
+        audioLoadJob?.cancel()
+        audioLoadJob = null
+        audioProgressJob?.cancel()
+        audioProgressJob = null
         runCatching {
             if (audioPlayer?.isPlaying == true) {
                 audioPlayer?.stop()
@@ -1041,7 +1144,14 @@ class ChatDetailViewModel(
         if (am != null) {
             abandonPlaybackFocus(am)
         }
-        _uiState.value = _uiState.value.copy(activeAudioMessageId = null, isAudioPlaying = false)
+        _uiState.value = _uiState.value.copy(
+            activeAudioMessageId = null,
+            isAudioPlaying = false,
+            isAudioPaused = false,
+            isAudioLoading = false,
+            audioPositionMs = 0L,
+            audioDurationMs = 0L
+        )
     }
 
     private fun requestPlaybackFocus(am: AudioManager) {

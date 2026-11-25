@@ -69,6 +69,12 @@ sealed interface RealtimeEvent {
         val body: String,
         val eventId: String
     ) : RealtimeEvent
+    data class BlockStatusChanged(
+        val actorUserId: String,
+        val targetUserId: String,
+        val isBlockedByActor: Boolean,
+        val blockedBetween: Boolean
+    ) : RealtimeEvent
 }
 
 class RealtimeSocketManager(
@@ -203,7 +209,7 @@ class RealtimeSocketManager(
         ) return
 
         scope.launch {
-            val session = tokenStore.getSession() ?: run {
+            val session = tokenStore.currentSessionOrNull() ?: tokenStore.getSession() ?: run {
                 _connectionState.value = SocketConnectionState.DISCONNECTED
                 return@launch
             }
@@ -427,7 +433,9 @@ class RealtimeSocketManager(
                                 originalFilename = it.optString("originalFilename", "file"),
                                 mimeType = it.optString("mimeType", "application/octet-stream"),
                                 sizeBytes = it.optLong("sizeBytes", 0L),
-                                durationMs = if (it.isNull("durationMs")) null else it.optLong("durationMs")
+                                durationMs = if (it.isNull("durationMs")) null else it.optLong("durationMs"),
+                                width = if (it.isNull("width")) null else it.optInt("width").takeIf { w -> w > 0 },
+                                height = if (it.isNull("height")) null else it.optInt("height").takeIf { h -> h > 0 }
                             )
                         },
                         replyToMessageId = if (msgObj.isNull("replyToMessageId")) null else msgObj.optString("replyToMessageId").takeIf { it.isNotBlank() },
@@ -525,6 +533,16 @@ class RealtimeSocketManager(
                             title = payload.optString("title", "Account Security Alert"),
                             body = payload.optString("body", "Security activity detected on your account."),
                             eventId = eventId
+                        )
+                    )
+                }
+                "safety.block_changed" -> {
+                    _events.tryEmit(
+                        RealtimeEvent.BlockStatusChanged(
+                            actorUserId = payload.optString("actorUserId"),
+                            targetUserId = payload.optString("targetUserId"),
+                            isBlockedByActor = payload.optBoolean("isBlockedByActor", false),
+                            blockedBetween = payload.optBoolean("blockedBetween", false)
                         )
                     )
                 }

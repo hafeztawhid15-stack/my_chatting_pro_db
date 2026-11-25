@@ -21,6 +21,7 @@ export type RealtimeEventType =
   | 'call.missed'
   | 'call.state'
   | 'security.alert'
+  | 'safety.block_changed'
   | 'conversation.updated';
 
 export interface RealtimeEnvelope<T = Record<string, unknown>> {

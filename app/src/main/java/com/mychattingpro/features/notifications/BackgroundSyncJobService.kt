@@ -6,11 +6,13 @@ import android.app.job.JobScheduler
 import android.app.job.JobService
 import android.content.ComponentName
 import android.content.Context
+import com.example.R
 import com.mychattingpro.MyChattingProApp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 /**
@@ -26,14 +28,55 @@ class BackgroundSyncJobService : JobService() {
         jobScope?.launch {
             try {
                 val container = app.container
-                if (container.tokenStore.getSession() != null) {
+                val session = container.tokenStore.currentSessionOrNull() ?: container.tokenStore.getSession()
+                if (session != null) {
                     val prefs = container.prefsStore.current()
                     if (prefs.backgroundSyncEnabled && prefs.notificationsEnabled) {
                         RealtimeSyncService.start(applicationContext)
                     }
                     runCatching { container.messageRepository.retryAllPendingMessages() }
-                    runCatching { container.chatRepository.refreshConversations() }
+                    val refreshed = runCatching { container.chatRepository.refreshConversations() }.isSuccess
                     runCatching { container.authRepository.syncNotificationEndpoint() }
+
+                    // Notify missed unread messages if background sync caught messages while WebSocket was dormant
+                    if (refreshed && prefs.notificationsEnabled && !container.isAppInForeground) {
+                        runCatching {
+                            val conversations = container.database.conversationDao().observeConversations().first()
+                            val now = System.currentTimeMillis()
+                            conversations.forEach { conv ->
+                                val isMuted = conv.mutedUntilMs != null && conv.mutedUntilMs > now
+                                val lastMsgId = conv.lastMessageId
+                                if (!conv.isBlockedByMe &&
+                                    !conv.hasBlockedMe &&
+                                    !isMuted &&
+                                    conv.unreadCount > 0 &&
+                                    lastMsgId != null &&
+                                    conv.lastMessageSenderId != session.userId &&
+                                    conv.id != container.activeConversationId
+                                ) {
+                                    val preview = conv.lastMessagePreview?.takeIf { it.isNotBlank() }
+                                        ?: when (conv.lastMessageType?.lowercase()) {
+                                            "image" -> applicationContext.getString(R.string.reply_quoted_photo)
+                                            "video" -> applicationContext.getString(R.string.reply_quoted_video)
+                                            "voice" -> applicationContext.getString(R.string.reply_quoted_voice)
+                                            "audio" -> applicationContext.getString(R.string.reply_quoted_audio)
+                                            "file" -> applicationContext.getString(R.string.reply_quoted_file)
+                                            else -> applicationContext.getString(R.string.notif_new_message_body)
+                                        }
+                                    container.notificationManager.showNewMessageNotification(
+                                        senderName = conv.peerDisplayName.ifBlank { applicationContext.getString(R.string.app_name) },
+                                        conversationId = conv.id,
+                                        previewText = preview,
+                                        prefs = prefs,
+                                        mutedUntilMs = conv.mutedUntilMs,
+                                        customSoundUri = conv.customSoundUri,
+                                        eventId = lastMsgId,
+                                        isAppForeground = false
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
             } finally {
                 jobFinished(params, false)

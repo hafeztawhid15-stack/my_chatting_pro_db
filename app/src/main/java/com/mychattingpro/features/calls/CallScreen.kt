@@ -6,8 +6,12 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -15,6 +19,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -26,6 +31,7 @@ import androidx.compose.material.icons.rounded.CallEnd
 import androidx.compose.material.icons.rounded.Cameraswitch
 import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.MicOff
+import androidx.compose.material.icons.rounded.SwapHoriz
 import androidx.compose.material.icons.rounded.Videocam
 import androidx.compose.material.icons.rounded.VideocamOff
 import androidx.compose.material.icons.rounded.VolumeUp
@@ -41,18 +47,23 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
@@ -64,6 +75,7 @@ import com.mychattingpro.features.common.PresenceBadge
 import com.mychattingpro.features.common.UserAvatar
 import org.webrtc.RendererCommon
 import org.webrtc.SurfaceViewRenderer
+import kotlin.math.roundToInt
 
 @Composable
 fun CallScreen(
@@ -176,48 +188,118 @@ fun CallScreen(
             )
     ) {
         if (state.isVideo && permissionsGranted) {
-            // Remote video full-screen surface
-            val remoteRenderer = remember {
+            var isLocalVideoPrimary by rememberSaveable { mutableStateOf(false) }
+
+            // Primary full-screen surface (default: Remote user)
+            val primaryRenderer = remember {
                 SurfaceViewRenderer(context).apply {
                     init(viewModel.webRtcManager.eglBase.eglBaseContext, null)
-                    setScalingType(RendererCommon.ScalingType.SCALE_ASPECT_FILL)
+                    setScalingType(RendererCommon.ScalingType.SCALE_ASPECT_FIT)
                     setEnableHardwareScaler(true)
                 }
             }
-            val localRenderer = remember {
+            // Small floating corner PiP surface (default: Local user)
+            val pipRenderer = remember {
                 SurfaceViewRenderer(context).apply {
                     init(viewModel.webRtcManager.eglBase.eglBaseContext, null)
-                    setScalingType(RendererCommon.ScalingType.SCALE_ASPECT_FILL)
-                    setMirror(true)
+                    setScalingType(RendererCommon.ScalingType.SCALE_ASPECT_FIT)
+                    setEnableHardwareScaler(true)
                     setZOrderMediaOverlay(true)
                 }
             }
 
-            DisposableEffect(remoteRenderer, localRenderer) {
-                viewModel.attachVideoSinks(local = localRenderer, remote = remoteRenderer)
+            LaunchedEffect(isLocalVideoPrimary, primaryRenderer, pipRenderer) {
+                primaryRenderer.setMirror(isLocalVideoPrimary)
+                pipRenderer.setMirror(!isLocalVideoPrimary)
+                primaryRenderer.clearImage()
+                pipRenderer.clearImage()
+                if (isLocalVideoPrimary) {
+                    viewModel.attachVideoSinks(local = primaryRenderer, remote = pipRenderer)
+                } else {
+                    viewModel.attachVideoSinks(local = pipRenderer, remote = primaryRenderer)
+                }
+            }
+
+            DisposableEffect(primaryRenderer, pipRenderer) {
                 onDispose {
                     viewModel.attachVideoSinks(null, null)
-                    runCatching { localRenderer.release() }
-                    runCatching { remoteRenderer.release() }
+                    runCatching { pipRenderer.release() }
+                    runCatching { primaryRenderer.release() }
                 }
             }
 
             AndroidView(
-                factory = { remoteRenderer },
-                modifier = Modifier.fillMaxSize()
+                factory = { primaryRenderer },
+                modifier = Modifier
+                    .fillMaxSize()
+                    .testTag("call_primary_video_surface")
             )
 
-            // Local picture-in-picture preview
-            if (state.isCameraOn) {
-                AndroidView(
-                    factory = { localRenderer },
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .statusBarsPadding()
-                        .padding(16.dp)
-                        .size(width = 112.dp, height = 160.dp)
-                        .clip(RoundedCornerShape(18.dp))
-                )
+            // Floating draggable & clickable PiP window
+            val showPipWindow = state.isCameraOn || isLocalVideoPrimary
+            if (showPipWindow) {
+                BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+                    val density = LocalDensity.current
+                    val pipWidth = 114.dp
+                    val pipHeight = 160.dp
+                    val edgeMarginPx = with(density) { 16.dp.toPx() }
+                    val topClearancePx = with(density) { 42.dp.toPx() }
+                    val bottomClearancePx = with(density) { 124.dp.toPx() }
+                    val pipWidthPx = with(density) { pipWidth.toPx() }
+                    val pipHeightPx = with(density) { pipHeight.toPx() }
+                    val maxWidthPx = with(density) { maxWidth.toPx() }
+                    val maxHeightPx = with(density) { maxHeight.toPx() }
+                    val minX = edgeMarginPx
+                    val maxX = (maxWidthPx - pipWidthPx - edgeMarginPx).coerceAtLeast(minX)
+                    val minY = topClearancePx
+                    val maxY = (maxHeightPx - pipHeightPx - bottomClearancePx).coerceAtLeast(minY)
+
+                    var offsetX by remember { mutableFloatStateOf(Float.NaN) }
+                    var offsetY by remember { mutableFloatStateOf(Float.NaN) }
+                    val resolvedX = (if (offsetX.isNaN()) maxX else offsetX).coerceIn(minX, maxX)
+                    val resolvedY = (if (offsetY.isNaN()) minY else offsetY).coerceIn(minY, maxY)
+
+                    Box(
+                        modifier = Modifier
+                            .offset { IntOffset(resolvedX.roundToInt(), resolvedY.roundToInt()) }
+                            .size(width = pipWidth, height = pipHeight)
+                            .clip(RoundedCornerShape(18.dp))
+                            .border(1.5.dp, Color.White.copy(alpha = 0.45f), RoundedCornerShape(18.dp))
+                            .background(Color.Black.copy(alpha = 0.6f))
+                            .pointerInput(minX, maxX, minY, maxY) {
+                                detectDragGestures { change, dragAmount ->
+                                    change.consume()
+                                    val baseX = if (offsetX.isNaN()) maxX else offsetX
+                                    val baseY = if (offsetY.isNaN()) minY else offsetY
+                                    offsetX = (baseX + dragAmount.x).coerceIn(minX, maxX)
+                                    offsetY = (baseY + dragAmount.y).coerceIn(minY, maxY)
+                                }
+                            }
+                            .clickable { isLocalVideoPrimary = !isLocalVideoPrimary }
+                            .testTag("call_pip_swap_container")
+                    ) {
+                        AndroidView(
+                            factory = { pipRenderer },
+                            modifier = Modifier.fillMaxSize()
+                        )
+                        Surface(
+                            color = Color.Black.copy(alpha = 0.52f),
+                            shape = CircleShape,
+                            modifier = Modifier
+                                .align(Alignment.BottomEnd)
+                                .padding(6.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.SwapHoriz,
+                                contentDescription = stringResource(R.string.call_swap_video),
+                                tint = Color.White,
+                                modifier = Modifier
+                                    .padding(4.dp)
+                                    .size(16.dp)
+                            )
+                        }
+                    }
+                }
             }
         }
 

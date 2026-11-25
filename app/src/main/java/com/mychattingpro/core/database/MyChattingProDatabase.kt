@@ -9,7 +9,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [ConversationEntity::class, MessageEntity::class, CallHistoryEntity::class],
-    version = 4,
+    version = 5,
     exportSchema = false
 )
 abstract class MyChattingProDatabase : RoomDatabase() {
@@ -65,6 +65,15 @@ abstract class MyChattingProDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE cached_messages ADD COLUMN mediaWidth INTEGER")
+                db.execSQL("ALTER TABLE cached_messages ADD COLUMN mediaHeight INTEGER")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_cached_conversations_isPrivate_isPinned_updatedAtMs ON cached_conversations(isPrivate, isPinned, updatedAtMs)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_cached_conversations_peerUserId ON cached_conversations(peerUserId)")
+            }
+        }
+
         @Volatile
         private var INSTANCE: MyChattingProDatabase? = null
 
@@ -75,7 +84,7 @@ abstract class MyChattingProDatabase : RoomDatabase() {
                     MyChattingProDatabase::class.java,
                     "my_chatting_pro_cache.db"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                     .fallbackToDestructiveMigration(dropAllTables = true)
                     .build()
                     .also { INSTANCE = it }

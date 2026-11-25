@@ -109,11 +109,17 @@
     <string name="action_unblock_user">Unblock user</string>
     <string name="action_report_user">Report user</string>
     <string name="blocked_banner">You blocked this user. Unblock to send messages or calls.</string>
+    <string name="blocked_interaction_unavailable">Messaging and calling are disabled while one of you is blocked.</string>
 
     <string name="attach_image">Image</string>
     <string name="attach_video">Video</string>
     <string name="attach_file">File / Document</string>
     <string name="attach_voice">Voice Note</string>
+    <string name="voice_loading">Loading audio…</string>
+    <string name="voice_play_error">Could not play audio</string>
+    <string name="media_load_error">Could not load media</string>
+    <string name="media_retry">Retry</string>
+    <string name="video_playback_error">Could not play this video. Tap retry to load again.</string>
     <string name="dangerous_file_title">Security Warning</string>
     <string name="dangerous_file_warning">This file (%1$s) is an executable or archive type (%2$s). Only download and open files from trusted contacts.</string>
     <string name="action_download_open">Download &amp; Open</string>
@@ -136,6 +142,7 @@
     <string name="call_speaker">Speaker</string>
     <string name="call_flip_camera">Flip</string>
     <string name="call_camera_off">Camera Off</string>
+    <string name="call_swap_video">Swap video</string>
 
     <string name="settings_owner_label">Developer &amp; Owner</string>
     <string name="settings_owner_name">TAWHID SHAKH</string>

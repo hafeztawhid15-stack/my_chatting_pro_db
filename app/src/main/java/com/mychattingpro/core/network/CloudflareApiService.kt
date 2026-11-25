@@ -104,7 +104,9 @@ interface CloudflareApiService {
         @Part file: MultipartBody.Part,
         @Part("category") category: RequestBody,
         @Part("conversationId") conversationId: RequestBody?,
-        @Part("durationMs") durationMs: RequestBody? = null
+        @Part("durationMs") durationMs: RequestBody? = null,
+        @Part("width") width: RequestBody? = null,
+        @Part("height") height: RequestBody? = null
     ): MediaUploadResponseDto
 
     @GET("v1/media/{mediaId}/signed-url")

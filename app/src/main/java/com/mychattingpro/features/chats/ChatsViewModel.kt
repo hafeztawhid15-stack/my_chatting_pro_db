@@ -91,11 +91,15 @@ class ChatsViewModel(
         socketManager.start()
         refresh()
         viewModelScope.launch {
+            var cycle = 0
             while (isActive) {
                 delay(25_000L)
+                cycle++
                 if (networkMonitor.isOnline.value) {
                     socketManager.sendPresencePing()
-                    chatRepository.refreshConversations()
+                    if (!socketManager.isConnected() || cycle % 4 == 0) {
+                        chatRepository.refreshConversations()
+                    }
                 }
             }
         }

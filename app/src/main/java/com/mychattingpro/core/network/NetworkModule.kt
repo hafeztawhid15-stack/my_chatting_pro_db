@@ -11,6 +11,7 @@ import com.mychattingpro.core.security.PrivateChatLockManager
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import okhttp3.ConnectionPool
+import okhttp3.Dispatcher
 import okhttp3.OkHttpClient
 import okhttp3.Protocol
 import okhttp3.logging.HttpLoggingInterceptor
@@ -42,16 +43,32 @@ class NetworkModule(
         redactHeader("X-Owner-Key")
     }
 
+    private val httpDispatcher = Dispatcher().apply {
+        maxRequests = 64
+        maxRequestsPerHost = 12
+    }
+
     val okHttpClient: OkHttpClient = OkHttpClient.Builder()
-        .protocols(listOf(Protocol.HTTP_1_1))
-        .connectionPool(ConnectionPool(5, 3, TimeUnit.MINUTES))
+        .dispatcher(httpDispatcher)
+        .protocols(listOf(Protocol.HTTP_2, Protocol.HTTP_1_1))
+        .connectionPool(ConnectionPool(8, 3, TimeUnit.MINUTES))
         .retryOnConnectionFailure(true)
         .addInterceptor(AuthInterceptor(tokenStore, privateChatLockManager))
         .addInterceptor(loggingInterceptor)
         .authenticator(TokenAuthenticator(baseUrl, tokenStore, moshi))
-        .connectTimeout(25, TimeUnit.SECONDS)
+        .connectTimeout(20, TimeUnit.SECONDS)
         .readTimeout(60, TimeUnit.SECONDS)
         .writeTimeout(120, TimeUnit.SECONDS)
+        .build()
+
+    private val wsOkHttpClient: OkHttpClient = OkHttpClient.Builder()
+        .protocols(listOf(Protocol.HTTP_1_1))
+        .connectionPool(ConnectionPool(2, 5, TimeUnit.MINUTES))
+        .retryOnConnectionFailure(true)
+        .addInterceptor(loggingInterceptor)
+        .connectTimeout(20, TimeUnit.SECONDS)
+        .readTimeout(60, TimeUnit.SECONDS)
+        .writeTimeout(60, TimeUnit.SECONDS)
         .pingInterval(25, TimeUnit.SECONDS)
         .build()
 
@@ -67,7 +84,7 @@ class NetworkModule(
 
     val realtimeSocketManager = RealtimeSocketManager(
         baseUrl = baseUrl,
-        okHttpClient = okHttpClient,
+        okHttpClient = wsOkHttpClient,
         tokenStore = tokenStore,
         prefsStore = prefsStore,
         networkMonitor = networkMonitor,
@@ -78,13 +95,13 @@ class NetworkModule(
         .okHttpClient(okHttpClient)
         .memoryCache {
             MemoryCache.Builder(context)
-                .maxSizePercent(0.20)
+                .maxSizePercent(0.25)
                 .build()
         }
         .diskCache {
             DiskCache.Builder()
                 .directory(File(context.cacheDir, "image_cache"))
-                .maxSizePercent(0.05)
+                .maxSizePercent(0.08)
                 .build()
         }
         .crossfade(true)

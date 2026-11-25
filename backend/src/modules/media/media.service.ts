@@ -53,7 +53,17 @@ export class MediaService {
         }
       }
       const convService = new ConversationsService(this.db);
-      await convService.assertMember(input.conversationId, input.userId, effectivePrivate);
+      const memberIds = await convService.assertMember(input.conversationId, input.userId, effectivePrivate);
+      for (const peerId of memberIds) {
+        if (peerId === input.userId) continue;
+        if (await this.db.isBlockedBetween(input.userId, peerId)) {
+          throw new ApiError(
+            403,
+            'user_blocked',
+            'Media upload is unavailable because a block exists between users.'
+          );
+        }
+      }
     }
 
     const validation = validateMediaConstraints(
@@ -215,13 +225,21 @@ export class MediaService {
       }
     }
 
+    const members = await this.db.listConversationMemberIds(media.conversation_id);
+    if (!members.includes(viewerUserId)) {
+      throw new ApiError(403, 'forbidden_media', 'You are not authorized to access this conversation media.');
+    }
+
     if (media.owner_user_id === viewerUserId) {
       return media;
     }
 
-    const members = await this.db.listConversationMemberIds(media.conversation_id);
-    if (!members.includes(viewerUserId)) {
-      throw new ApiError(403, 'forbidden_media', 'You are not authorized to access this conversation media.');
+    if (await this.db.isBlockedBetween(viewerUserId, media.owner_user_id)) {
+      throw new ApiError(
+        403,
+        'user_blocked',
+        'Media access is unavailable because a block exists between users.'
+      );
     }
     return media;
   }

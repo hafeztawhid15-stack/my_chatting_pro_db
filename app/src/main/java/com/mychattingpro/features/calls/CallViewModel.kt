@@ -100,6 +100,20 @@ class CallViewModel(
         viewModelScope.launch {
             repo.observeConversation(conversationId).collect { conv ->
                 if (conv != null) {
+                    if (conv.isBlockedByMe || conv.hasBlockedMe) {
+                        val st = _uiState.value.stage
+                        if (st != WebRtcConnectionStage.ENDED && st != WebRtcConnectionStage.FAILED) {
+                            cancelAllTimers()
+                            incomingHandled = true
+                            onStopIncomingAlert(activeCallId)
+                            webRtcManager.endSession()
+                            _uiState.value = _uiState.value.copy(
+                                stage = WebRtcConnectionStage.FAILED,
+                                error = AppError.UserBlocked
+                            )
+                            return@collect
+                        }
+                    }
                     _uiState.value = _uiState.value.copy(
                         peerIsOnline = conv.peerIsOnline,
                         peerLastSeenMs = conv.peerLastSeenMs
@@ -616,6 +630,18 @@ class CallViewModel(
                                 webRtcManager.endSession()
                                 _uiState.value = _uiState.value.copy(stage = WebRtcConnectionStage.ENDED)
                             }
+                        }
+                    }
+                    is RealtimeEvent.BlockStatusChanged -> {
+                        if ((event.actorUserId == peerUserId || event.targetUserId == peerUserId) && event.blockedBetween) {
+                            cancelAllTimers()
+                            incomingHandled = true
+                            onStopIncomingAlert(activeCallId)
+                            webRtcManager.endSession()
+                            _uiState.value = _uiState.value.copy(
+                                stage = WebRtcConnectionStage.FAILED,
+                                error = AppError.UserBlocked
+                            )
                         }
                     }
                     else -> Unit

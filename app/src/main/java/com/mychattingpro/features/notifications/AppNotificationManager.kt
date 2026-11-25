@@ -158,7 +158,8 @@ class AppNotificationManager(private val context: Context) {
         prefs: AppPreferences,
         mutedUntilMs: Long? = null,
         customSoundUri: String? = null,
-        eventId: String? = null
+        eventId: String? = null,
+        isAppForeground: Boolean = false
     ) {
         if (!prefs.notificationsEnabled || !prefs.messageNotificationsEnabled) return
         if (mutedUntilMs != null && mutedUntilMs > 0L && mutedUntilMs > System.currentTimeMillis()) return
@@ -166,14 +167,15 @@ class AppNotificationManager(private val context: Context) {
 
         val canPostSystemNotif = hasNotificationPermission()
         val hasCustomSound = !customSoundUri.isNullOrBlank() && prefs.messageSoundEnabled
-        if (hasCustomSound) {
-            playLiveMessageSound(customSoundUri = customSoundUri, prefs = prefs)
-            if (!canPostSystemNotif) {
+        val playDirectForegroundAlert = isAppForeground && prefs.inAppAlertsEnabled
+
+        if (hasCustomSound || playDirectForegroundAlert || (!canPostSystemNotif && prefs.inAppAlertsEnabled)) {
+            if (prefs.messageSoundEnabled) {
+                playLiveMessageSound(customSoundUri = customSoundUri, prefs = prefs)
+            }
+            if (prefs.vibrationEnabled) {
                 playMessageVibration(prefs = prefs)
             }
-        } else if (!canPostSystemNotif && prefs.inAppAlertsEnabled) {
-            playLiveMessageSound(customSoundUri = null, prefs = prefs)
-            playMessageVibration(prefs = prefs)
         }
         if (!canPostSystemNotif) return
 
@@ -193,25 +195,37 @@ class AppNotificationManager(private val context: Context) {
         } else {
             context.getString(R.string.notif_new_message_body)
         }
+        val senderPerson = Person.Builder()
+            .setName(senderName.ifBlank { context.getString(R.string.app_name) })
+            .build()
+        val mePerson = Person.Builder()
+            .setName(context.getString(R.string.app_name))
+            .build()
+        val messagingStyle = NotificationCompat.MessagingStyle(mePerson)
+            .addMessage(bodyText, System.currentTimeMillis(), senderPerson)
 
         val builder = NotificationCompat.Builder(context, CHANNEL_MESSAGES)
             .setSmallIcon(R.drawable.ic_notif_chat)
             .setContentTitle(context.getString(R.string.notif_new_message_title, senderName))
             .setContentText(bodyText)
+            .setStyle(messagingStyle)
+            .setCategory(NotificationCompat.CATEGORY_MESSAGE)
             .setVisibility(
                 if (prefs.showMessagePreview) NotificationCompat.VISIBILITY_PRIVATE
                 else NotificationCompat.VISIBILITY_SECRET
             )
             .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setOnlyAlertOnce(false)
             .setAutoCancel(true)
             .setContentIntent(pi)
 
-        if (!prefs.messageSoundEnabled || hasCustomSound) {
+        if (!prefs.messageSoundEnabled || hasCustomSound || playDirectForegroundAlert) {
             builder.setSilent(true)
-            if (hasCustomSound && prefs.vibrationEnabled) {
+            if (hasCustomSound && !playDirectForegroundAlert && prefs.vibrationEnabled) {
                 playMessageVibration(prefs = prefs)
             }
         } else {
+            builder.setSilent(false)
             builder.setSound(resolveSystemNotificationUriForBuilder())
             if (prefs.vibrationEnabled) {
                 builder.setDefaults(Notification.DEFAULT_VIBRATE)
@@ -227,7 +241,8 @@ class AppNotificationManager(private val context: Context) {
         prefs: AppPreferences,
         mutedUntilMs: Long? = null,
         customSoundUri: String? = null,
-        eventId: String? = null
+        eventId: String? = null,
+        isAppForeground: Boolean = false
     ) {
         if (!prefs.notificationsEnabled || !prefs.privateChatNotificationsEnabled) return
         if (mutedUntilMs != null && mutedUntilMs > 0L && mutedUntilMs > System.currentTimeMillis()) return
@@ -235,14 +250,15 @@ class AppNotificationManager(private val context: Context) {
 
         val canPostSystemNotif = hasNotificationPermission()
         val hasCustomSound = !customSoundUri.isNullOrBlank() && prefs.messageSoundEnabled
-        if (hasCustomSound) {
-            playLiveMessageSound(customSoundUri = customSoundUri, prefs = prefs)
-            if (!canPostSystemNotif) {
+        val playDirectForegroundAlert = isAppForeground && prefs.inAppAlertsEnabled
+
+        if (hasCustomSound || playDirectForegroundAlert || (!canPostSystemNotif && prefs.inAppAlertsEnabled)) {
+            if (prefs.messageSoundEnabled) {
+                playLiveMessageSound(customSoundUri = customSoundUri, prefs = prefs)
+            }
+            if (prefs.vibrationEnabled) {
                 playMessageVibration(prefs = prefs)
             }
-        } else if (!canPostSystemNotif && prefs.inAppAlertsEnabled) {
-            playLiveMessageSound(customSoundUri = null, prefs = prefs)
-            playMessageVibration(prefs = prefs)
         }
         if (!canPostSystemNotif) return
 
@@ -260,17 +276,20 @@ class AppNotificationManager(private val context: Context) {
             .setSmallIcon(R.drawable.ic_notif_chat)
             .setContentTitle(context.getString(R.string.app_name))
             .setContentText(context.getString(R.string.notif_private_message_body))
+            .setCategory(NotificationCompat.CATEGORY_MESSAGE)
             .setVisibility(NotificationCompat.VISIBILITY_SECRET)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setOnlyAlertOnce(false)
             .setAutoCancel(true)
             .setContentIntent(pi)
 
-        if (!prefs.messageSoundEnabled || hasCustomSound) {
+        if (!prefs.messageSoundEnabled || hasCustomSound || playDirectForegroundAlert) {
             builder.setSilent(true)
-            if (hasCustomSound && prefs.vibrationEnabled) {
+            if (hasCustomSound && !playDirectForegroundAlert && prefs.vibrationEnabled) {
                 playMessageVibration(prefs = prefs)
             }
         } else {
+            builder.setSilent(false)
             builder.setSound(resolveSystemNotificationUriForBuilder())
             if (prefs.vibrationEnabled) {
                 builder.setDefaults(Notification.DEFAULT_VIBRATE)

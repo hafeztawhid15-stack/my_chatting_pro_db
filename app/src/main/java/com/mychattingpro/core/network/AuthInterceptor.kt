@@ -27,7 +27,8 @@ class AuthInterceptor(
             return chain.proceed(original)
         }
 
-        val token = runBlocking { tokenStore.getSession()?.accessToken }
+        val token = tokenStore.currentSessionOrNull()?.accessToken
+            ?: runBlocking { tokenStore.getSession()?.accessToken }
         val builder = original.newBuilder()
         if (!token.isNullOrBlank()) {
             builder.header("Authorization", "Bearer $token")
@@ -65,7 +66,9 @@ class TokenAuthenticator(
         if (path.endsWith("/v1/auth/refresh") || path.endsWith("/v1/auth/login")) return null
 
         synchronized(lock) {
-            val currentSession = runBlocking { tokenStore.getSession() } ?: return null
+            val currentSession = tokenStore.currentSessionOrNull()
+                ?: runBlocking { tokenStore.getSession() }
+                ?: return null
             val requestAuth = response.request.header("Authorization")?.removePrefix("Bearer ")?.trim()
 
             // Another thread already refreshed the token

@@ -2,21 +2,30 @@ package com.mychattingpro.features.messages
 
 import android.net.Uri
 import android.widget.Toast
+import androidx.annotation.OptIn
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.ErrorOutline
+import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -24,6 +33,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -38,13 +48,21 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackException
+import androidx.media3.common.Player
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
-import coil.compose.AsyncImage
+import coil.compose.SubcomposeAsyncImage
 import coil.request.ImageRequest
 import com.example.R
 import com.mychattingpro.core.network.NetworkModule
@@ -54,8 +72,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.Request
+import java.io.File
+import java.io.FileOutputStream
 
-@OptIn(ExperimentalMaterial3Api::class)
+@kotlin.OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MediaViewerScreen(
     mediaId: String,
@@ -67,15 +87,57 @@ fun MediaViewerScreen(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var signedUrl by remember { mutableStateOf<String?>(null) }
-    var errorMessage by remember { mutableStateOf<String?>(null) }
+    var videoPlaybackUri by remember(mediaId) { mutableStateOf<Uri?>(null) }
+    var isResolvingVideo by remember(mediaId) { mutableStateOf(isVideo) }
+    var errorMessage by remember(mediaId) { mutableStateOf<String?>(null) }
+    var retryTrigger by remember(mediaId) { mutableIntStateOf(0) }
     var isSavingImage by remember { mutableStateOf(false) }
 
-    LaunchedEffect(mediaId) {
-        if (isVideo) {
-            messageRepository.getSignedMediaUrl(mediaId)
-                .onSuccess { signedUrl = it }
-                .onFailure { errorMessage = context.getString(R.string.err_storage) }
+    LaunchedEffect(mediaId, retryTrigger) {
+        if (!isVideo) return@LaunchedEffect
+        isResolvingVideo = true
+        errorMessage = null
+
+        val cachedVideoFile = File(File(context.cacheDir, "video_cache").apply { mkdirs() }, "$mediaId.mp4")
+        if (cachedVideoFile.exists() && cachedVideoFile.length() > 0L && retryTrigger == 0) {
+            videoPlaybackUri = Uri.fromFile(cachedVideoFile)
+            isResolvingVideo = false
+            return@LaunchedEffect
+        }
+
+        val signedRes = messageRepository.getSignedMediaUrl(mediaId)
+        val signed = signedRes.getOrNull()
+        if (!signed.isNullOrBlank() && retryTrigger == 0) {
+            videoPlaybackUri = Uri.parse(signed)
+            isResolvingVideo = false
+            return@LaunchedEffect
+        }
+
+        // Fallback: stream/download via authenticated OkHttp client (carries JWT & Private unlock token)
+        val downloadedUri = withContext(Dispatchers.IO) {
+            runCatching {
+                val url = signed ?: networkModule.mediaContentUrl(mediaId)
+                val temp = File(cachedVideoFile.parentFile, "$mediaId.tmp")
+                networkModule.okHttpClient.newCall(Request.Builder().url(url).build()).execute().use { resp ->
+                    if (!resp.isSuccessful) error("HTTP ${resp.code}")
+                    resp.body?.byteStream()?.use { input ->
+                        FileOutputStream(temp).use { output -> input.copyTo(output) }
+                    } ?: error("Empty body")
+                }
+                if (cachedVideoFile.exists()) cachedVideoFile.delete()
+                if (!temp.renameTo(cachedVideoFile)) {
+                    temp.copyTo(cachedVideoFile, overwrite = true)
+                    temp.delete()
+                }
+                Uri.fromFile(cachedVideoFile)
+            }.getOrNull()
+        }
+
+        isResolvingVideo = false
+        if (downloadedUri != null) {
+            videoPlaybackUri = downloadedUri
+        } else {
+            errorMessage = context.getString(R.string.video_playback_error)
         }
     }
 
@@ -175,9 +237,28 @@ fun MediaViewerScreen(
         ) {
             if (isVideo) {
                 when {
-                    errorMessage != null -> Text(errorMessage!!, color = Color.White)
-                    signedUrl == null -> CircularProgressIndicator(color = Color.White)
-                    else -> ExoVideoPlayer(url = signedUrl!!)
+                    errorMessage != null -> {
+                        MediaErrorRetryView(
+                            message = errorMessage!!,
+                            onRetry = { retryTrigger++ }
+                        )
+                    }
+                    isResolvingVideo || videoPlaybackUri == null -> {
+                        CircularProgressIndicator(color = Color.White)
+                    }
+                    else -> {
+                        ExoVideoPlayer(
+                            uri = videoPlaybackUri!!,
+                            onFallbackRequired = {
+                                // Switch from remote signed URL to authenticated download fallback on player failure
+                                if (videoPlaybackUri?.scheme != "file") {
+                                    retryTrigger++
+                                } else {
+                                    errorMessage = context.getString(R.string.video_playback_error)
+                                }
+                            }
+                        )
+                    }
                 }
             } else {
                 ZoomablePrivateImage(
@@ -191,6 +272,40 @@ fun MediaViewerScreen(
 }
 
 @Composable
+private fun MediaErrorRetryView(
+    message: String,
+    onRetry: () -> Unit
+) {
+    Column(
+        modifier = Modifier.padding(24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Icon(
+            imageVector = Icons.Rounded.ErrorOutline,
+            contentDescription = null,
+            tint = Color.White.copy(alpha = 0.85f),
+            modifier = Modifier.size(44.dp)
+        )
+        Spacer(modifier = Modifier.height(12.dp))
+        Text(
+            text = message,
+            color = Color.White,
+            textAlign = TextAlign.Center
+        )
+        Spacer(modifier = Modifier.height(14.dp))
+        Button(
+            onClick = onRetry,
+            modifier = Modifier.testTag("media_viewer_retry_button")
+        ) {
+            Icon(Icons.Rounded.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(modifier = Modifier.size(6.dp))
+            Text(stringResource(R.string.media_retry))
+        }
+    }
+}
+
+@Composable
 private fun ZoomablePrivateImage(
     mediaUrl: String,
     networkModule: NetworkModule,
@@ -199,15 +314,51 @@ private fun ZoomablePrivateImage(
     val context = LocalContext.current
     var scale by remember { mutableFloatStateOf(1f) }
     var offset by remember { mutableStateOf(Offset.Zero) }
+    var retryCount by remember(mediaUrl) { mutableIntStateOf(0) }
 
-    AsyncImage(
+    SubcomposeAsyncImage(
         model = ImageRequest.Builder(context)
             .data(mediaUrl)
+            .setParameter("retry", retryCount, memoryCacheKey = null)
             .crossfade(true)
             .build(),
         imageLoader = networkModule.imageLoader,
         contentDescription = contentDescription,
         contentScale = ContentScale.Fit,
+        loading = {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator(color = Color.White)
+            }
+        },
+        error = {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.ErrorOutline,
+                    contentDescription = null,
+                    tint = Color.White.copy(alpha = 0.85f),
+                    modifier = Modifier.size(42.dp)
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+                Text(
+                    text = stringResource(R.string.media_load_error),
+                    color = Color.White,
+                    textAlign = TextAlign.Center
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                TextButton(
+                    onClick = { retryCount++ },
+                    modifier = Modifier.testTag("media_image_retry_button")
+                ) {
+                    Text(stringResource(R.string.media_retry), color = Color.White)
+                }
+            }
+        },
         modifier = Modifier
             .fillMaxSize()
             .pointerInput(Unit) {
@@ -226,30 +377,70 @@ private fun ZoomablePrivateImage(
     )
 }
 
+@OptIn(UnstableApi::class)
 @Composable
-private fun ExoVideoPlayer(url: String) {
+private fun ExoVideoPlayer(
+    uri: Uri,
+    onFallbackRequired: () -> Unit
+) {
     val context = LocalContext.current
-    val player = remember(url) {
+    val lifecycleOwner = LocalLifecycleOwner.current
+    var isBuffering by remember(uri) { mutableStateOf(true) }
+
+    val player = remember(uri) {
         ExoPlayer.Builder(context).build().apply {
-            setMediaItem(MediaItem.fromUri(Uri.parse(url)))
+            setMediaItem(MediaItem.fromUri(uri))
             prepare()
             playWhenReady = true
         }
     }
 
-    DisposableEffect(player) {
+    DisposableEffect(player, lifecycleOwner) {
+        val listener = object : Player.Listener {
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                isBuffering = playbackState == Player.STATE_BUFFERING
+            }
+
+            override fun onPlayerError(error: PlaybackException) {
+                isBuffering = false
+                onFallbackRequired()
+            }
+        }
+        player.addListener(listener)
+
+        val lifecycleObserver = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_PAUSE || event == Lifecycle.Event.ON_STOP) {
+                player.pause()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(lifecycleObserver)
+
         onDispose {
+            lifecycleOwner.lifecycle.removeObserver(lifecycleObserver)
+            player.removeListener(listener)
             player.release()
         }
     }
 
-    AndroidView(
-        factory = { ctx ->
-            PlayerView(ctx).apply {
-                this.player = player
-                useController = true
-            }
-        },
-        modifier = Modifier.fillMaxSize()
-    )
+    Box(modifier = Modifier.fillMaxSize()) {
+        AndroidView(
+            factory = { ctx ->
+                PlayerView(ctx).apply {
+                    this.player = player
+                    useController = true
+                    resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                }
+            },
+            update = { view ->
+                view.player = player
+            },
+            modifier = Modifier.fillMaxSize()
+        )
+        if (isBuffering) {
+            CircularProgressIndicator(
+                color = Color.White,
+                modifier = Modifier.align(Alignment.Center)
+            )
+        }
+    }
 }

@@ -100,7 +100,9 @@ data class MediaAttachment(
     val originalFilename: String,
     val mimeType: String,
     val sizeBytes: Long,
-    val durationMs: Long? = null
+    val durationMs: Long? = null,
+    val width: Int? = null,
+    val height: Int? = null
 )
 
 data class Message(

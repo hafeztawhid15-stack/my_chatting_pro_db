@@ -99,6 +99,17 @@ export class ConversationsService {
             'This contact has been moved to your Private Chat.'
           );
         }
+        if (privacy?.deletedAtMs) {
+          const blocked = await this.db.isBlockedBetween(currentUserId, targetUserId);
+          if (blocked) {
+            throw new ApiError(403, 'user_blocked', 'Cannot start a conversation while a block exists.');
+          }
+        }
+      } else {
+        const blocked = await this.db.isBlockedBetween(currentUserId, targetUserId);
+        if (blocked) {
+          throw new ApiError(403, 'user_blocked', 'Cannot start a conversation while a block exists.');
+        }
       }
       if (existingPrivateId) {
         const privMembers = await this.db.listConversationMemberIds(existingPrivateId);
@@ -110,6 +121,11 @@ export class ConversationsService {
             'This contact is already in your Private Chat.'
           );
         }
+      }
+    } else if (!existingRegularId && !existingPrivateId) {
+      const blocked = await this.db.isBlockedBetween(currentUserId, targetUserId);
+      if (blocked) {
+        throw new ApiError(403, 'user_blocked', 'Cannot start a conversation while a block exists.');
       }
     }
 

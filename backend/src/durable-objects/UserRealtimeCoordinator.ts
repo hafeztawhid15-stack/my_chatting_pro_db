@@ -21,6 +21,7 @@ export class UserRealtimeCoordinator extends DurableObject<Env> {
   private lastPingDbUpdateMs = 0;
   private readonly pairAuthCache = new Map<string, number>();
   private readonly callParticipantCache = new Map<string, number>();
+  private readonly blockedPairCache = new Map<string, { blocked: boolean; expiresAtMs: number }>();
   private readonly callSignalBuffer = new Map<string, Array<{ envelope: RealtimeEnvelope; savedAtMs: number }>>();
 
   async fetch(request: Request): Promise<Response> {
@@ -72,6 +73,34 @@ export class UserRealtimeCoordinator extends DurableObject<Env> {
     if (url.pathname === '/internal/presence' && request.method === 'GET') {
       const sockets = this.ctx.getWebSockets();
       return Response.json({ online: sockets.length > 0, activeSockets: sockets.length });
+    }
+
+    if (url.pathname === '/internal/block-changed' && request.method === 'POST') {
+      const body = (await request.json()) as {
+        actorUserId: string;
+        targetUserId: string;
+        isBlockedByActor: boolean;
+        blockedBetween: boolean;
+      };
+      this.pairAuthCache.clear();
+      this.callParticipantCache.clear();
+      this.blockedPairCache.clear();
+
+      const now = Date.now();
+      const envelope: RealtimeEnvelope = {
+        eventId: `block:${body.actorUserId}:${body.targetUserId}:${now}`,
+        type: 'safety.block_changed',
+        timestampMs: now,
+        payload: {
+          actorUserId: body.actorUserId,
+          targetUserId: body.targetUserId,
+          isBlockedByActor: Boolean(body.isBlockedByActor),
+          blockedBetween: Boolean(body.blockedBetween),
+        },
+      };
+      const deliveredCount = this.broadcastToUserSockets(envelope);
+      await this.bufferEvent(envelope);
+      return Response.json({ ok: true, deliveredCount });
     }
 
     // Authenticated WebSocket upgrade
@@ -284,6 +313,25 @@ export class UserRealtimeCoordinator extends DurableObject<Env> {
     }
   }
 
+  private async isPairBlocked(
+    db: ReturnType<typeof createSupabaseDb>,
+    userA: string,
+    userB: string,
+    now: number
+  ): Promise<boolean> {
+    const pairKey = userA < userB ? `${userA}:${userB}` : `${userB}:${userA}`;
+    const cached = this.blockedPairCache.get(pairKey);
+    if (cached && cached.expiresAtMs > now) {
+      return cached.blocked;
+    }
+    const blocked = await db.isBlockedBetween(userA, userB);
+    if (this.blockedPairCache.size > 200) {
+      this.blockedPairCache.clear();
+    }
+    this.blockedPairCache.set(pairKey, { blocked, expiresAtMs: now + 15_000 });
+    return blocked;
+  }
+
   private async isForwardingAuthorized(
     userId: string,
     targetUserId: string,
@@ -293,6 +341,10 @@ export class UserRealtimeCoordinator extends DurableObject<Env> {
   ): Promise<boolean> {
     const now = Date.now();
     const db = createSupabaseDb(this.env);
+
+    if (await this.isPairBlocked(db, userId, targetUserId, now)) {
+      return false;
+    }
 
     if (conversationId) {
       const cacheKey = `${conversationId}:${userId}:${targetUserId}`;

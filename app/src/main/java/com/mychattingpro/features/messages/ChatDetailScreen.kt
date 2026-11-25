@@ -18,9 +18,11 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -66,6 +68,8 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -82,6 +86,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -96,6 +101,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
+import coil.compose.SubcomposeAsyncImage
 import coil.request.ImageRequest
 import com.example.R
 import com.mychattingpro.core.localization.AppLanguage
@@ -318,10 +324,10 @@ fun ChatDetailScreen(
                     AsyncImage(
                         model = previewUri,
                         contentDescription = null,
-                        contentScale = ContentScale.Crop,
+                        contentScale = ContentScale.Fit,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(200.dp)
+                            .heightIn(min = 140.dp, max = 280.dp)
                             .clip(RoundedCornerShape(14.dp))
                     )
                     OutlinedTextField(
@@ -620,7 +626,11 @@ fun ChatDetailScreen(
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Text(
-                            text = stringResource(R.string.blocked_banner),
+                            text = if (isBlockedByMe) {
+                                stringResource(R.string.blocked_banner)
+                            } else {
+                                stringResource(R.string.blocked_interaction_unavailable)
+                            },
                             style = MaterialTheme.typography.bodySmall,
                             modifier = Modifier.padding(14.dp)
                         )
@@ -791,6 +801,16 @@ fun ChatDetailScreen(
                         val isMine = msg.senderId == viewModel.myUserId
                         val uploadProgress = uiState.uploadProgressByClientId[msg.clientMessageId]
                         val repliedMessage = msg.replyToMessageId?.let { messagesById[it] }
+                        val isAudioActive = uiState.activeAudioMessageId == msg.id
+                        val isAudioPlaying = isAudioActive && uiState.isAudioPlaying
+                        val isAudioLoading = isAudioActive && uiState.isAudioLoading
+                        val audioPositionMs = if (isAudioActive) uiState.audioPositionMs else 0L
+                        val audioDurationMs = if (isAudioActive && uiState.audioDurationMs > 0L) {
+                            uiState.audioDurationMs
+                        } else {
+                            msg.media?.durationMs ?: 0L
+                        }
+                        val hasAudioError = uiState.audioErrorMessageId == msg.id
                         MessageBubble(
                             message = msg,
                             repliedMessage = repliedMessage,
@@ -800,7 +820,12 @@ fun ChatDetailScreen(
                             language = language,
                             networkModule = networkModule,
                             uploadProgress = uploadProgress,
-                            isAudioPlaying = uiState.activeAudioMessageId == msg.id && uiState.isAudioPlaying,
+                            isAudioActive = isAudioActive,
+                            isAudioPlaying = isAudioPlaying,
+                            isAudioLoading = isAudioLoading,
+                            audioPositionMs = audioPositionMs,
+                            audioDurationMs = audioDurationMs,
+                            hasAudioError = hasAudioError,
                             isDownloading = uiState.downloadingMessageId == msg.id,
                             onLongPress = { selectedMessageForDetails = msg },
                             onClickQuotedReply = {
@@ -811,6 +836,7 @@ fun ChatDetailScreen(
                             },
                             onRetry = { viewModel.retryMessage(msg) },
                             onCancelUpload = { viewModel.cancelUpload(msg.clientMessageId) },
+                            onSeekAudio = { posMs -> viewModel.seekVoiceMessage(msg.id, posMs) },
                             onOpenMedia = {
                                 if (msg.type == MessageType.VOICE || msg.type == MessageType.AUDIO) {
                                     viewModel.toggleVoiceMessagePlayback(msg)
@@ -873,12 +899,18 @@ private fun MessageBubble(
     language: AppLanguage,
     networkModule: NetworkModule,
     uploadProgress: Float?,
+    isAudioActive: Boolean,
     isAudioPlaying: Boolean,
+    isAudioLoading: Boolean,
+    audioPositionMs: Long,
+    audioDurationMs: Long,
+    hasAudioError: Boolean,
     isDownloading: Boolean,
     onLongPress: () -> Unit,
     onClickQuotedReply: () -> Unit,
     onRetry: () -> Unit,
     onCancelUpload: () -> Unit,
+    onSeekAudio: (Long) -> Unit,
     onOpenMedia: () -> Unit
 ) {
     val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
@@ -991,19 +1023,69 @@ private fun MessageBubble(
                         MessageType.IMAGE -> {
                             val imageModel: Any? = message.media?.id?.let { networkModule.mediaContentUrl(it) }
                                 ?: message.localUri
+                            val aspectRatio = MediaUploadHelper.computeBubbleAspectRatio(
+                                message.media?.width,
+                                message.media?.height
+                            )
+                            val imageModifier = if (aspectRatio != null) {
+                                Modifier
+                                    .fillMaxWidth()
+                                    .aspectRatio(aspectRatio)
+                                    .clip(RoundedCornerShape(12.dp))
+                            } else {
+                                Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(min = 120.dp, max = 320.dp)
+                                    .clip(RoundedCornerShape(12.dp))
+                            }
                             if (imageModel != null) {
-                                AsyncImage(
+                                SubcomposeAsyncImage(
                                     model = ImageRequest.Builder(context)
                                         .data(imageModel)
                                         .crossfade(true)
                                         .build(),
                                     imageLoader = networkModule.imageLoader,
                                     contentDescription = message.media?.originalFilename ?: "Image",
-                                    contentScale = ContentScale.Crop,
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(190.dp)
-                                        .clip(RoundedCornerShape(12.dp))
+                                    contentScale = ContentScale.Fit,
+                                    loading = {
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .height(160.dp)
+                                                .background(Color.Black.copy(alpha = 0.14f)),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            CircularProgressIndicator(
+                                                color = contentColor,
+                                                strokeWidth = 2.dp,
+                                                modifier = Modifier.size(24.dp)
+                                            )
+                                        }
+                                    },
+                                    error = {
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .height(130.dp)
+                                                .background(Color.Black.copy(alpha = 0.18f)),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                                Icon(
+                                                    imageVector = Icons.Rounded.ErrorOutline,
+                                                    contentDescription = null,
+                                                    tint = contentColor.copy(alpha = 0.85f)
+                                                )
+                                                Spacer(modifier = Modifier.height(4.dp))
+                                                Text(
+                                                    text = stringResource(R.string.media_load_error),
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = contentColor.copy(alpha = 0.85f)
+                                                )
+                                            }
+                                        }
+                                    },
+                                    modifier = imageModifier
                                 )
                             }
                             if (!message.bodyText.isNullOrBlank()) {
@@ -1014,7 +1096,7 @@ private fun MessageBubble(
 
                         MessageType.VIDEO -> {
                             Surface(
-                                color = androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.28f),
+                                color = Color.Black.copy(alpha = 0.28f),
                                 shape = RoundedCornerShape(12.dp),
                                 modifier = Modifier.fillMaxWidth()
                             ) {
@@ -1024,9 +1106,9 @@ private fun MessageBubble(
                                 ) {
                                     Box(
                                         modifier = Modifier
-                                            .size(40.dp)
+                                            .size(44.dp)
                                             .clip(CircleShape)
-                                            .background(contentColor.copy(alpha = 0.2f)),
+                                            .background(contentColor.copy(alpha = 0.22f)),
                                         contentAlignment = Alignment.Center
                                     ) {
                                         Icon(Icons.Rounded.PlayArrow, contentDescription = null, tint = contentColor)
@@ -1040,10 +1122,15 @@ private fun MessageBubble(
                                             maxLines = 1,
                                             overflow = TextOverflow.Ellipsis
                                         )
-                                        message.media?.sizeBytes?.let {
+                                        val durationLabel = message.media?.durationMs
+                                            ?.takeIf { it > 0L }
+                                            ?.let { DateTimeFormatters.formatDuration(it / 1000L) }
+                                        val sizeLabel = message.media?.sizeBytes?.let { MediaUploadHelper.formatFileSize(it) }
+                                        val metaText = listOfNotNull(durationLabel, sizeLabel).joinToString(" • ")
+                                        if (metaText.isNotBlank()) {
                                             Text(
-                                                text = MediaUploadHelper.formatFileSize(it),
-                                                color = contentColor.copy(alpha = 0.75f),
+                                                text = metaText,
+                                                color = contentColor.copy(alpha = 0.78f),
                                                 style = MaterialTheme.typography.labelSmall
                                             )
                                         }
@@ -1057,37 +1144,75 @@ private fun MessageBubble(
                         }
 
                         MessageType.VOICE, MessageType.AUDIO -> {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.padding(vertical = 4.dp)
-                            ) {
-                                IconButton(
-                                    onClick = onOpenMedia,
-                                    modifier = Modifier.size(40.dp)
+                            val totalMs = audioDurationMs.coerceAtLeast(0L)
+                            val posMs = if (isAudioActive) audioPositionMs.coerceIn(0L, totalMs.coerceAtLeast(1L)) else 0L
+                            val sliderMax = totalMs.coerceAtLeast(1L).toFloat()
+                            val sliderValue = posMs.toFloat().coerceIn(0f, sliderMax)
+                            Column(modifier = Modifier.fillMaxWidth()) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.padding(vertical = 2.dp)
                                 ) {
-                                    Icon(
-                                        imageVector = if (isAudioPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-                                        contentDescription = null,
-                                        tint = contentColor
-                                    )
-                                }
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        text = if (message.type == MessageType.VOICE) stringResource(R.string.attach_voice)
-                                        else (message.media?.originalFilename ?: "Audio"),
-                                        color = contentColor,
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        fontWeight = FontWeight.Medium,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                    val durSec = (message.media?.durationMs ?: 0L) / 1000L
-                                    Text(
-                                        text = DateTimeFormatters.formatDuration(durSec),
-                                        color = contentColor.copy(alpha = 0.75f),
-                                        style = MaterialTheme.typography.labelSmall
-                                    )
+                                    IconButton(
+                                        onClick = onOpenMedia,
+                                        modifier = Modifier
+                                            .size(44.dp)
+                                            .testTag("voice_play_button_${message.id}")
+                                    ) {
+                                        if (isAudioLoading) {
+                                            CircularProgressIndicator(
+                                                modifier = Modifier.size(20.dp),
+                                                strokeWidth = 2.dp,
+                                                color = contentColor
+                                            )
+                                        } else {
+                                            Icon(
+                                                imageVector = if (isAudioPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                                                contentDescription = stringResource(R.string.attach_voice),
+                                                tint = contentColor
+                                            )
+                                        }
+                                    }
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = if (message.type == MessageType.VOICE) stringResource(R.string.attach_voice)
+                                            else (message.media?.originalFilename ?: "Audio"),
+                                            color = contentColor,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontWeight = FontWeight.Medium,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        Slider(
+                                            value = sliderValue,
+                                            onValueChange = { nextPos -> onSeekAudio(nextPos.toLong()) },
+                                            valueRange = 0f..sliderMax,
+                                            enabled = isAudioActive && !isAudioLoading && totalMs > 0L,
+                                            colors = SliderDefaults.colors(
+                                                thumbColor = contentColor,
+                                                activeTrackColor = contentColor,
+                                                inactiveTrackColor = contentColor.copy(alpha = 0.28f),
+                                                disabledThumbColor = contentColor.copy(alpha = 0.65f),
+                                                disabledActiveTrackColor = contentColor.copy(alpha = 0.55f),
+                                                disabledInactiveTrackColor = contentColor.copy(alpha = 0.22f)
+                                            ),
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .height(26.dp)
+                                                .testTag("voice_seek_slider_${message.id}")
+                                        )
+                                        val timeLabel = when {
+                                            isAudioLoading -> stringResource(R.string.voice_loading)
+                                            totalMs > 0L -> "${DateTimeFormatters.formatDuration(posMs / 1000L)} / ${DateTimeFormatters.formatDuration(totalMs / 1000L)}"
+                                            else -> DateTimeFormatters.formatDuration(posMs / 1000L)
+                                        }
+                                        Text(
+                                            text = if (hasAudioError) stringResource(R.string.voice_play_error) else timeLabel,
+                                            color = if (hasAudioError) MaterialTheme.colorScheme.errorContainer else contentColor.copy(alpha = 0.8f),
+                                            style = MaterialTheme.typography.labelSmall
+                                        )
+                                    }
                                 }
                             }
                         }
