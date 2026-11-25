@@ -210,12 +210,6 @@ fun ActiveDevicesScreen(
                                             Spacer(modifier = Modifier.width(8.dp))
                                             Text(stringResource(R.string.logout_all_devices_title))
                                         }
-                                        Spacer(modifier = Modifier.height(6.dp))
-                                        Text(
-                                            text = stringResource(R.string.device_security_tip),
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.error
-                                        )
                                     }
                                 }
                             }

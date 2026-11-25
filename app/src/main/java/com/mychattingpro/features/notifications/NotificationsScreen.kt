@@ -90,8 +90,8 @@ fun NotificationsScreen(
 
     DisposableEffect(Unit) {
         onDispose {
-            scope.launch {
-                authRepository.markAllSecurityAlertsRead()
+            kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+                runCatching { authRepository.markAllSecurityAlertsRead() }
             }
         }
     }

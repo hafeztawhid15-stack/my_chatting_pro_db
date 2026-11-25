@@ -294,6 +294,28 @@ class AppContainer(context: Context) {
                             return@collect
                         }
 
+                        if (event.alertType == "session_revoked" &&
+                            !event.revokedSessionId.isNullOrBlank() &&
+                            event.revokedSessionId != mySessionId
+                        ) {
+                            runCatching {
+                                database.securityAlertDao().getBySessionId(event.revokedSessionId).forEach {
+                                    notificationManager.cancelSecurityAlertNotification(it.id)
+                                }
+                                database.securityAlertDao().deleteBySessionId(event.revokedSessionId)
+                            }
+                            return@collect
+                        }
+
+                        if (event.alertType == "logout_all_devices" &&
+                            event.keepCurrent &&
+                            event.keepSessionId == mySessionId
+                        ) {
+                            runCatching { database.securityAlertDao().clearAll() }
+                            notificationManager.cancelAllSecurityNotifications()
+                            return@collect
+                        }
+
                         val formatted = SecurityAlertFormatter.formatRaw(
                             context = appContext,
                             alertType = event.alertType,
@@ -302,35 +324,36 @@ class AppContainer(context: Context) {
                             language = prefs.language
                         )
 
-                        runCatching {
-                            database.securityAlertDao().upsert(
-                                SecurityAlertEntity(
-                                    id = event.eventId,
-                                    alertType = event.alertType,
-                                    deviceName = event.deviceName,
-                                    sessionId = event.sessionId,
-                                    createdAtMs = event.atMs,
-                                    isSessionActive = event.alertType == "new_login",
-                                    isRead = false
-                                )
-                            )
-                        }
-
-                        notificationManager.showSecurityAlertNotification(
-                            title = formatted.title,
-                            body = formatted.body,
-                            alertType = event.alertType,
-                            prefs = prefs,
-                            eventId = event.eventId
-                        )
-
                         val shouldForceLogout = when (event.alertType) {
                             "account_deleted" -> true
                             "session_revoked" -> event.revokedSessionId == null || event.revokedSessionId == mySessionId
                             "logout_all_devices" -> !(event.keepCurrent && event.keepSessionId == mySessionId)
                             else -> false
                         }
-                        if (shouldForceLogout) {
+
+                        if (!shouldForceLogout) {
+                            runCatching {
+                                database.securityAlertDao().upsert(
+                                    SecurityAlertEntity(
+                                        id = event.eventId,
+                                        alertType = event.alertType,
+                                        deviceName = event.deviceName,
+                                        sessionId = event.sessionId,
+                                        createdAtMs = event.atMs,
+                                        isSessionActive = event.alertType == "new_login",
+                                        isRead = false
+                                    )
+                                )
+                            }
+
+                            notificationManager.showSecurityAlertNotification(
+                                title = formatted.title,
+                                body = formatted.body,
+                                alertType = event.alertType,
+                                prefs = prefs,
+                                eventId = event.eventId
+                            )
+                        } else {
                             _securityAlerts.tryEmit(
                                 event.copy(title = formatted.title, body = formatted.body)
                             )

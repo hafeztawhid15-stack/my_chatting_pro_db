@@ -164,8 +164,17 @@ interface SecurityAlertDao {
     @Query("UPDATE security_alerts SET isRead = 1 WHERE id = :id")
     suspend fun markRead(id: String)
 
+    @Query("SELECT * FROM security_alerts WHERE sessionId = :sessionId")
+    suspend fun getBySessionId(sessionId: String): List<SecurityAlertEntity>
+
     @Query("DELETE FROM security_alerts WHERE id = :id")
     suspend fun deleteById(id: String)
+
+    @Query("DELETE FROM security_alerts WHERE sessionId = :sessionId")
+    suspend fun deleteBySessionId(sessionId: String)
+
+    @Query("DELETE FROM security_alerts WHERE alertType IN (:types)")
+    suspend fun deleteByTypes(types: List<String>)
 
     @Query("DELETE FROM security_alerts")
     suspend fun clearAll()

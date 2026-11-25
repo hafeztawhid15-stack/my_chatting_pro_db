@@ -415,6 +415,10 @@ export class AuthService {
       this.db.listActiveUserSessions(userId, Date.now()).catch(() => []),
     ]);
     const activeSessionIds = new Set(activeSessions.map((s) => s.session_id));
+    const lastLogoutAllMs = logs.reduce(
+      (max, row) => (row.event_type === 'auth.logout_all_devices' ? Math.max(max, row.created_at_ms) : max),
+      0
+    );
     const alerts: Array<{
       id: string;
       alertType: string;
@@ -433,22 +437,22 @@ export class AuthService {
 
       let alertType: string;
       if (row.event_type === 'auth.login') {
-        // Ignore legacy login audit entries without session metadata or self-login of current session
-        if (!sessionId || isCurrentSession) continue;
+        // Only keep active other-device logins; once logged out or revoked, remove from alerts
+        if (!sessionId || isCurrentSession || !activeSessionIds.has(sessionId)) continue;
         alertType = 'new_login';
       } else if (row.event_type === 'auth.login_wrong_pin' || row.event_type === 'auth.recovery_code_failed') {
+        if (row.created_at_ms <= lastLogoutAllMs) continue;
         const failedCount = typeof meta.failedCount === 'number' ? meta.failedCount : 0;
         if (row.event_type === 'auth.login_wrong_pin' && failedCount < 3) continue;
         alertType = 'suspicious_login_attempt';
       } else if (row.event_type === 'auth.login_pin_changed') {
+        if (row.created_at_ms <= lastLogoutAllMs) continue;
         alertType = 'login_pin_changed';
       } else if (row.event_type === 'auth.login_pin_reset_success') {
+        if (row.created_at_ms <= lastLogoutAllMs) continue;
         alertType = 'login_pin_reset';
-      } else if (row.event_type === 'auth.session_revoked') {
-        alertType = 'session_revoked';
-      } else if (row.event_type === 'auth.logout_all_devices') {
-        alertType = 'logout_all_devices';
       } else {
+        // Do not keep session_revoked / logout_all_devices as lingering alerts after logging out
         continue;
       }
 

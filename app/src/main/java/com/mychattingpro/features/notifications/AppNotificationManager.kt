@@ -491,6 +491,29 @@ class AppNotificationManager(private val context: Context) {
         }
     }
 
+    fun cancelSecurityAlertNotification(eventId: String?) {
+        if (eventId.isNullOrBlank()) return
+        runCatching {
+            NotificationManagerCompat.from(context).cancel(eventId.hashCode())
+        }
+    }
+
+    fun cancelAllSecurityNotifications() {
+        runCatching {
+            val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return
+            nm.activeNotifications.forEach { sbn ->
+                val isSecurity = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    sbn.notification.channelId == CHANNEL_SECURITY || sbn.notification.channelId == CHANNEL_ACCOUNT
+                } else {
+                    sbn.notification.category == NotificationCompat.CATEGORY_STATUS
+                }
+                if (isSecurity) {
+                    nm.cancel(sbn.tag, sbn.id)
+                }
+            }
+        }
+    }
+
     private fun resolveMessageSoundCandidates(customSoundUri: String?): List<Uri> {
         val uris = linkedSetOf<Uri>()
         if (!customSoundUri.isNullOrBlank()) {

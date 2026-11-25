@@ -72,6 +72,7 @@ import com.mychattingpro.domain.repository.PrivateChatRepository
 import com.mychattingpro.domain.repository.ProfileRepository
 import com.mychattingpro.domain.repository.SafetyRepository
 import com.mychattingpro.features.media.MediaUploadHelper
+import com.mychattingpro.features.notifications.AppNotificationManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -215,6 +216,7 @@ class AuthRepositoryImpl(
         messageDao.clearAll()
         callHistoryDao.clearAll()
         securityAlertDao?.clearAll()
+        AppNotificationManager(context).cancelAllSecurityNotifications()
     }
 
     override suspend fun logoutAllDevices(keepCurrent: Boolean): Result<Unit> = runCatching {
@@ -222,6 +224,8 @@ class AuthRepositoryImpl(
             runCatching { api.unregisterNotificationEndpoint() }
         }
         api.logoutAllDevices(LogoutAllRequestDto(keepCurrent = keepCurrent))
+        securityAlertDao?.clearAll()
+        AppNotificationManager(context).cancelAllSecurityNotifications()
         if (!keepCurrent) {
             privateChatLockManager?.lock()
             socketManager.stop()
@@ -229,7 +233,6 @@ class AuthRepositoryImpl(
             conversationDao.clearAll()
             messageDao.clearAll()
             callHistoryDao.clearAll()
-            securityAlertDao?.clearAll()
         }
         Unit
     }.recoverCatching { throw AppException(errorMapper.map(it)) }
@@ -254,6 +257,8 @@ class AuthRepositoryImpl(
                 confirmNewPin = confirmNewPin
             )
         )
+        securityAlertDao?.deleteByTypes(listOf("new_login"))
+        AppNotificationManager(context).cancelAllSecurityNotifications()
         Unit
     }.recoverCatching { throw AppException(errorMapper.map(it)) }
 
@@ -335,6 +340,7 @@ class AuthRepositoryImpl(
         messageDao.clearAll()
         callHistoryDao.clearAll()
         securityAlertDao?.clearAll()
+        AppNotificationManager(context).cancelAllSecurityNotifications()
         prefsStore.setRecoveryCodeConfigured(false)
         response.retentionNotice
     }.recoverCatching { throw AppException(errorMapper.map(it)) }
@@ -356,6 +362,12 @@ class AuthRepositoryImpl(
 
     override suspend fun revokeSession(sessionId: String): Result<Unit> = runCatching {
         api.revokeSession(sessionId)
+        val notifManager = AppNotificationManager(context)
+        securityAlertDao?.getBySessionId(sessionId)?.forEach { alert ->
+            notifManager.cancelSecurityAlertNotification(alert.id)
+        }
+        securityAlertDao?.deleteBySessionId(sessionId)
+        Unit
     }.recoverCatching { throw AppException(errorMapper.map(it)) }
 
     override suspend fun syncNotificationEndpoint(): Result<Unit> = runCatching {
@@ -383,8 +395,9 @@ class AuthRepositoryImpl(
 
     override suspend fun refreshSecurityAlerts(): Result<List<SecurityAlertItem>> = runCatching {
         val dao = securityAlertDao ?: return@runCatching emptyList()
-        val existingById = dao.getAll().associateBy { it.id }
-        val existingSessionAlerts = dao.getAll()
+        val existingAll = dao.getAll()
+        val existingById = existingAll.associateBy { it.id }
+        val existingSessionAlerts = existingAll
             .filter { !it.sessionId.isNullOrBlank() && it.alertType == "new_login" }
             .associateBy { it.sessionId!! }
 
@@ -413,6 +426,12 @@ class AuthRepositoryImpl(
                 }
                 entity
             }
+        val serverIds = upserts.map { it.id }.toSet()
+        val notifManager = AppNotificationManager(context)
+        existingAll.filter { it.id !in serverIds }.forEach { stale ->
+            dao.deleteById(stale.id)
+            notifManager.cancelSecurityAlertNotification(stale.id)
+        }
         if (upserts.isNotEmpty()) {
             dao.upsertAll(upserts)
         }
