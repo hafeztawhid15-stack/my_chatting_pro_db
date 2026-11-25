@@ -45,6 +45,7 @@ import com.mychattingpro.features.messages.ChatDetailScreen
 import com.mychattingpro.features.messages.ChatDetailViewModel
 import com.mychattingpro.features.messages.MediaViewerScreen
 import com.mychattingpro.features.notifications.AppNotificationManager
+import com.mychattingpro.features.notifications.NotificationsScreen
 import com.mychattingpro.features.notifications.RealtimeSyncService
 import com.mychattingpro.features.privatechat.PrivateChatViewModel
 import com.mychattingpro.features.privatechat.PrivateChatsScreen
@@ -73,6 +74,7 @@ private data class PendingCallLaunch(
 
 class MainActivity : ComponentActivity() {
     private var pendingCallLaunch by mutableStateOf<PendingCallLaunch?>(null)
+    private var pendingNavigationTarget by mutableStateOf<String?>(null)
     private var cachedHasSession = false
     private var cachedBackgroundSyncEnabled = false
 
@@ -82,7 +84,7 @@ class MainActivity : ComponentActivity() {
 
         val app = application as MyChattingProApp
         val container = app.container
-        handleCallLaunchIntent(intent, container)
+        handleLaunchIntent(intent, container)
 
         setContent {
             val prefs by container.prefsStore.preferencesFlow.collectAsStateWithLifecycle(
@@ -112,7 +114,9 @@ class MainActivity : ComponentActivity() {
                     MyChattingProNavRoot(
                         container = container,
                         pendingCallLaunch = pendingCallLaunch,
-                        onCallLaunchConsumed = { pendingCallLaunch = null }
+                        onCallLaunchConsumed = { pendingCallLaunch = null },
+                        pendingNavigationTarget = pendingNavigationTarget,
+                        onNavigationTargetConsumed = { pendingNavigationTarget = null }
                     )
                 }
             }
@@ -123,11 +127,16 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         val container = (application as? MyChattingProApp)?.container ?: return
-        handleCallLaunchIntent(intent, container)
+        handleLaunchIntent(intent, container)
     }
 
-    private fun handleCallLaunchIntent(intent: Intent?, container: AppContainer) {
+    private fun handleLaunchIntent(intent: Intent?, container: AppContainer) {
         if (intent == null) return
+        val navTarget = intent.getStringExtra(AppNotificationManager.EXTRA_NAVIGATE_TO)
+        if (!navTarget.isNullOrBlank()) {
+            pendingNavigationTarget = navTarget
+            intent.removeExtra(AppNotificationManager.EXTRA_NAVIGATE_TO)
+        }
         val callId = intent.getStringExtra(AppNotificationManager.EXTRA_CALL_ID).orEmpty()
         if (callId.isBlank()) return
 
@@ -192,12 +201,33 @@ class MainActivity : ComponentActivity() {
 private fun MyChattingProNavRoot(
     container: AppContainer,
     pendingCallLaunch: PendingCallLaunch?,
-    onCallLaunchConsumed: () -> Unit
+    onCallLaunchConsumed: () -> Unit,
+    pendingNavigationTarget: String?,
+    onNavigationTargetConsumed: () -> Unit
 ) {
     val navController = rememberNavController()
     val context = LocalContext.current
     val incomingCall by container.incomingCall.collectAsStateWithLifecycle()
+    val session by container.tokenStore.sessionFlow.collectAsStateWithLifecycle(initialValue = null)
     var activeCallScreenId by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(pendingNavigationTarget, session?.userId) {
+        val target = pendingNavigationTarget ?: return@LaunchedEffect
+        if (session == null) return@LaunchedEffect
+        onNavigationTargetConsumed()
+        when (target) {
+            AppNotificationManager.NAV_ACTIVE_DEVICES -> {
+                navController.navigate(AppRoute.ActiveDevices) {
+                    launchSingleTop = true
+                }
+            }
+            AppNotificationManager.NAV_NOTIFICATIONS -> {
+                navController.navigate(AppRoute.Notifications) {
+                    launchSingleTop = true
+                }
+            }
+        }
+    }
 
     LaunchedEffect(Unit) {
         container.securityAlerts.collect { alert ->
@@ -366,7 +396,8 @@ private fun MyChattingProNavRoot(
                         prefsStore = container.prefsStore,
                         networkMonitor = container.networkModule.networkMonitor,
                         socketManager = container.networkModule.realtimeSocketManager,
-                        safetyRepository = container.safetyRepository
+                        safetyRepository = container.safetyRepository,
+                        authRepository = container.authRepository
                     )
                 }
             )
@@ -405,7 +436,7 @@ private fun MyChattingProNavRoot(
                 onOpenActiveDevices = { navController.navigate(AppRoute.ActiveDevices) },
                 onOpenOwnerMonitor = { navController.navigate(AppRoute.OwnerActivity) },
                 onOpenPrivateChat = { navController.navigate(AppRoute.PrivatePin) },
-                onOpenCallHistory = { navController.navigate(AppRoute.CallHistory) },
+                onOpenNotifications = { navController.navigate(AppRoute.Notifications) },
                 onOpenNotificationSettings = { navController.navigate(AppRoute.NotificationSettings) },
                 onOpenChangeLoginPin = { navController.navigate(AppRoute.ChangeLoginPin) },
                 onOpenRecoveryCode = { navController.navigate(AppRoute.RecoveryCode) },
@@ -446,6 +477,7 @@ private fun MyChattingProNavRoot(
                         networkMonitor = container.networkModule.networkMonitor,
                         isPrivate = route.isPrivate,
                         privateChatRepository = container.privateChatRepository,
+                        callRepository = container.callRepository,
                         baseUrl = container.networkModule.baseUrl
                     )
                 }
@@ -602,6 +634,15 @@ private fun MyChattingProNavRoot(
                         )
                     )
                 }
+            )
+        }
+
+        composable<AppRoute.Notifications> {
+            NotificationsScreen(
+                authRepository = container.authRepository,
+                prefsStore = container.prefsStore,
+                onBack = { navController.popBackStack() },
+                onOpenActiveDevices = { navController.navigate(AppRoute.ActiveDevices) }
             )
         }
 

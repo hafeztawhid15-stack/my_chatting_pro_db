@@ -12,6 +12,8 @@ import com.mychattingpro.core.database.ConversationDao
 import com.mychattingpro.core.database.ConversationEntity
 import com.mychattingpro.core.database.MessageDao
 import com.mychattingpro.core.database.MessageEntity
+import com.mychattingpro.core.database.SecurityAlertDao
+import com.mychattingpro.core.database.SecurityAlertEntity
 import com.mychattingpro.core.datastore.AppPreferencesDataStore
 import com.mychattingpro.core.network.BlockUserRequestDto
 import com.mychattingpro.core.network.CallHistoryItemDto
@@ -59,6 +61,7 @@ import com.mychattingpro.domain.models.OwnerActivitySummary
 import com.mychattingpro.domain.models.OwnerTrackedUser
 import com.mychattingpro.domain.models.PrivatePinStatus
 import com.mychattingpro.domain.models.PublicUser
+import com.mychattingpro.domain.models.SecurityAlertItem
 import com.mychattingpro.domain.models.UserProfile
 import com.mychattingpro.domain.repository.AuthRepository
 import com.mychattingpro.domain.repository.CallRepository
@@ -95,8 +98,32 @@ class AuthRepositoryImpl(
     private val callHistoryDao: CallHistoryDao,
     private val socketManager: RealtimeSocketManager,
     private val errorMapper: ErrorMapper,
-    private val privateChatLockManager: PrivateChatLockManager? = null
+    private val privateChatLockManager: PrivateChatLockManager? = null,
+    private val securityAlertDao: SecurityAlertDao? = null
 ) : AuthRepository {
+
+    companion object {
+        fun formatDeviceName(manufacturer: String, model: String): String {
+            val cleanMfg = manufacturer.trim()
+            val cleanModel = model.trim()
+            if (cleanMfg.isEmpty() && cleanModel.isEmpty()) return "Android Device"
+            val formattedMfg = cleanMfg.replaceFirstChar {
+                if (it.isLowerCase()) it.titlecase() else it.toString()
+            }
+            val combined = when {
+                cleanModel.isEmpty() -> formattedMfg
+                cleanMfg.isEmpty() -> cleanModel.replaceFirstChar {
+                    if (it.isLowerCase()) it.titlecase() else it.toString()
+                }
+                cleanModel.startsWith(cleanMfg, ignoreCase = true) -> {
+                    val rest = cleanModel.substring(cleanMfg.length).trimStart()
+                    if (rest.isEmpty()) formattedMfg else "$formattedMfg $rest"
+                }
+                else -> "$formattedMfg $cleanModel"
+            }
+            return combined.take(60)
+        }
+    }
 
     override suspend fun checkPhoneAvailable(phoneE164: String): Result<Boolean> = runCatching {
         val response = api.checkPhoneAvailable(com.mychattingpro.core.network.CheckPhoneRequestDto(phone = phoneE164))
@@ -121,7 +148,7 @@ class AuthRepositoryImpl(
                 pin = pin,
                 confirmPin = confirmPin,
                 displayName = displayName,
-                deviceName = "${Build.MANUFACTURER} ${Build.MODEL}".take(60),
+                deviceName = formatDeviceName(Build.MANUFACTURER, Build.MODEL),
                 appVersion = BuildConfig.VERSION_NAME
             )
         )
@@ -152,7 +179,7 @@ class AuthRepositoryImpl(
             LoginRequestDto(
                 phone = phoneE164,
                 pin = pin,
-                deviceName = "${Build.MANUFACTURER} ${Build.MODEL}".take(60),
+                deviceName = formatDeviceName(Build.MANUFACTURER, Build.MODEL),
                 appVersion = BuildConfig.VERSION_NAME
             )
         )
@@ -187,6 +214,7 @@ class AuthRepositoryImpl(
         conversationDao.clearAll()
         messageDao.clearAll()
         callHistoryDao.clearAll()
+        securityAlertDao?.clearAll()
     }
 
     override suspend fun logoutAllDevices(keepCurrent: Boolean): Result<Unit> = runCatching {
@@ -201,6 +229,7 @@ class AuthRepositoryImpl(
             conversationDao.clearAll()
             messageDao.clearAll()
             callHistoryDao.clearAll()
+            securityAlertDao?.clearAll()
         }
         Unit
     }.recoverCatching { throw AppException(errorMapper.map(it)) }
@@ -259,7 +288,7 @@ class AuthRepositoryImpl(
                 recoveryCode = cleanedCode,
                 newPin = newPin,
                 confirmNewPin = confirmNewPin,
-                deviceName = "${Build.MANUFACTURER} ${Build.MODEL}".take(60),
+                deviceName = formatDeviceName(Build.MANUFACTURER, Build.MODEL),
                 appVersion = BuildConfig.VERSION_NAME
             )
         )
@@ -305,6 +334,7 @@ class AuthRepositoryImpl(
         conversationDao.clearAll()
         messageDao.clearAll()
         callHistoryDao.clearAll()
+        securityAlertDao?.clearAll()
         prefsStore.setRecoveryCodeConfigured(false)
         response.retentionNotice
     }.recoverCatching { throw AppException(errorMapper.map(it)) }
@@ -343,6 +373,59 @@ class AuthRepositoryImpl(
             )
         )
     }.recoverCatching { throw AppException(errorMapper.map(it)) }
+
+    override fun observeSecurityAlerts(): Flow<List<SecurityAlertItem>> =
+        securityAlertDao?.observeAlerts()?.map { rows -> rows.map { it.toDomain() } }
+            ?: flowOf(emptyList())
+
+    override fun observeUnreadSecurityAlertsCount(): Flow<Int> =
+        securityAlertDao?.observeUnreadCount() ?: flowOf(0)
+
+    override suspend fun refreshSecurityAlerts(): Result<List<SecurityAlertItem>> = runCatching {
+        val dao = securityAlertDao ?: return@runCatching emptyList()
+        val existingById = dao.getAll().associateBy { it.id }
+        val existingSessionAlerts = dao.getAll()
+            .filter { !it.sessionId.isNullOrBlank() && it.alertType == "new_login" }
+            .associateBy { it.sessionId!! }
+
+        val response = api.listSecurityAlerts()
+        val newlyInserted = mutableListOf<SecurityAlertItem>()
+        val upserts = response.alerts
+            .filter { !(it.isCurrentSession && it.alertType == "new_login") }
+            .map { dto ->
+                val matchingRealtime = dto.sessionId?.let { existingSessionAlerts[it] }
+                val existing = existingById[dto.id] ?: matchingRealtime
+                if (matchingRealtime != null && matchingRealtime.id != dto.id) {
+                    dao.deleteById(matchingRealtime.id)
+                }
+                val isRead = existing?.isRead ?: false
+                val entity = SecurityAlertEntity(
+                    id = dto.id,
+                    alertType = dto.alertType,
+                    deviceName = dto.deviceName,
+                    sessionId = dto.sessionId,
+                    createdAtMs = dto.createdAtMs,
+                    isSessionActive = dto.isSessionActive,
+                    isRead = isRead
+                )
+                if (existing == null) {
+                    newlyInserted.add(entity.toDomain())
+                }
+                entity
+            }
+        if (upserts.isNotEmpty()) {
+            dao.upsertAll(upserts)
+        }
+        newlyInserted
+    }.recoverCatching { throw AppException(errorMapper.map(it)) }
+
+    override suspend fun markAllSecurityAlertsRead() {
+        securityAlertDao?.markAllRead()
+    }
+
+    override suspend fun markSecurityAlertRead(alertId: String) {
+        securityAlertDao?.markRead(alertId)
+    }
 }
 
 class ProfileRepositoryImpl(
@@ -1007,6 +1090,9 @@ class CallRepositoryImpl(
 
     override fun observeCallHistory(): Flow<List<CallHistoryItem>> =
         callHistoryDao.observeAll().map { list -> list.map { it.toDomain() } }
+
+    override fun observeCallsForPeer(conversationId: String, peerUserId: String): Flow<List<CallHistoryItem>> =
+        callHistoryDao.observeCallsForPeer(conversationId, peerUserId).map { list -> list.map { it.toDomain() } }
 
     override suspend fun refreshCallHistory(filter: CallHistoryFilter): Result<List<CallHistoryItem>> = runCatching {
         val res = api.getCallHistory(filter = filter.apiValue, limit = 80)
@@ -1801,4 +1887,14 @@ private fun CallHistoryEntity.toDomain() = CallHistoryItem(
     answeredAtMs = answeredAtMs,
     endedAtMs = endedAtMs,
     durationSeconds = durationSeconds
+)
+
+private fun SecurityAlertEntity.toDomain() = SecurityAlertItem(
+    id = id,
+    alertType = alertType,
+    deviceName = deviceName,
+    sessionId = sessionId,
+    createdAtMs = createdAtMs,
+    isSessionActive = isSessionActive,
+    isRead = isRead
 )

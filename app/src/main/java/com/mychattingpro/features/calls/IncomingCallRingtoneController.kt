@@ -38,10 +38,15 @@ class AndroidRingtonePlaybackEngine(
 ) : RingtonePlaybackEngine {
 
     private val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+    private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
     private var ringtone: Ringtone? = null
     private var mediaPlayer: MediaPlayer? = null
+    private var fallbackToneGenerator: android.media.ToneGenerator? = null
+    private var loopCheckRunnable: Runnable? = null
     private var audioFocusRequest: AudioFocusRequest? = null
-    private var previousAudioMode: Int? = null
+
+    @Volatile
+    private var playbackGeneration: Long = 0L
 
     private val ringAudioAttributes: AudioAttributes = AudioAttributes.Builder()
         .setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
@@ -75,42 +80,53 @@ class AndroidRingtonePlaybackEngine(
         audioManager?.ringerMode ?: AudioManager.RINGER_MODE_NORMAL
     }.getOrDefault(AudioManager.RINGER_MODE_NORMAL)
 
-    @Synchronized
     override fun startPlayback(uri: Uri?, vibrate: Boolean) {
-        stopPlayback()
+        val gen = ++playbackGeneration
+        val block = {
+            if (playbackGeneration == gen) {
+                startPlaybackOnMain(gen, uri, vibrate)
+            }
+        }
+        if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) {
+            block()
+        } else {
+            mainHandler.post(block)
+        }
+    }
+
+    override fun stopPlayback() {
+        playbackGeneration++
+        if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) {
+            stopPlaybackOnMain()
+        } else {
+            mainHandler.post { stopPlaybackOnMain() }
+        }
+    }
+
+    @Synchronized
+    private fun startPlaybackOnMain(gen: Long, uri: Uri?, vibrate: Boolean) {
+        stopPlaybackOnMain()
+        if (playbackGeneration != gen) return
 
         if (uri != null) {
-            requestRingtoneFocusAndMode()
+            requestRingtoneFocus()
 
             val candidates = (listOf(uri) + resolveFallbackSystemRingtoneUris()).distinct()
             var startedAudio = false
 
-            // Pass 1: MediaPlayer validates data source & codecs upfront instead of failing silently
+            // Pass 1: Android system Ringtone (IRingtonePlayer) handles user-selected OEM theme URIs,
+            // Dual-SIM tones, and Android 11-15 scoped storage URIs without SecurityException.
             for (candidate in candidates) {
-                val mp = MediaPlayer()
-                var cleanedUp = false
                 val played = runCatching {
-                    mp.setAudioAttributes(ringAudioAttributes)
-                    mp.setDataSource(context, candidate)
-                    mp.isLooping = true
-                    mp.setVolume(1.0f, 1.0f)
-                    mp.setOnErrorListener { failedMp, _, _ ->
-                        runCatching { failedMp.release() }
-                        if (mediaPlayer === failedMp) {
-                            mediaPlayer = null
-                        }
-                        true
+                    val rt = RingtoneManager.getRingtone(context, candidate) ?: return@runCatching false
+                    rt.audioAttributes = ringAudioAttributes
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                        rt.isLooping = true
                     }
-                    mp.prepare()
-                    mp.start()
-                    mediaPlayer = mp
+                    rt.play()
+                    ringtone = rt
+                    scheduleRingtoneLoopKeeper(gen, rt)
                     true
-                }.onFailure {
-                    if (!cleanedUp) {
-                        cleanedUp = true
-                        runCatching { mp.reset() }
-                        runCatching { mp.release() }
-                    }
                 }.getOrDefault(false)
                 if (played) {
                     startedAudio = true
@@ -118,23 +134,44 @@ class AndroidRingtonePlaybackEngine(
                 }
             }
 
-            // Pass 2: System Ringtone fallback if MediaPlayer could not open any URI directly
+            // Pass 2: MediaPlayer fallback if Ringtone service was unavailable
             if (!startedAudio) {
                 for (candidate in candidates) {
+                    val mp = MediaPlayer()
+                    var cleanedUp = false
                     val played = runCatching {
-                        val rt = RingtoneManager.getRingtone(context, candidate) ?: return@runCatching false
-                        rt.audioAttributes = ringAudioAttributes
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                            rt.isLooping = true
+                        mp.setAudioAttributes(ringAudioAttributes)
+                        mp.setDataSource(context, candidate)
+                        mp.isLooping = true
+                        mp.setVolume(1.0f, 1.0f)
+                        mp.setOnErrorListener { failedMp, _, _ ->
+                            runCatching { failedMp.release() }
+                            if (mediaPlayer === failedMp) {
+                                mediaPlayer = null
+                            }
+                            true
                         }
-                        rt.play()
-                        ringtone = rt
+                        mp.prepare()
+                        mp.start()
+                        mediaPlayer = mp
                         true
+                    }.onFailure {
+                        if (!cleanedUp) {
+                            cleanedUp = true
+                            runCatching { mp.reset() }
+                            runCatching { mp.release() }
+                        }
                     }.getOrDefault(false)
                     if (played) {
+                        startedAudio = true
                         break
                     }
                 }
+            }
+
+            // Pass 3: Synthetic ringback tone fallback so devices with stripped sound providers still ring
+            if (!startedAudio) {
+                startToneGeneratorFallback(gen)
             }
         }
 
@@ -143,8 +180,44 @@ class AndroidRingtonePlaybackEngine(
         }
     }
 
+    private fun scheduleRingtoneLoopKeeper(gen: Long, rt: Ringtone) {
+        loopCheckRunnable?.let { mainHandler.removeCallbacks(it) }
+        val checker = object : Runnable {
+            override fun run() {
+                if (playbackGeneration != gen) return
+                runCatching {
+                    if (!rt.isPlaying) {
+                        rt.play()
+                    }
+                }
+                mainHandler.postDelayed(this, 3200L)
+            }
+        }
+        loopCheckRunnable = checker
+        mainHandler.postDelayed(checker, 3200L)
+    }
+
+    private fun startToneGeneratorFallback(gen: Long) {
+        val tg = runCatching {
+            android.media.ToneGenerator(AudioManager.STREAM_RING, 85)
+        }.getOrNull() ?: return
+        fallbackToneGenerator = tg
+        val pulse = object : Runnable {
+            override fun run() {
+                if (playbackGeneration != gen) return
+                runCatching { tg.startTone(android.media.ToneGenerator.TONE_SUP_RINGTONE, 1800) }
+                mainHandler.postDelayed(this, 3000L)
+            }
+        }
+        loopCheckRunnable = pulse
+        pulse.run()
+    }
+
     @Synchronized
-    override fun stopPlayback() {
+    private fun stopPlaybackOnMain() {
+        loopCheckRunnable?.let { mainHandler.removeCallbacks(it) }
+        loopCheckRunnable = null
+
         runCatching { ringtone?.stop() }
         ringtone = null
 
@@ -156,18 +229,18 @@ class AndroidRingtonePlaybackEngine(
         }
         mediaPlayer = null
 
+        runCatching {
+            fallbackToneGenerator?.stopTone()
+            fallbackToneGenerator?.release()
+        }
+        fallbackToneGenerator = null
+
         stopVibration()
-        abandonFocusAndRestoreMode()
+        abandonRingtoneFocus()
     }
 
-    private fun requestRingtoneFocusAndMode() {
+    private fun requestRingtoneFocus() {
         val am = audioManager ?: return
-        runCatching {
-            if (previousAudioMode == null) {
-                previousAudioMode = am.mode
-            }
-            am.mode = AudioManager.MODE_RINGTONE
-        }
         runCatching {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 val req = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
@@ -183,7 +256,7 @@ class AndroidRingtonePlaybackEngine(
         }
     }
 
-    private fun abandonFocusAndRestoreMode() {
+    private fun abandonRingtoneFocus() {
         val am = audioManager ?: return
         runCatching {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -192,14 +265,6 @@ class AndroidRingtonePlaybackEngine(
             } else {
                 @Suppress("DEPRECATION")
                 am.abandonAudioFocus(null)
-            }
-        }
-        runCatching {
-            val savedMode = previousAudioMode
-            previousAudioMode = null
-            if (savedMode != null && am.mode == AudioManager.MODE_RINGTONE) {
-                am.mode = savedMode.takeIf { it != AudioManager.MODE_RINGTONE }
-                    ?: AudioManager.MODE_NORMAL
             }
         }
     }

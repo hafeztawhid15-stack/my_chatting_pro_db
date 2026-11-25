@@ -166,6 +166,9 @@ interface CloudflareApiService {
     @GET("v1/auth/sessions")
     suspend fun listActiveSessions(): ActiveSessionsResponseDto
 
+    @GET("v1/auth/security-alerts")
+    suspend fun listSecurityAlerts(): SecurityAlertsResponseDto
+
     @DELETE("v1/auth/sessions/{sessionId}")
     suspend fun revokeSession(@Path("sessionId") sessionId: String)
 

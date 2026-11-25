@@ -210,6 +210,12 @@ fun ActiveDevicesScreen(
                                             Spacer(modifier = Modifier.width(8.dp))
                                             Text(stringResource(R.string.logout_all_devices_title))
                                         }
+                                        Spacer(modifier = Modifier.height(6.dp))
+                                        Text(
+                                            text = stringResource(R.string.device_security_tip),
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.error
+                                        )
                                     }
                                 }
                             }
@@ -230,19 +236,30 @@ fun ActiveDevicesScreen(
                                 ) {
                                     Surface(
                                         shape = RoundedCornerShape(12.dp),
-                                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f),
+                                        color = if (session.isCurrent) {
+                                            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f)
+                                        } else {
+                                            MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.55f)
+                                        },
                                         modifier = Modifier.size(44.dp)
                                     ) {
                                         Box(contentAlignment = Alignment.Center) {
                                             Icon(
                                                 imageVector = Icons.Outlined.PhoneAndroid,
                                                 contentDescription = session.deviceName,
-                                                tint = MaterialTheme.colorScheme.primary
+                                                tint = if (session.isCurrent) {
+                                                    MaterialTheme.colorScheme.primary
+                                                } else {
+                                                    MaterialTheme.colorScheme.error
+                                                }
                                             )
                                         }
                                     }
                                     Spacer(modifier = Modifier.width(12.dp))
-                                    Column(modifier = Modifier.weight(1f)) {
+                                    Column(
+                                        modifier = Modifier.weight(1f),
+                                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                                    ) {
                                         Row(
                                             verticalAlignment = Alignment.CenterVertically,
                                             horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -250,7 +267,8 @@ fun ActiveDevicesScreen(
                                             Text(
                                                 text = session.deviceName,
                                                 style = MaterialTheme.typography.bodyLarge,
-                                                fontWeight = FontWeight.SemiBold
+                                                fontWeight = FontWeight.SemiBold,
+                                                modifier = Modifier.weight(1f, fill = false)
                                             )
                                             if (session.isCurrent) {
                                                 Surface(
@@ -267,20 +285,43 @@ fun ActiveDevicesScreen(
                                             }
                                         }
                                         Text(
-                                            text = "v${session.appVersion} • ${
+                                            text = stringResource(
+                                                R.string.device_logged_in_at,
+                                                DateTimeFormatters.formatFullDateTime(
+                                                    context,
+                                                    session.createdAtMs,
+                                                    language
+                                                )
+                                            ),
+                                            style = MaterialTheme.typography.bodySmall,
+                                            fontWeight = FontWeight.Medium,
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        )
+                                        Text(
+                                            text = stringResource(
+                                                R.string.device_last_active_at,
                                                 DateTimeFormatters.formatFullDateTime(
                                                     context,
                                                     session.lastUsedAtMs,
                                                     language
                                                 )
-                                            }",
+                                            ),
                                             style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                        Text(
+                                            text = "v${session.appVersion} • ${session.platform}",
+                                            style = MaterialTheme.typography.labelSmall,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
                                     }
                                     if (!session.isCurrent) {
+                                        Spacer(modifier = Modifier.width(8.dp))
                                         OutlinedButton(
                                             enabled = uiState.revokingSessionId != session.sessionId,
+                                            colors = ButtonDefaults.outlinedButtonColors(
+                                                contentColor = MaterialTheme.colorScheme.error
+                                            ),
                                             onClick = { viewModel.revokeSession(session.sessionId) },
                                             modifier = Modifier.testTag("revoke_session_${session.sessionId}")
                                         ) {

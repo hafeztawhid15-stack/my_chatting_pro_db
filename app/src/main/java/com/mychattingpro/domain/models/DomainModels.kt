@@ -172,6 +172,16 @@ data class ActiveDeviceSession(
     val isCurrent: Boolean
 )
 
+data class SecurityAlertItem(
+    val id: String,
+    val alertType: String,
+    val deviceName: String?,
+    val sessionId: String?,
+    val createdAtMs: Long,
+    val isSessionActive: Boolean = false,
+    val isRead: Boolean = false
+)
+
 data class OwnerActivitySummary(
     val totalRegisteredUsers: Int,
     val currentlyOnlineUsers: Int,

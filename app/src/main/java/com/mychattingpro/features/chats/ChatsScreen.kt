@@ -28,15 +28,17 @@ import androidx.compose.material.icons.outlined.PushPin
 import androidx.compose.material.icons.rounded.DoneAll
 import androidx.compose.material.icons.rounded.ExpandLess
 import androidx.compose.material.icons.rounded.ExpandMore
-import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.InsertDriveFile
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.MoreVert
+import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.Shield
 import androidx.compose.material.icons.rounded.Videocam
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -101,9 +103,10 @@ fun ChatsScreen(
     onOpenConversation: (Conversation) -> Unit,
     onOpenPrivateChat: () -> Unit = {},
     onOpenOwnerMonitor: () -> Unit = {},
-    onOpenCallHistory: () -> Unit = {}
+    onOpenNotifications: () -> Unit = {}
 ) {
     val conversations by viewModel.conversations.collectAsStateWithLifecycle()
+    val unreadAlertsCount by viewModel.unreadSecurityAlertsCount.collectAsStateWithLifecycle()
     val session by viewModel.session.collectAsStateWithLifecycle()
     val language by viewModel.language.collectAsStateWithLifecycle()
     val isOnline by viewModel.isOnline.collectAsStateWithLifecycle()
@@ -242,13 +245,25 @@ fun ChatsScreen(
             },
             actions = {
                 IconButton(
-                    onClick = onOpenCallHistory,
-                    modifier = Modifier.testTag("chats_call_history_button")
+                    onClick = onOpenNotifications,
+                    modifier = Modifier.testTag("chats_notifications_button")
                 ) {
-                    Icon(
-                        imageVector = Icons.Rounded.History,
-                        contentDescription = stringResource(R.string.call_history_title)
-                    )
+                    BadgedBox(
+                        badge = {
+                            if (unreadAlertsCount > 0) {
+                                Badge {
+                                    Text(
+                                        text = if (unreadAlertsCount > 99) "99+" else unreadAlertsCount.toString()
+                                    )
+                                }
+                            }
+                        }
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Notifications,
+                            contentDescription = stringResource(R.string.notif_center_title)
+                        )
+                    }
                 }
                 Box {
                     IconButton(

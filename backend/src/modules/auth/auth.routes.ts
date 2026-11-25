@@ -100,6 +100,13 @@ authRoutes.get('/sessions', authMiddleware, async (c) => {
   return c.json({ sessions });
 });
 
+authRoutes.get('/security-alerts', authMiddleware, async (c) => {
+  const auth = c.get('auth');
+  const service = new AuthService(c.env, c.get('db'));
+  const alerts = await service.listSecurityAlerts(auth.userId, auth.sessionId);
+  return c.json({ alerts });
+});
+
 authRoutes.delete('/sessions/:sessionId', authMiddleware, async (c) => {
   const auth = c.get('auth');
   const targetSessionId = c.req.param('sessionId') ?? '';

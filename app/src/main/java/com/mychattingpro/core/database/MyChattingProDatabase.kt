@@ -8,14 +8,15 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
-    entities = [ConversationEntity::class, MessageEntity::class, CallHistoryEntity::class],
-    version = 5,
+    entities = [ConversationEntity::class, MessageEntity::class, CallHistoryEntity::class, SecurityAlertEntity::class],
+    version = 6,
     exportSchema = false
 )
 abstract class MyChattingProDatabase : RoomDatabase() {
     abstract fun conversationDao(): ConversationDao
     abstract fun messageDao(): MessageDao
     abstract fun callHistoryDao(): CallHistoryDao
+    abstract fun securityAlertDao(): SecurityAlertDao
 
     companion object {
         val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -74,6 +75,27 @@ abstract class MyChattingProDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS security_alerts (
+                        id TEXT NOT NULL PRIMARY KEY,
+                        alertType TEXT NOT NULL,
+                        deviceName TEXT,
+                        sessionId TEXT,
+                        createdAtMs INTEGER NOT NULL,
+                        isSessionActive INTEGER NOT NULL DEFAULT 0,
+                        isRead INTEGER NOT NULL DEFAULT 0
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_security_alerts_createdAtMs ON security_alerts(createdAtMs)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_cached_call_history_conversationId_startedAtMs ON cached_call_history(conversationId, startedAtMs)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_cached_call_history_peerUserId_startedAtMs ON cached_call_history(peerUserId, startedAtMs)")
+            }
+        }
+
         @Volatile
         private var INSTANCE: MyChattingProDatabase? = null
 
@@ -84,7 +106,7 @@ abstract class MyChattingProDatabase : RoomDatabase() {
                     MyChattingProDatabase::class.java,
                     "my_chatting_pro_cache.db"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
                     .fallbackToDestructiveMigration(dropAllTables = true)
                     .build()
                     .also { INSTANCE = it }

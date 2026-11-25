@@ -46,6 +46,24 @@ open class EncryptedTokenStore(private val context: Context) {
 
     fun currentSessionOrNull(): StoredSession? = if (hasLoadedSession) cachedSession else null
 
+    fun currentSessionIdOrNull(): String? {
+        val token = currentSessionOrNull()?.accessToken ?: return null
+        return extractJwtSessionId(token)
+    }
+
+    suspend fun getSessionId(): String? {
+        val token = (currentSessionOrNull() ?: getSession())?.accessToken ?: return null
+        return extractJwtSessionId(token)
+    }
+
+    private fun extractJwtSessionId(jwt: String): String? = runCatching {
+        val parts = jwt.split(".")
+        if (parts.size < 2) return null
+        val payloadBytes = java.util.Base64.getUrlDecoder().decode(parts[1])
+        val json = org.json.JSONObject(String(payloadBytes, Charsets.UTF_8))
+        json.optString("sid").takeIf { it.isNotBlank() }
+    }.getOrNull()
+
     open val sessionFlow: Flow<StoredSession?> = context.tokenDataStore.data.map { prefs ->
         val encoded = prefs[keyCipherPayload]
         val parsed = encoded?.let { decryptSession(it) }

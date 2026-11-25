@@ -415,4 +415,39 @@
     <string name="rate_this_app">تقييم التطبيق</string>
     <string name="share_app">مشاركة التطبيق</string>
     <string name="share_app_message">استمتع بالمراسلة الخاصة والمكالمات الواضحة على MY CHATTING PRO! حمّله من هنا: %1$s</string>
+
+    <string name="notif_center_title">الإشعارات</string>
+    <string name="notif_center_empty_title">لا توجد إشعارات أمان</string>
+    <string name="notif_center_empty_desc">ستظهر هنا تنبيهات تسجيل الدخول من أجهزة أخرى وإشعارات الأمان.</string>
+    <string name="notif_mark_all_read">تحديد الكل كمقروء</string>
+    <string name="security_new_login_title">تنبيه أمان الحساب: دخول من جهاز جديد</string>
+    <string name="security_new_login_body">يستخدم شخص آخر تطبيقك من جهاز (%1$s) في %2$s! قم بتسجيل خروجه فوراً وإلا قد يخرجك ويغير رمز PIN ويخترق حسابك. أخرجه بسرعة وغيّر رمز PIN!</string>
+    <string name="security_new_login_body_simple">شخص ما يستخدم تطبيقك الآن! قم بتسجيل خروجه فوراً وإلا قد يخرجك ويغير رمز PIN ويخترق حسابك. أخرجه بسرعة وغيّر رمز PIN!</string>
+    <string name="security_quick_logout_btn">تسجيل الخروج السريع</string>
+    <string name="security_suspicious_title">محاولة دخول مشبوهة</string>
+    <string name="security_suspicious_body">تم رصد عدة محاولات خاطئة لرمز PIN أو الاسترداد. راجع الأجهزة المسجلة وأمّن رمز PIN.</string>
+    <string name="security_pin_changed_title">تم تغيير رمز PIN للدخول</string>
+    <string name="security_pin_changed_body">تم تحديث رمز PIN المكون من 5 أرقام وتسجيل خروج الجلسات السابقة.</string>
+    <string name="security_pin_reset_title">إعادة تعيين رمز PIN</string>
+    <string name="security_pin_reset_body">تمت إعادة تعيين رمز PIN عبر رمز الاسترداد (%1$s). تحقق من الأجهزة المسجلة إذا لم تكن أنت.</string>
+    <string name="security_session_revoked_title">تم تسجيل خروج جهاز</string>
+    <string name="security_session_revoked_body">تم تسجيل خروج جلسة جهاز من حسابك.</string>
+    <string name="security_generic_title">تنبيه أمان الحساب</string>
+    <string name="security_generic_body">تم رصد نشاط أمني على حسابك. اضغط لمراجعة الأجهزة المسجلة.</string>
+
+    <string name="device_active_now_badge">نشط الآن</string>
+    <string name="device_signed_out_badge">تم الخروج</string>
+    <string name="device_logged_in_at">وقت الدخول: %1$s</string>
+    <string name="device_last_active_at">آخر نشاط: %1$s</string>
+    <string name="device_security_tip">إذا رأيت هاتفاً غير معروف هنا، فقم بتسجيل خروجه فوراً وغيّر رمز PIN المكون من 5 أرقام.</string>
+
+    <string name="call_timeline_incoming_audio">مكالمة صوتية واردة</string>
+    <string name="call_timeline_outgoing_audio">مكالمة صوتية صادرة</string>
+    <string name="call_timeline_incoming_video">مكالمة فيديو واردة</string>
+    <string name="call_timeline_outgoing_video">مكالمة فيديو صادرة</string>
+    <string name="call_timeline_missed_audio">مكالمة صوتية فائتة</string>
+    <string name="call_timeline_missed_video">مكالمة فيديو فائتة</string>
+    <string name="call_timeline_declined">مرفوضة</string>
+    <string name="call_timeline_no_answer">لم يتم الرد</string>
+    <string name="call_timeline_callback">اضغط لإعادة الاتصال</string>
 </resources>

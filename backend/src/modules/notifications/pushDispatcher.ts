@@ -86,6 +86,7 @@ export async function dispatchSecurityAlert(
     type: 'security.alert',
     timestampMs: now,
     payload: {
+      alertType: subType,
       subType,
       ...detail,
       atMs: now,

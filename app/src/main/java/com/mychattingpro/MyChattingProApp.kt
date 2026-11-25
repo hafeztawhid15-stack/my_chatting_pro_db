@@ -6,6 +6,7 @@ import android.content.Context
 import android.os.Bundle
 import com.example.R
 import com.mychattingpro.core.database.MyChattingProDatabase
+import com.mychattingpro.core.database.SecurityAlertEntity
 import com.mychattingpro.core.datastore.AppPreferencesDataStore
 import com.mychattingpro.core.network.NetworkModule
 import com.mychattingpro.core.network.RealtimeEvent
@@ -34,6 +35,7 @@ import com.mychattingpro.features.ads.InterstitialAdManager
 import com.mychattingpro.features.calls.IncomingCallRingtoneController
 import com.mychattingpro.features.notifications.AppNotificationManager
 import com.mychattingpro.features.notifications.BackgroundSyncJobService
+import com.mychattingpro.features.notifications.SecurityAlertFormatter
 import com.mychattingpro.features.settings.AppUpdateChecker
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -79,7 +81,8 @@ class AppContainer(context: Context) {
         callHistoryDao = database.callHistoryDao(),
         socketManager = networkModule.realtimeSocketManager,
         errorMapper = errorMapper,
-        privateChatLockManager = privateChatLockManager
+        privateChatLockManager = privateChatLockManager,
+        securityAlertDao = database.securityAlertDao()
     )
 
     val profileRepository: ProfileRepository = ProfileRepositoryImpl(
@@ -156,6 +159,9 @@ class AppContainer(context: Context) {
 
     init {
         appScope.launch {
+            if (tokenStore.getSession() != null) {
+                refreshSecurityAlertsAndNotify()
+            }
             var wasOnline = networkModule.networkMonitor.isOnline.value
             networkModule.networkMonitor.isOnline.collect { online ->
                 if (online && !wasOnline) {
@@ -164,6 +170,7 @@ class AppContainer(context: Context) {
                         runCatching { messageRepository.retryAllPendingMessages() }
                         runCatching { chatRepository.refreshConversations() }
                         runCatching { authRepository.syncNotificationEndpoint() }
+                        refreshSecurityAlertsAndNotify()
                     }
                 }
                 wasOnline = online
@@ -279,23 +286,78 @@ class AppContainer(context: Context) {
                         }
                     }
                     is RealtimeEvent.SecurityAlert -> {
+                        val mySessionId = tokenStore.currentSessionIdOrNull() ?: tokenStore.getSessionId()
+                        if (event.alertType == "new_login" &&
+                            !event.sessionId.isNullOrBlank() &&
+                            event.sessionId == mySessionId
+                        ) {
+                            return@collect
+                        }
+
+                        val formatted = SecurityAlertFormatter.formatRaw(
+                            context = appContext,
+                            alertType = event.alertType,
+                            deviceName = event.deviceName,
+                            atMs = event.atMs,
+                            language = prefs.language
+                        )
+
+                        runCatching {
+                            database.securityAlertDao().upsert(
+                                SecurityAlertEntity(
+                                    id = event.eventId,
+                                    alertType = event.alertType,
+                                    deviceName = event.deviceName,
+                                    sessionId = event.sessionId,
+                                    createdAtMs = event.atMs,
+                                    isSessionActive = event.alertType == "new_login",
+                                    isRead = false
+                                )
+                            )
+                        }
+
                         notificationManager.showSecurityAlertNotification(
-                            title = event.title,
-                            body = event.body,
+                            title = formatted.title,
+                            body = formatted.body,
                             alertType = event.alertType,
                             prefs = prefs,
                             eventId = event.eventId
                         )
-                        _securityAlerts.tryEmit(event)
-                        if (event.alertType == "account_deleted" || event.alertType == "session_revoked" || event.alertType == "logout_all_devices") {
-                            if (event.alertType != "login_pin_changed") {
-                                runCatching { authRepository.logout() }
-                            }
+
+                        val shouldForceLogout = when (event.alertType) {
+                            "account_deleted" -> true
+                            "session_revoked" -> event.revokedSessionId == null || event.revokedSessionId == mySessionId
+                            "logout_all_devices" -> !(event.keepCurrent && event.keepSessionId == mySessionId)
+                            else -> false
+                        }
+                        if (shouldForceLogout) {
+                            _securityAlerts.tryEmit(
+                                event.copy(title = formatted.title, body = formatted.body)
+                            )
+                            runCatching { authRepository.logout() }
                         }
                     }
                     else -> Unit
                 }
             }
+        }
+    }
+
+    suspend fun refreshSecurityAlertsAndNotify() {
+        val prefs = prefsStore.current()
+        val newlyInserted = authRepository.refreshSecurityAlerts().getOrNull().orEmpty()
+        val urgentAlerts = newlyInserted.filter {
+            it.alertType == "new_login" || it.alertType == "suspicious_login_attempt" || it.alertType == "login_pin_reset"
+        }
+        urgentAlerts.take(2).forEach { alert ->
+            val formatted = SecurityAlertFormatter.format(appContext, alert, prefs.language)
+            notificationManager.showSecurityAlertNotification(
+                title = formatted.title,
+                body = formatted.body,
+                alertType = alert.alertType,
+                prefs = prefs,
+                eventId = alert.id
+            )
         }
     }
 

@@ -19,6 +19,7 @@ import com.mychattingpro.core.security.StoredSession
 import com.mychattingpro.data.repository.AppException
 import com.mychattingpro.domain.models.Conversation
 import com.mychattingpro.domain.models.PublicUser
+import com.mychattingpro.domain.repository.AuthRepository
 import com.mychattingpro.domain.repository.ChatRepository
 import com.mychattingpro.domain.repository.SafetyRepository
 import com.mychattingpro.features.common.PeerProfileModalState
@@ -28,6 +29,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.isActive
@@ -52,11 +54,16 @@ class ChatsViewModel(
     private val networkMonitor: NetworkMonitor,
     private val socketManager: RealtimeSocketManager,
     private val searchRateLimiter: SearchRateLimiter = SearchRateLimiter(),
-    private val safetyRepository: SafetyRepository? = null
+    private val safetyRepository: SafetyRepository? = null,
+    private val authRepository: AuthRepository? = null
 ) : ViewModel() {
 
     val conversations: StateFlow<List<Conversation>> = chatRepository.observeConversations()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val unreadSecurityAlertsCount: StateFlow<Int> =
+        (authRepository?.observeUnreadSecurityAlertsCount() ?: flowOf(0))
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
 
     val session: StateFlow<StoredSession?> = tokenStore.sessionFlow
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
@@ -108,6 +115,7 @@ class ChatsViewModel(
     fun refresh() {
         viewModelScope.launch {
             socketManager.sendPresencePing()
+            launch { authRepository?.refreshSecurityAlerts() }
             chatRepository.refreshConversations()
         }
     }

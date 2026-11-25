@@ -478,6 +478,19 @@ export interface DatabaseClient {
     nowMs: number;
   }): Promise<OwnerSnapshotDbResult>;
 
+  listSecurityAlertsForUser(
+    userId: string,
+    limit?: number
+  ): Promise<
+    Array<{
+      id: string;
+      event_type: string;
+      outcome: string;
+      meta_json: Record<string, unknown> | null;
+      created_at_ms: number;
+    }>
+  >;
+
   insertAuditLog(input: {
     id: string;
     userId: string | null;
@@ -1720,6 +1733,34 @@ export class SupabaseDatabase implements DatabaseClient {
       p_last_24h_cutoff: input.last24hCutoff,
       p_now_ms: input.nowMs,
     });
+  }
+
+  async listSecurityAlertsForUser(
+    userId: string,
+    limit = 40
+  ): Promise<
+    Array<{
+      id: string;
+      event_type: string;
+      outcome: string;
+      meta_json: Record<string, unknown> | null;
+      created_at_ms: number;
+    }>
+  > {
+    const safeLimit = Math.max(1, Math.min(limit, 100));
+    const events = [
+      'auth.login',
+      'auth.login_pin_changed',
+      'auth.login_pin_reset_success',
+      'auth.login_wrong_pin',
+      'auth.recovery_code_failed',
+      'auth.session_revoked',
+      'auth.logout_all_devices',
+    ].join(',');
+    return this.requestJson(
+      `/audit_logs?select=id,event_type,outcome,meta_json,created_at_ms&user_id=eq.${this.enc(userId)}&event_type=in.(${events})&order=created_at_ms.desc&limit=${safeLimit}`,
+      { method: 'GET', headers: this.headers() }
+    );
   }
 
   async insertAuditLog(input: {

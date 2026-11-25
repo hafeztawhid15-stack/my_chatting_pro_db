@@ -36,6 +36,8 @@ class BackgroundSyncJobService : JobService() {
                     }
                     runCatching { container.messageRepository.retryAllPendingMessages() }
                     val refreshed = runCatching { container.chatRepository.refreshConversations() }.isSuccess
+                    runCatching { container.callRepository.refreshCallHistory() }
+                    runCatching { container.refreshSecurityAlertsAndNotify() }
                     runCatching { container.authRepository.syncNotificationEndpoint() }
 
                     // Notify missed unread messages if background sync caught messages while WebSocket was dormant

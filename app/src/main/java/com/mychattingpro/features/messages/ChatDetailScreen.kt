@@ -36,10 +36,14 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.automirrored.rounded.CallMade
+import androidx.compose.material.icons.automirrored.rounded.CallMissed
+import androidx.compose.material.icons.automirrored.rounded.CallReceived
 import androidx.compose.material.icons.automirrored.rounded.Reply
 import androidx.compose.material.icons.automirrored.rounded.Send
 import androidx.compose.material.icons.rounded.AttachFile
 import androidx.compose.material.icons.rounded.Call
+import androidx.compose.material.icons.rounded.CallEnd
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Done
 import androidx.compose.material.icons.rounded.DoneAll
@@ -113,6 +117,7 @@ import com.mychattingpro.core.theme.OnlineGreen
 import com.mychattingpro.core.theme.OutgoingBubbleDark
 import com.mychattingpro.core.theme.OutgoingBubbleLight
 import com.mychattingpro.core.theme.ReadTickCyan
+import com.mychattingpro.domain.models.CallHistoryItem
 import com.mychattingpro.domain.models.Message
 import com.mychattingpro.domain.models.MessageStatus
 import com.mychattingpro.domain.models.MessageType
@@ -139,6 +144,7 @@ fun ChatDetailScreen(
 ) {
     val conversation by viewModel.conversation.collectAsStateWithLifecycle()
     val messages by viewModel.messages.collectAsStateWithLifecycle()
+    val timelineItems by viewModel.timelineItems.collectAsStateWithLifecycle()
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val voiceState by viewModel.voiceState.collectAsStateWithLifecycle()
     val language by viewModel.language.collectAsStateWithLifecycle()
@@ -186,7 +192,11 @@ fun ChatDetailScreen(
     var showMicRationale by remember { mutableStateOf(false) }
     var previewCaption by remember { mutableStateOf("") }
     val messagesById = remember(messages) { messages.associateBy { it.id } }
-    val messageIndexById = remember(messages) { messages.mapIndexed { index, m -> m.id to index }.toMap() }
+    val messageIndexById = remember(timelineItems) {
+        timelineItems.mapIndexedNotNull { index, item ->
+            (item as? ChatTimelineItem.MessageEntry)?.let { it.message.id to index }
+        }.toMap()
+    }
 
     val menuCallbacks = remember(viewModel) {
         ConversationMenuCallbacks(
@@ -256,10 +266,10 @@ fun ChatDetailScreen(
         }
     }
 
-    // Scroll to bottom on initial load or when a new message arrives while near bottom
-    LaunchedEffect(messages.size) {
-        if (messages.isNotEmpty() && !uiState.isLoadingOlder) {
-            val lastIndex = messages.lastIndex
+    // Scroll to bottom on initial load or when a new message or call log arrives while near bottom
+    LaunchedEffect(timelineItems.size) {
+        if (timelineItems.isNotEmpty() && !uiState.isLoadingOlder) {
+            val lastIndex = timelineItems.lastIndex
             val visibleLast = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
             if (visibleLast >= (lastIndex - 4).coerceAtLeast(0) || listState.firstVisibleItemIndex == 0) {
                 listState.scrollToItem(lastIndex)
@@ -758,7 +768,7 @@ fun ChatDetailScreen(
         ) {
             NetworkStatusBanner(isOnline = isOnline, socketState = socketState)
 
-            if (uiState.isLoadingInitial && messages.isEmpty()) {
+            if (uiState.isLoadingInitial && timelineItems.isEmpty()) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator()
                 }
@@ -782,84 +792,218 @@ fun ChatDetailScreen(
                         }
                     }
 
-                    itemsIndexed(messages, key = { _, item -> item.id }) { index, msg ->
+                    itemsIndexed(timelineItems, key = { _, item -> item.timelineId }) { index, item ->
                         val prevDay = if (index > 0) {
-                            DateTimeFormatters.dayBucketKey(messages[index - 1].createdAtMs)
+                            DateTimeFormatters.dayBucketKey(timelineItems[index - 1].timestampMs)
                         } else null
-                        val currentDay = DateTimeFormatters.dayBucketKey(msg.createdAtMs)
+                        val currentDay = DateTimeFormatters.dayBucketKey(item.timestampMs)
 
                         if (prevDay != currentDay) {
                             DateSeparatorPill(
                                 label = DateTimeFormatters.formatDateSeparator(
                                     context,
-                                    msg.createdAtMs,
+                                    item.timestampMs,
                                     language
                                 )
                             )
                         }
 
-                        val isMine = msg.senderId == viewModel.myUserId
-                        val uploadProgress = uiState.uploadProgressByClientId[msg.clientMessageId]
-                        val repliedMessage = msg.replyToMessageId?.let { messagesById[it] }
-                        val isAudioActive = uiState.activeAudioMessageId == msg.id
-                        val isAudioPlaying = isAudioActive && uiState.isAudioPlaying
-                        val isAudioLoading = isAudioActive && uiState.isAudioLoading
-                        val audioPositionMs = if (isAudioActive) uiState.audioPositionMs else 0L
-                        val audioDurationMs = if (isAudioActive && uiState.audioDurationMs > 0L) {
-                            uiState.audioDurationMs
-                        } else {
-                            msg.media?.durationMs ?: 0L
-                        }
-                        val hasAudioError = uiState.audioErrorMessageId == msg.id
-                        MessageBubble(
-                            message = msg,
-                            repliedMessage = repliedMessage,
-                            myUserId = viewModel.myUserId,
-                            peerName = peerName,
-                            isMine = isMine,
-                            language = language,
-                            networkModule = networkModule,
-                            uploadProgress = uploadProgress,
-                            isAudioActive = isAudioActive,
-                            isAudioPlaying = isAudioPlaying,
-                            isAudioLoading = isAudioLoading,
-                            audioPositionMs = audioPositionMs,
-                            audioDurationMs = audioDurationMs,
-                            hasAudioError = hasAudioError,
-                            isDownloading = uiState.downloadingMessageId == msg.id,
-                            onLongPress = { selectedMessageForDetails = msg },
-                            onClickQuotedReply = {
-                                val targetIdx = msg.replyToMessageId?.let { messageIndexById[it] }
-                                if (targetIdx != null) {
-                                    scrollScope.launch { listState.animateScrollToItem(targetIdx) }
-                                }
-                            },
-                            onRetry = { viewModel.retryMessage(msg) },
-                            onCancelUpload = { viewModel.cancelUpload(msg.clientMessageId) },
-                            onSeekAudio = { posMs -> viewModel.seekVoiceMessage(msg.id, posMs) },
-                            onOpenMedia = {
-                                if (msg.type == MessageType.VOICE || msg.type == MessageType.AUDIO) {
-                                    viewModel.toggleVoiceMessagePlayback(msg)
-                                    return@MessageBubble
-                                }
-                                val media = msg.media ?: return@MessageBubble
-                                if (msg.type == MessageType.IMAGE || msg.type == MessageType.VIDEO) {
-                                    onOpenMediaViewer(
-                                        media.id,
-                                        media.mimeType,
-                                        media.originalFilename,
-                                        msg.type == MessageType.VIDEO
-                                    )
-                                } else {
-                                    if (MediaUploadHelper.isDangerousFile(media.originalFilename)) {
-                                        dangerousFileConfirmMessage = msg
-                                    } else {
-                                        viewModel.downloadAndOpenFile(msg)
+                        when (item) {
+                            is ChatTimelineItem.CallEntry -> {
+                                ChatCallTimelineCard(
+                                    call = item.call,
+                                    isBlocked = isBlockedByMe || hasBlockedMe,
+                                    language = language,
+                                    onCallback = {
+                                        if (item.call.isVideo) onStartVideoCall() else onStartAudioCall()
                                     }
-                                }
+                                )
                             }
+                            is ChatTimelineItem.MessageEntry -> {
+                                val msg = item.message
+                                val isMine = msg.senderId == viewModel.myUserId
+                                val uploadProgress = uiState.uploadProgressByClientId[msg.clientMessageId]
+                                val repliedMessage = msg.replyToMessageId?.let { messagesById[it] }
+                                val isAudioActive = uiState.activeAudioMessageId == msg.id
+                                val isAudioPlaying = isAudioActive && uiState.isAudioPlaying
+                                val isAudioLoading = isAudioActive && uiState.isAudioLoading
+                                val audioPositionMs = if (isAudioActive) uiState.audioPositionMs else 0L
+                                val audioDurationMs = if (isAudioActive && uiState.audioDurationMs > 0L) {
+                                    uiState.audioDurationMs
+                                } else {
+                                    msg.media?.durationMs ?: 0L
+                                }
+                                val hasAudioError = uiState.audioErrorMessageId == msg.id
+                                MessageBubble(
+                                    message = msg,
+                                    repliedMessage = repliedMessage,
+                                    myUserId = viewModel.myUserId,
+                                    peerName = peerName,
+                                    isMine = isMine,
+                                    language = language,
+                                    networkModule = networkModule,
+                                    uploadProgress = uploadProgress,
+                                    isAudioActive = isAudioActive,
+                                    isAudioPlaying = isAudioPlaying,
+                                    isAudioLoading = isAudioLoading,
+                                    audioPositionMs = audioPositionMs,
+                                    audioDurationMs = audioDurationMs,
+                                    hasAudioError = hasAudioError,
+                                    isDownloading = uiState.downloadingMessageId == msg.id,
+                                    onLongPress = { selectedMessageForDetails = msg },
+                                    onClickQuotedReply = {
+                                        val targetIdx = msg.replyToMessageId?.let { messageIndexById[it] }
+                                        if (targetIdx != null) {
+                                            scrollScope.launch { listState.animateScrollToItem(targetIdx) }
+                                        }
+                                    },
+                                    onRetry = { viewModel.retryMessage(msg) },
+                                    onCancelUpload = { viewModel.cancelUpload(msg.clientMessageId) },
+                                    onSeekAudio = { posMs -> viewModel.seekVoiceMessage(msg.id, posMs) },
+                                    onOpenMedia = {
+                                        if (msg.type == MessageType.VOICE || msg.type == MessageType.AUDIO) {
+                                            viewModel.toggleVoiceMessagePlayback(msg)
+                                            return@MessageBubble
+                                        }
+                                        val media = msg.media ?: return@MessageBubble
+                                        if (msg.type == MessageType.IMAGE || msg.type == MessageType.VIDEO) {
+                                            onOpenMediaViewer(
+                                                media.id,
+                                                media.mimeType,
+                                                media.originalFilename,
+                                                msg.type == MessageType.VIDEO
+                                            )
+                                        } else {
+                                            if (MediaUploadHelper.isDangerousFile(media.originalFilename)) {
+                                                dangerousFileConfirmMessage = msg
+                                            } else {
+                                                viewModel.downloadAndOpenFile(msg)
+                                            }
+                                        }
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ChatCallTimelineCard(
+    call: CallHistoryItem,
+    isBlocked: Boolean,
+    language: AppLanguage,
+    onCallback: () -> Unit
+) {
+    val isMissedOrRejected = call.status == "missed" || call.status == "rejected" || call.status == "ringing"
+    val isIncoming = call.direction == "incoming"
+    val alignEnd = !isIncoming
+
+    val titleRes = when {
+        call.status == "missed" || (isIncoming && call.status == "ringing") ->
+            if (call.isVideo) R.string.call_timeline_missed_video else R.string.call_timeline_missed_audio
+        isIncoming ->
+            if (call.isVideo) R.string.call_timeline_incoming_video else R.string.call_timeline_incoming_audio
+        else ->
+            if (call.isVideo) R.string.call_timeline_outgoing_video else R.string.call_timeline_outgoing_audio
+    }
+
+    val statusText = when {
+        call.durationSeconds > 0 -> DateTimeFormatters.formatDuration(call.durationSeconds.toLong())
+        call.status == "rejected" -> stringResource(R.string.call_timeline_declined)
+        call.status == "missed" || call.status == "ringing" -> stringResource(R.string.call_timeline_no_answer)
+        else -> stringResource(R.string.call_ended)
+    }
+
+    val directionIcon = when {
+        call.status == "missed" || (isIncoming && call.status == "ringing") -> Icons.AutoMirrored.Rounded.CallMissed
+        call.status == "rejected" -> Icons.Rounded.CallEnd
+        isIncoming -> Icons.AutoMirrored.Rounded.CallReceived
+        else -> Icons.AutoMirrored.Rounded.CallMade
+    }
+
+    val accentColor = if (isMissedOrRejected) {
+        MaterialTheme.colorScheme.error
+    } else {
+        MaterialTheme.colorScheme.primary
+    }
+
+    val containerColor = if (isMissedOrRejected) {
+        MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.52f)
+    } else {
+        MaterialTheme.colorScheme.surfaceContainerHigh
+    }
+
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalAlignment = if (alignEnd) Alignment.End else Alignment.Start
+    ) {
+        Surface(
+            color = containerColor,
+            shape = RoundedCornerShape(18.dp),
+            tonalElevation = 1.dp,
+            modifier = Modifier
+                .widthIn(min = 210.dp, max = 300.dp)
+                .clip(RoundedCornerShape(18.dp))
+                .clickable(enabled = !isBlocked, onClick = onCallback)
+                .testTag("chat_call_log_${call.callId}")
+        ) {
+            Row(
+                modifier = Modifier.padding(start = 12.dp, top = 8.dp, bottom = 8.dp, end = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Surface(
+                    color = accentColor.copy(alpha = 0.14f),
+                    shape = CircleShape,
+                    modifier = Modifier.size(38.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = directionIcon,
+                            contentDescription = null,
+                            tint = accentColor,
+                            modifier = Modifier.size(20.dp)
                         )
                     }
+                }
+                Spacer(modifier = Modifier.width(10.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = stringResource(titleRes),
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = if (isMissedOrRejected) {
+                            MaterialTheme.colorScheme.error
+                        } else {
+                            MaterialTheme.colorScheme.onSurface
+                        },
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = "$statusText • ${DateTimeFormatters.formatTimeOnly(call.startedAtMs, language)}",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+                IconButton(
+                    onClick = onCallback,
+                    enabled = !isBlocked,
+                    modifier = Modifier
+                        .size(48.dp)
+                        .testTag("chat_call_log_callback_${call.callId}")
+                ) {
+                    Icon(
+                        imageVector = if (call.isVideo) Icons.Rounded.Videocam else Icons.Rounded.Call,
+                        contentDescription = stringResource(R.string.call_timeline_callback),
+                        tint = accentColor
+                    )
                 }
             }
         }

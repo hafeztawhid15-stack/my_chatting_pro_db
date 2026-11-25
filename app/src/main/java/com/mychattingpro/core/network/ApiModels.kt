@@ -429,6 +429,22 @@ data class ActiveSessionsResponseDto(
 )
 
 @JsonClass(generateAdapter = true)
+data class SecurityAlertDto(
+    val id: String,
+    val alertType: String,
+    val deviceName: String? = null,
+    val sessionId: String? = null,
+    val createdAtMs: Long,
+    val isCurrentSession: Boolean = false,
+    val isSessionActive: Boolean = false
+)
+
+@JsonClass(generateAdapter = true)
+data class SecurityAlertsResponseDto(
+    val alerts: List<SecurityAlertDto>
+)
+
+@JsonClass(generateAdapter = true)
 data class OwnerActivitySummaryDto(
     val totalRegisteredUsers: Int,
     val currentlyOnlineUsers: Int,

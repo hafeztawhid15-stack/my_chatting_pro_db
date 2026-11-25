@@ -67,7 +67,13 @@ sealed interface RealtimeEvent {
         val alertType: String,
         val title: String,
         val body: String,
-        val eventId: String
+        val eventId: String,
+        val deviceName: String? = null,
+        val sessionId: String? = null,
+        val revokedSessionId: String? = null,
+        val keepSessionId: String? = null,
+        val keepCurrent: Boolean = false,
+        val atMs: Long = System.currentTimeMillis()
     ) : RealtimeEvent
     data class BlockStatusChanged(
         val actorUserId: String,
@@ -527,14 +533,7 @@ class RealtimeSocketManager(
                     )
                 }
                 "security.alert" -> {
-                    _events.tryEmit(
-                        RealtimeEvent.SecurityAlert(
-                            alertType = payload.optString("alertType", "security"),
-                            title = payload.optString("title", "Account Security Alert"),
-                            body = payload.optString("body", "Security activity detected on your account."),
-                            eventId = eventId
-                        )
-                    )
+                    _events.tryEmit(parseSecurityAlertEvent(eventId, payload))
                 }
                 "safety.block_changed" -> {
                     _events.tryEmit(
@@ -549,6 +548,34 @@ class RealtimeSocketManager(
             }
         } catch (e: Exception) {
             SafeLogger.e("RealtimeWS", "Failed to parse event", e.javaClass.simpleName)
+        }
+    }
+
+    companion object {
+        fun parseSecurityAlertEvent(eventId: String, payload: JSONObject): RealtimeEvent.SecurityAlert {
+            val resolvedType = payload.optString("alertType").takeIf { it.isNotBlank() }
+                ?: payload.optString("subType").takeIf { it.isNotBlank() }
+                ?: "security"
+            val deviceName = payload.optString("deviceName").takeIf { it.isNotBlank() }
+            val sessionId = payload.optString("sessionId").takeIf { it.isNotBlank() }
+            val revokedSessionId = payload.optString("revokedSessionId").takeIf { it.isNotBlank() }
+            val keepSessionId = payload.optString("keepSessionId").takeIf { it.isNotBlank() }
+            val keepCurrent = payload.optBoolean("keepCurrent", false)
+            val atMs = payload.optLong("loginAtMs", 0L).takeIf { it > 0L }
+                ?: payload.optLong("atMs", 0L).takeIf { it > 0L }
+                ?: System.currentTimeMillis()
+            return RealtimeEvent.SecurityAlert(
+                alertType = resolvedType,
+                title = payload.optString("title", ""),
+                body = payload.optString("body", ""),
+                eventId = eventId,
+                deviceName = deviceName,
+                sessionId = sessionId,
+                revokedSessionId = revokedSessionId,
+                keepSessionId = keepSessionId,
+                keepCurrent = keepCurrent,
+                atMs = atMs
+            )
         }
     }
 }

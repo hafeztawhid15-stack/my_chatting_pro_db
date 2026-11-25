@@ -523,4 +523,54 @@ class SearchAndRingtoneRobolectricTest {
         vm.endCall {}
         advanceUntilIdle()
     }
+
+    @Test
+    fun `security alert parses backend subType formats localized warning and opens active devices`() {
+        val raw = org.json.JSONObject(
+            """
+            {
+              "subType": "new_login",
+              "deviceName": "Samsung SM-A525F",
+              "sessionId": "sess_other",
+              "loginAtMs": 1730000000000
+            }
+            """.trimIndent()
+        )
+        val parsed = com.mychattingpro.core.network.RealtimeSocketManager.parseSecurityAlertEvent("ev_123", raw)
+        assertEquals("new_login", parsed.alertType)
+        assertEquals("ev_123", parsed.eventId)
+        assertEquals("Samsung SM-A525F", parsed.deviceName)
+        assertEquals("sess_other", parsed.sessionId)
+        assertEquals(1730000000000L, parsed.atMs)
+
+        val formattedBn = com.mychattingpro.features.notifications.SecurityAlertFormatter.formatRaw(
+            context = app,
+            alertType = parsed.alertType,
+            deviceName = parsed.deviceName,
+            atMs = parsed.atMs,
+            language = com.mychattingpro.core.localization.AppLanguage.BENGALI
+        )
+        assertTrue(formattedBn.isUrgentLoginAlert)
+        assertTrue(formattedBn.body.contains("Samsung SM-A525F"))
+        assertTrue(formattedBn.body.contains("পিন চেঞ্জ"))
+
+        Shadows.shadowOf(app).grantPermissions(Manifest.permission.POST_NOTIFICATIONS)
+        val manager = AppNotificationManager(app)
+        manager.showSecurityAlertNotification(
+            title = formattedBn.title,
+            body = formattedBn.body,
+            alertType = parsed.alertType,
+            prefs = AppPreferences(),
+            eventId = parsed.eventId
+        )
+        val nm = app.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        val posted = Shadows.shadowOf(nm).allNotifications.lastOrNull()
+        assertTrue(posted != null)
+        assertEquals(AppNotificationManager.CHANNEL_SECURITY, posted?.channelId)
+        val shadowPi = Shadows.shadowOf(posted?.contentIntent)
+        assertEquals(
+            AppNotificationManager.NAV_ACTIVE_DEVICES,
+            shadowPi.savedIntent.getStringExtra(AppNotificationManager.EXTRA_NAVIGATE_TO)
+        )
+    }
 }

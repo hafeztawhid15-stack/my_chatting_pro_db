@@ -422,4 +422,39 @@
     <string name="rate_this_app">অ্যাপে রেটিং দিন</string>
     <string name="share_app">অ্যাপ শেয়ার করুন</string>
     <string name="share_app_message">MY CHATTING PRO-তে নিরাপদে চ্যাট ও স্পষ্ট কল করুন! ডাউনলোড করুন: %1$s</string>
+
+    <string name="notif_center_title">নোটিফিকেশন</string>
+    <string name="notif_center_empty_title">কোনো নোটিফিকেশন নেই</string>
+    <string name="notif_center_empty_desc">অন্য ডিভাইস থেকে লগইন বা নিরাপত্তা সতর্কতা এখানে দেখা যাবে।</string>
+    <string name="notif_mark_all_read">সব পঠিত করুন</string>
+    <string name="security_new_login_title">নিরাপত্তা সতর্কতা: অন্য ডিভাইসে লগইন</string>
+    <string name="security_new_login_body">আপনার অ্যাপ একজন (%1$s) %2$s-এ ব্যবহার করছে! তাকে সরাসরি লগ আউট করুন, না হলে সে আপনাকে লগ আউট করে ও পিন চেঞ্জ করে আপনার অ্যাকাউন্ট হ্যাক করতে পারে। তাই দ্রুত তাকে লগ আউট করে আপনার পিন চেঞ্জ করুন!</string>
+    <string name="security_new_login_body_simple">আপনার অ্যাপ একজন ব্যবহার করছে! তাকে সরাসরি লগ আউট করুন, না হলে সে আপনাকে লগ আউট করে ও পিন চেঞ্জ করে আপনার অ্যাকাউন্ট হ্যাক করতে পারে। তাই দ্রুত তাকে লগ আউট করে আপনার পিন চেঞ্জ করুন!</string>
+    <string name="security_quick_logout_btn">দ্রুত লগআউট করুন</string>
+    <string name="security_suspicious_title">সন্দেহজনক লগইন চেষ্টা</string>
+    <string name="security_suspicious_body">আপনার অ্যাকাউন্টে একাধিক ভুল পিন বা রিকভারি কোড দেওয়ার চেষ্টা হয়েছে। লগইন ডিভাইস দেখে আপনার পিন নিরাপদ রাখুন।</string>
+    <string name="security_pin_changed_title">লগইন পিন পরিবর্তিত হয়েছে</string>
+    <string name="security_pin_changed_body">আপনার ৫-সংখ্যার লগইন পিন পরিবর্তন করা হয়েছে এবং পুরনো ডিভাইসগুলো লগআউট করা হয়েছে।</string>
+    <string name="security_pin_reset_title">রিকভারি কোডে পিন রিসেট</string>
+    <string name="security_pin_reset_body">%1$s থেকে রিকভারি কোড দিয়ে আপনার লগইন পিন রিসেট করা হয়েছে। এটি আপনি না হলে দ্রুত ডিভাইস যাচাই করুন।</string>
+    <string name="security_session_revoked_title">ডিভাইস লগআউট হয়েছে</string>
+    <string name="security_session_revoked_body">আপনার অ্যাকাউন্ট থেকে একটি ডিভাইসের সেশন লগআউট করা হয়েছে।</string>
+    <string name="security_generic_title">অ্যাকাউন্ট নিরাপত্তা সতর্কতা</string>
+    <string name="security_generic_body">আপনার অ্যাকাউন্টে নিরাপত্তা সংক্রান্ত কার্যকলাপ দেখা গেছে। লগইন ডিভাইস দেখতে ট্যাপ করুন।</string>
+
+    <string name="device_active_now_badge">এখন সক্রিয়</string>
+    <string name="device_signed_out_badge">লগআউট হয়েছে</string>
+    <string name="device_logged_in_at">লগইনের সময়: %1$s</string>
+    <string name="device_last_active_at">সর্বশেষ সক্রিয়: %1$s</string>
+    <string name="device_security_tip">এখানে অচেনা কোনো মোবাইল দেখতে পেলে সাথে সাথে লগ আউট করুন এবং আপনার ৫-সংখ্যার লগইন পিন পরিবর্তন করুন।</string>
+
+    <string name="call_timeline_incoming_audio">ইনকামিং ভয়েস কল</string>
+    <string name="call_timeline_outgoing_audio">আউটগোয়িং ভয়েস কল</string>
+    <string name="call_timeline_incoming_video">ইনকামিং ভিডিও কল</string>
+    <string name="call_timeline_outgoing_video">আউটগোয়িং ভিডিও কল</string>
+    <string name="call_timeline_missed_audio">মিসড ভয়েস কল</string>
+    <string name="call_timeline_missed_video">মিসড ভিডিও কল</string>
+    <string name="call_timeline_declined">প্রত্যাখ্যাত</string>
+    <string name="call_timeline_no_answer">উত্তর নেই</string>
+    <string name="call_timeline_callback">কল করতে ট্যাপ করুন</string>
 </resources>

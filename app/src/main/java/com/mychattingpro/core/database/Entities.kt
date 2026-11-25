@@ -76,7 +76,11 @@ data class MessageEntity(
 
 @Entity(
     tableName = "cached_call_history",
-    indices = [Index(value = ["startedAtMs"])]
+    indices = [
+        Index(value = ["startedAtMs"]),
+        Index(value = ["conversationId", "startedAtMs"]),
+        Index(value = ["peerUserId", "startedAtMs"])
+    ]
 )
 data class CallHistoryEntity(
     @PrimaryKey val callId: String,
@@ -92,4 +96,18 @@ data class CallHistoryEntity(
     val answeredAtMs: Long?,
     val endedAtMs: Long?,
     val durationSeconds: Int
+)
+
+@Entity(
+    tableName = "security_alerts",
+    indices = [Index(value = ["createdAtMs"])]
+)
+data class SecurityAlertEntity(
+    @PrimaryKey val id: String,
+    val alertType: String,
+    val deviceName: String?,
+    val sessionId: String?,
+    val createdAtMs: Long,
+    val isSessionActive: Boolean = false,
+    val isRead: Boolean = false
 )

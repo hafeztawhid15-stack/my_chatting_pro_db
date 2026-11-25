@@ -4,10 +4,16 @@ import com.mychattingpro.core.common.AppError
 import com.mychattingpro.core.common.CountryCatalog
 import com.mychattingpro.core.localization.AppLanguage
 import com.mychattingpro.core.localization.DateTimeFormatters
+import com.mychattingpro.data.repository.AuthRepositoryImpl
 import com.mychattingpro.data.repository.ErrorMapper
+import com.mychattingpro.domain.models.CallHistoryItem
 import com.mychattingpro.domain.models.IceServerConfig
+import com.mychattingpro.domain.models.Message
+import com.mychattingpro.domain.models.MessageStatus
+import com.mychattingpro.domain.models.MessageType
 import com.mychattingpro.features.ads.InterstitialAdManager
 import com.mychattingpro.features.calls.IceServerSanitizer
+import com.mychattingpro.features.messages.ChatTimelineItem
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import okhttp3.MediaType.Companion.toMediaType
@@ -187,5 +193,52 @@ class CoreLogicUnitTest {
             Response.error<Any>(403, blockedJson.toResponseBody("application/json".toMediaType()))
         )
         assertTrue(mapper.map(ex) is AppError.UserBlocked)
+    }
+
+    @Test
+    fun `device name formatter capitalizes and deduplicates brand and model`() {
+        assertEquals("Samsung SM-A525F", AuthRepositoryImpl.formatDeviceName("samsung", "SM-A525F"))
+        assertEquals("Xiaomi Redmi 12", AuthRepositoryImpl.formatDeviceName("xiaomi", "Xiaomi Redmi 12"))
+        assertEquals("OnePlus CPH2449", AuthRepositoryImpl.formatDeviceName("OnePlus", "CPH2449"))
+    }
+
+    @Test
+    fun `chat timeline builder merges messages and peer calls chronologically`() {
+        val msg1 = Message(
+            id = "m1",
+            conversationId = "c1",
+            senderId = "u1",
+            clientMessageId = "cm1",
+            type = MessageType.TEXT,
+            bodyText = "Hello",
+            media = null,
+            status = MessageStatus.READ,
+            createdAtMs = 1000L
+        )
+        val call1 = CallHistoryItem(
+            callId = "call1",
+            conversationId = "c1",
+            callerId = "u2",
+            peerUserId = "u2",
+            peerDisplayName = "Peer",
+            peerAvatarMediaId = null,
+            isVideo = true,
+            status = "missed",
+            direction = "incoming",
+            startedAtMs = 2000L,
+            answeredAtMs = null,
+            endedAtMs = 2020L,
+            durationSeconds = 0
+        )
+        val msg2 = msg1.copy(id = "m2", clientMessageId = "cm2", bodyText = "Call me back", createdAtMs = 3000L)
+
+        val timeline = ChatTimelineItem.buildTimeline(listOf(msg2, msg1), listOf(call1))
+        assertEquals(3, timeline.size)
+        assertTrue(timeline[0] is ChatTimelineItem.MessageEntry)
+        assertEquals("msg_m1", timeline[0].timelineId)
+        assertTrue(timeline[1] is ChatTimelineItem.CallEntry)
+        assertEquals("call_call1", timeline[1].timelineId)
+        assertTrue(timeline[2] is ChatTimelineItem.MessageEntry)
+        assertEquals("msg_m2", timeline[2].timelineId)
     }
 }

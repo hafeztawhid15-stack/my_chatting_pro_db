@@ -422,4 +422,39 @@
     <string name="rate_this_app">Rate This App</string>
     <string name="share_app">Share App</string>
     <string name="share_app_message">Chat privately and make crystal-clear calls on MY CHATTING PRO! Download here: %1$s</string>
+
+    <string name="notif_center_title">Notifications</string>
+    <string name="notif_center_empty_title">No security notifications</string>
+    <string name="notif_center_empty_desc">Other-device logins and account security alerts will appear here.</string>
+    <string name="notif_mark_all_read">Mark all read</string>
+    <string name="security_new_login_title">Account Security Alert: New Login</string>
+    <string name="security_new_login_body">Another device (%1$s) logged into your account at %2$s! Log it out immediately—otherwise they can log you out, change your PIN, and hack your account. Log them out quickly and change your PIN!</string>
+    <string name="security_new_login_body_simple">Someone else is using your app! Log them out immediately—otherwise they can log you out, change your PIN, and hack your account. Log them out quickly and change your PIN!</string>
+    <string name="security_quick_logout_btn">Quick Log Out</string>
+    <string name="security_suspicious_title">Suspicious Login Attempt</string>
+    <string name="security_suspicious_body">Repeated wrong PIN or recovery attempts were detected. Check your logged-in devices and secure your PIN.</string>
+    <string name="security_pin_changed_title">Login PIN Changed</string>
+    <string name="security_pin_changed_body">Your 5-digit Login PIN was updated and older device sessions were logged out.</string>
+    <string name="security_pin_reset_title">Login PIN Reset</string>
+    <string name="security_pin_reset_body">Your Login PIN was reset via recovery code (%1$s). Check logged-in devices if this was not you.</string>
+    <string name="security_session_revoked_title">Device Logged Out</string>
+    <string name="security_session_revoked_body">A logged-in device session was signed out from your account.</string>
+    <string name="security_generic_title">Account Security Alert</string>
+    <string name="security_generic_body">Security activity detected on your account. Tap to review logged-in devices.</string>
+
+    <string name="device_active_now_badge">Active Now</string>
+    <string name="device_signed_out_badge">Logged Out</string>
+    <string name="device_logged_in_at">Logged in: %1$s</string>
+    <string name="device_last_active_at">Last active: %1$s</string>
+    <string name="device_security_tip">If you see an unknown phone here, log it out immediately and change your 5-digit Login PIN.</string>
+
+    <string name="call_timeline_incoming_audio">Incoming voice call</string>
+    <string name="call_timeline_outgoing_audio">Outgoing voice call</string>
+    <string name="call_timeline_incoming_video">Incoming video call</string>
+    <string name="call_timeline_outgoing_video">Outgoing video call</string>
+    <string name="call_timeline_missed_audio">Missed voice call</string>
+    <string name="call_timeline_missed_video">Missed video call</string>
+    <string name="call_timeline_declined">Declined</string>
+    <string name="call_timeline_no_answer">No answer</string>
+    <string name="call_timeline_callback">Tap to call back</string>
 </resources>

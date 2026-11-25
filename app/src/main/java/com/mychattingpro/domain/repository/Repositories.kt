@@ -15,6 +15,7 @@ import com.mychattingpro.domain.models.MessageType
 import com.mychattingpro.domain.models.OwnerActivitySnapshot
 import com.mychattingpro.domain.models.PrivatePinStatus
 import com.mychattingpro.domain.models.PublicUser
+import com.mychattingpro.domain.models.SecurityAlertItem
 import com.mychattingpro.domain.models.UserProfile
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
@@ -45,7 +46,14 @@ interface AuthRepository {
     suspend fun getActiveSessions(): Result<List<ActiveDeviceSession>>
     suspend fun revokeSession(sessionId: String): Result<Unit>
     suspend fun syncNotificationEndpoint(): Result<Unit>
+    fun observeSecurityAlerts(): Flow<List<SecurityAlertItem>> = flowOfEmpty()
+    fun observeUnreadSecurityAlertsCount(): Flow<Int> = kotlinx.coroutines.flow.flowOf(0)
+    suspend fun refreshSecurityAlerts(): Result<List<SecurityAlertItem>> = Result.success(emptyList())
+    suspend fun markAllSecurityAlertsRead() {}
+    suspend fun markSecurityAlertRead(alertId: String) {}
 }
+
+private fun <T> flowOfEmpty(): Flow<List<T>> = kotlinx.coroutines.flow.flowOf(emptyList())
 
 interface OwnerRepository {
     suspend fun fetchOwnerActivity(
@@ -168,6 +176,8 @@ interface SafetyRepository {
 
 interface CallRepository {
     fun observeCallHistory(): Flow<List<CallHistoryItem>>
+    fun observeCallsForPeer(conversationId: String, peerUserId: String): Flow<List<CallHistoryItem>> =
+        kotlinx.coroutines.flow.flowOf(emptyList())
     suspend fun refreshCallHistory(filter: CallHistoryFilter = CallHistoryFilter.ALL): Result<List<CallHistoryItem>>
     suspend fun fetchIceServers(): Result<Pair<List<IceServerConfig>, Boolean>>
     suspend fun initiateCall(conversationId: String, calleeId: String, isVideo: Boolean): Result<String>

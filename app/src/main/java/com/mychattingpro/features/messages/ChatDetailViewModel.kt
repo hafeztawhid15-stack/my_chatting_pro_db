@@ -24,9 +24,12 @@ import com.mychattingpro.core.network.RealtimeSocketManager
 import com.mychattingpro.core.network.SocketConnectionState
 import com.mychattingpro.core.security.EncryptedTokenStore
 import com.mychattingpro.data.repository.AppException
+import com.mychattingpro.domain.models.CallHistoryFilter
+import com.mychattingpro.domain.models.CallHistoryItem
 import com.mychattingpro.domain.models.Conversation
 import com.mychattingpro.domain.models.Message
 import com.mychattingpro.domain.models.MessageType
+import com.mychattingpro.domain.repository.CallRepository
 import com.mychattingpro.domain.repository.ChatRepository
 import com.mychattingpro.domain.repository.MessageRepository
 import com.mychattingpro.domain.repository.PrivateChatRepository
@@ -42,6 +45,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.isActive
@@ -79,6 +84,39 @@ data class ChatDetailUiState(
     val infoToast: String? = null
 )
 
+sealed interface ChatTimelineItem {
+    val timelineId: String
+    val timestampMs: Long
+
+    data class MessageEntry(val message: Message) : ChatTimelineItem {
+        override val timelineId: String = "msg_${message.id}"
+        override val timestampMs: Long = message.createdAtMs
+    }
+
+    data class CallEntry(val call: CallHistoryItem) : ChatTimelineItem {
+        override val timelineId: String = "call_${call.callId}"
+        override val timestampMs: Long = call.startedAtMs
+    }
+
+    companion object {
+        fun buildTimeline(
+            messages: List<Message>,
+            calls: List<CallHistoryItem>
+        ): List<ChatTimelineItem> {
+            val items = ArrayList<ChatTimelineItem>(messages.size + calls.size)
+            messages.forEach { items.add(MessageEntry(it)) }
+            calls.forEach { items.add(CallEntry(it)) }
+            return items.sortedWith(
+                compareBy<ChatTimelineItem>(
+                    { it.timestampMs },
+                    { it is CallEntry },
+                    { it.timelineId }
+                )
+            )
+        }
+    }
+}
+
 class ChatDetailViewModel(
     private val context: Context,
     val conversationId: String,
@@ -93,6 +131,7 @@ class ChatDetailViewModel(
     private val networkMonitor: NetworkMonitor,
     val isPrivate: Boolean = false,
     private val privateChatRepository: PrivateChatRepository? = null,
+    private val callRepository: CallRepository? = null,
     private val baseUrl: String = BuildConfig.CLOUDFLARE_API_BASE_URL
         .ifBlank { "https://my-chatting-pro-api.workers.dev" }
         .trimEnd('/') + "/"
@@ -116,6 +155,18 @@ class ChatDetailViewModel(
             privateChatRepository.observePrivateMessages(conversationId)
         } else {
             messageRepository.observeMessages(conversationId)
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val peerCalls: StateFlow<List<CallHistoryItem>> =
+        if (!isPrivate && callRepository != null) {
+            callRepository.observeCallsForPeer(conversationId, peerUserId)
+        } else {
+            flowOf(emptyList())
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val timelineItems: StateFlow<List<ChatTimelineItem>> =
+        combine(messages, peerCalls) { msgs, calls ->
+            ChatTimelineItem.buildTimeline(msgs, calls)
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val language: StateFlow<AppLanguage> = prefsStore.preferencesFlow
@@ -146,6 +197,7 @@ class ChatDetailViewModel(
                 privateChatRepository.refreshPrivateConversations()
             } else {
                 chatRepository.refreshConversations()
+                callRepository?.refreshCallHistory(CallHistoryFilter.ALL)
             }
         }
 
@@ -193,14 +245,22 @@ class ChatDetailViewModel(
             }
         }
 
-        // Listen for peer typing events
+        // Listen for peer typing and call state events
         viewModelScope.launch {
             socketManager.events.collect { ev ->
-                if (ev is RealtimeEvent.TypingChanged &&
-                    ev.conversationId == conversationId &&
-                    ev.fromUserId == peerUserId
-                ) {
-                    _uiState.value = _uiState.value.copy(isPeerTyping = ev.isTyping)
+                when (ev) {
+                    is RealtimeEvent.TypingChanged -> {
+                        if (ev.conversationId == conversationId && ev.fromUserId == peerUserId) {
+                            _uiState.value = _uiState.value.copy(isPeerTyping = ev.isTyping)
+                        }
+                    }
+                    is RealtimeEvent.CallStateChanged,
+                    is RealtimeEvent.CallMissed -> {
+                        if (!isPrivate) {
+                            callRepository?.refreshCallHistory(CallHistoryFilter.ALL)
+                        }
+                    }
+                    else -> Unit
                 }
             }
         }
@@ -232,6 +292,7 @@ class ChatDetailViewModel(
                 privateChatRepository.refreshPrivateConversations()
             } else {
                 chatRepository.refreshConversations()
+                callRepository?.refreshCallHistory(CallHistoryFilter.ALL)
             }
         }
     }

@@ -53,6 +53,9 @@ class AppNotificationManager(private val context: Context) {
         const val EXTRA_CALL_ACTION = "callAction"
         const val CALL_ACTION_OPEN = "open"
         const val CALL_ACTION_ANSWER = "answer"
+        const val EXTRA_NAVIGATE_TO = "navigate_to"
+        const val NAV_ACTIVE_DEVICES = "active_devices"
+        const val NAV_NOTIFICATIONS = "notifications"
     }
 
     private val displayedEventIds: MutableSet<String> = Collections.synchronizedSet(
@@ -65,6 +68,7 @@ class AppNotificationManager(private val context: Context) {
     )
 
     private val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+    private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
     private val notifAudioAttributes: AudioAttributes = AudioAttributes.Builder()
         .setUsage(AudioAttributes.USAGE_NOTIFICATION)
         .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
@@ -438,12 +442,19 @@ class AppNotificationManager(private val context: Context) {
         if (!canPostSystemNotif) return
 
         val channel = if (isAccountEvent) CHANNEL_ACCOUNT else CHANNEL_SECURITY
+        val navigateTarget = if (alertType == "new_login" || alertType == "suspicious_login_attempt") {
+            NAV_ACTIVE_DEVICES
+        } else {
+            NAV_NOTIFICATIONS
+        }
         val intent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            putExtra(EXTRA_NAVIGATE_TO, navigateTarget)
         }
+        val reqCode = (eventId ?: alertType).hashCode()
         val pi = PendingIntent.getActivity(
             context,
-            alertType.hashCode(),
+            reqCode,
             intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
@@ -452,7 +463,9 @@ class AppNotificationManager(private val context: Context) {
             .setContentTitle(title)
             .setContentText(body)
             .setStyle(NotificationCompat.BigTextStyle().bigText(body))
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setCategory(NotificationCompat.CATEGORY_STATUS)
+            .setPriority(NotificationCompat.PRIORITY_MAX)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setAutoCancel(true)
             .setContentIntent(pi)
         if (!prefs.messageSoundEnabled) {
@@ -465,7 +478,7 @@ class AppNotificationManager(private val context: Context) {
         }
 
         runCatching {
-            NotificationManagerCompat.from(context).notify((eventId ?: alertType).hashCode(), builder.build())
+            NotificationManagerCompat.from(context).notify(reqCode, builder.build())
         }
     }
 
@@ -503,55 +516,16 @@ class AppNotificationManager(private val context: Context) {
         val candidates = resolveMessageSoundCandidates(customSoundUri)
         if (candidates.isEmpty()) return
 
-        synchronized(soundLock) {
-            val now = System.currentTimeMillis()
-            if (now - lastMessageAlertPlayedAtMs < 600L) return
-            lastMessageAlertPlayedAtMs = now
+        val playAction = {
+            synchronized(soundLock) {
+                val now = System.currentTimeMillis()
+                if (now - lastMessageAlertPlayedAtMs < 550L) return@synchronized
+                lastMessageAlertPlayedAtMs = now
 
-            stopActiveMessageAudioLocked()
+                stopActiveMessageAudioLocked()
 
-            // Pass 1: MediaPlayer verifies data source upfront and releases immediately after single playback
-            var started = false
-            for (candidate in candidates) {
-                val mp = MediaPlayer()
-                val played = runCatching {
-                    mp.setAudioAttributes(notifAudioAttributes)
-                    mp.setDataSource(context, candidate)
-                    mp.isLooping = false
-                    mp.setVolume(1.0f, 1.0f)
-                    mp.setOnCompletionListener { finishedMp ->
-                        synchronized(soundLock) {
-                            if (activeMessageMediaPlayer === finishedMp) {
-                                activeMessageMediaPlayer = null
-                            }
-                        }
-                        runCatching { finishedMp.release() }
-                    }
-                    mp.setOnErrorListener { failedMp, _, _ ->
-                        synchronized(soundLock) {
-                            if (activeMessageMediaPlayer === failedMp) {
-                                activeMessageMediaPlayer = null
-                            }
-                        }
-                        runCatching { failedMp.release() }
-                        true
-                    }
-                    mp.prepare()
-                    mp.start()
-                    activeMessageMediaPlayer = mp
-                    true
-                }.onFailure {
-                    runCatching { mp.reset() }
-                    runCatching { mp.release() }
-                }.getOrDefault(false)
-                if (played) {
-                    started = true
-                    break
-                }
-            }
-
-            // Pass 2: System Ringtone fallback
-            if (!started) {
+                // Pass 1: System Ringtone (IRingtonePlayer) handles OEM & scoped notification tones cleanly
+                var started = false
                 for (candidate in candidates) {
                     val played = runCatching {
                         val ringtone = RingtoneManager.getRingtone(context, candidate) ?: return@runCatching false
@@ -560,9 +534,57 @@ class AppNotificationManager(private val context: Context) {
                         activeMessageRingtone = ringtone
                         true
                     }.getOrDefault(false)
-                    if (played) break
+                    if (played) {
+                        started = true
+                        break
+                    }
+                }
+
+                // Pass 2: MediaPlayer fallback if Ringtone service returned null
+                if (!started) {
+                    for (candidate in candidates) {
+                        val mp = MediaPlayer()
+                        val played = runCatching {
+                            mp.setAudioAttributes(notifAudioAttributes)
+                            mp.setDataSource(context, candidate)
+                            mp.isLooping = false
+                            mp.setVolume(1.0f, 1.0f)
+                            mp.setOnCompletionListener { finishedMp ->
+                                synchronized(soundLock) {
+                                    if (activeMessageMediaPlayer === finishedMp) {
+                                        activeMessageMediaPlayer = null
+                                    }
+                                }
+                                runCatching { finishedMp.release() }
+                            }
+                            mp.setOnErrorListener { failedMp, _, _ ->
+                                synchronized(soundLock) {
+                                    if (activeMessageMediaPlayer === failedMp) {
+                                        activeMessageMediaPlayer = null
+                                    }
+                                }
+                                runCatching { failedMp.release() }
+                                true
+                            }
+                            mp.prepare()
+                            mp.start()
+                            activeMessageMediaPlayer = mp
+                            true
+                        }.onFailure {
+                            runCatching { mp.reset() }
+                            runCatching { mp.release() }
+                        }.getOrDefault(false)
+                        if (played) {
+                            break
+                        }
+                    }
                 }
             }
+        }
+        if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) {
+            playAction()
+        } else {
+            mainHandler.post(playAction)
         }
     }
 

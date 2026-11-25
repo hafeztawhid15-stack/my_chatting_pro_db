@@ -131,9 +131,42 @@ interface CallHistoryDao {
     @Query("SELECT * FROM cached_call_history ORDER BY startedAtMs DESC")
     fun observeAll(): Flow<List<CallHistoryEntity>>
 
+    @Query("SELECT * FROM cached_call_history WHERE conversationId = :conversationId OR peerUserId = :peerUserId ORDER BY startedAtMs ASC")
+    fun observeCallsForPeer(conversationId: String, peerUserId: String): Flow<List<CallHistoryEntity>>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertAll(items: List<CallHistoryEntity>)
 
     @Query("DELETE FROM cached_call_history")
+    suspend fun clearAll()
+}
+
+@Dao
+interface SecurityAlertDao {
+    @Query("SELECT * FROM security_alerts ORDER BY createdAtMs DESC")
+    fun observeAlerts(): Flow<List<SecurityAlertEntity>>
+
+    @Query("SELECT COUNT(*) FROM security_alerts WHERE isRead = 0")
+    fun observeUnreadCount(): Flow<Int>
+
+    @Query("SELECT * FROM security_alerts")
+    suspend fun getAll(): List<SecurityAlertEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(item: SecurityAlertEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertAll(items: List<SecurityAlertEntity>)
+
+    @Query("UPDATE security_alerts SET isRead = 1 WHERE isRead = 0")
+    suspend fun markAllRead()
+
+    @Query("UPDATE security_alerts SET isRead = 1 WHERE id = :id")
+    suspend fun markRead(id: String)
+
+    @Query("DELETE FROM security_alerts WHERE id = :id")
+    suspend fun deleteById(id: String)
+
+    @Query("DELETE FROM security_alerts")
     suspend fun clearAll()
 }

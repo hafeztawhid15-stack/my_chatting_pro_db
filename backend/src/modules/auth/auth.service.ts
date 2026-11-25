@@ -249,11 +249,14 @@ export class AuthService {
     );
     const refreshHash = await sha256Hex(refreshToken);
 
+    const cleanDeviceName = (input.deviceName ?? 'Android Device').slice(0, 80);
+    const cleanAppVersion = (input.appVersion ?? '1.0.0').slice(0, 24);
+
     await this.db.completeLoginSession({
       userId: user.id,
       deviceId,
-      deviceName: (input.deviceName ?? 'Android Device').slice(0, 80),
-      appVersion: (input.appVersion ?? '1.0.0').slice(0, 24),
+      deviceName: cleanDeviceName,
+      appVersion: cleanAppVersion,
       sessionId,
       refreshHash,
       expiresAtMs: now + refreshTtl * 1000,
@@ -265,10 +268,19 @@ export class AuthService {
       eventType: 'auth.login',
       outcome: 'success',
       ip: input.clientIp,
+      meta: {
+        deviceName: cleanDeviceName.slice(0, 60),
+        appVersion: cleanAppVersion,
+        sessionId,
+        loginAtMs: now,
+      },
     });
 
     await dispatchSecurityAlert(this.env, this.db, user.id, 'new_login', {
-      deviceName: (input.deviceName ?? 'Android Device').slice(0, 60),
+      deviceName: cleanDeviceName.slice(0, 60),
+      appVersion: cleanAppVersion,
+      sessionId,
+      loginAtMs: now,
     });
 
     return {
@@ -378,8 +390,80 @@ export class AuthService {
       outcome: 'success',
       meta: { targetSessionId },
     });
-    await dispatchSecurityAlert(this.env, this.db, userId, 'session_revoked');
+    await dispatchSecurityAlert(this.env, this.db, userId, 'session_revoked', {
+      revokedSessionId: targetSessionId,
+    });
     return true;
+  }
+
+  async listSecurityAlerts(
+    userId: string,
+    currentSessionId: string
+  ): Promise<
+    Array<{
+      id: string;
+      alertType: string;
+      deviceName: string | null;
+      sessionId: string | null;
+      createdAtMs: number;
+      isCurrentSession: boolean;
+      isSessionActive: boolean;
+    }>
+  > {
+    const [logs, activeSessions] = await Promise.all([
+      this.db.listSecurityAlertsForUser(userId, 50),
+      this.db.listActiveUserSessions(userId, Date.now()).catch(() => []),
+    ]);
+    const activeSessionIds = new Set(activeSessions.map((s) => s.session_id));
+    const alerts: Array<{
+      id: string;
+      alertType: string;
+      deviceName: string | null;
+      sessionId: string | null;
+      createdAtMs: number;
+      isCurrentSession: boolean;
+      isSessionActive: boolean;
+    }> = [];
+
+    for (const row of logs) {
+      const meta = row.meta_json ?? {};
+      const sessionId = typeof meta.sessionId === 'string' ? meta.sessionId : null;
+      const deviceName = typeof meta.deviceName === 'string' ? meta.deviceName : null;
+      const isCurrentSession = Boolean(sessionId && sessionId === currentSessionId);
+
+      let alertType: string;
+      if (row.event_type === 'auth.login') {
+        // Ignore legacy login audit entries without session metadata or self-login of current session
+        if (!sessionId || isCurrentSession) continue;
+        alertType = 'new_login';
+      } else if (row.event_type === 'auth.login_wrong_pin' || row.event_type === 'auth.recovery_code_failed') {
+        const failedCount = typeof meta.failedCount === 'number' ? meta.failedCount : 0;
+        if (row.event_type === 'auth.login_wrong_pin' && failedCount < 3) continue;
+        alertType = 'suspicious_login_attempt';
+      } else if (row.event_type === 'auth.login_pin_changed') {
+        alertType = 'login_pin_changed';
+      } else if (row.event_type === 'auth.login_pin_reset_success') {
+        alertType = 'login_pin_reset';
+      } else if (row.event_type === 'auth.session_revoked') {
+        alertType = 'session_revoked';
+      } else if (row.event_type === 'auth.logout_all_devices') {
+        alertType = 'logout_all_devices';
+      } else {
+        continue;
+      }
+
+      alerts.push({
+        id: row.id,
+        alertType,
+        deviceName,
+        sessionId,
+        createdAtMs: row.created_at_ms,
+        isCurrentSession,
+        isSessionActive: sessionId ? activeSessionIds.has(sessionId) : false,
+      });
+    }
+
+    return alerts;
   }
 
   async logoutAllDevices(
@@ -401,7 +485,10 @@ export class AuthService {
       ip: clientIp,
       meta: { keepCurrent },
     });
-    await dispatchSecurityAlert(this.env, this.db, userId, 'logout_all_devices', { keepCurrent });
+    await dispatchSecurityAlert(this.env, this.db, userId, 'logout_all_devices', {
+      keepCurrent,
+      keepSessionId: keepCurrent ? currentSessionId : '',
+    });
     return { revokedAll: true };
   }
 
@@ -587,11 +674,14 @@ export class AuthService {
     );
     const refreshHash = await sha256Hex(refreshToken);
 
+    const cleanDeviceName = (input.deviceName ?? 'Android Device').slice(0, 80);
+    const cleanAppVersion = (input.appVersion ?? '1.0.0').slice(0, 24);
+
     await this.db.completeLoginSession({
       userId: user.id,
       deviceId,
-      deviceName: (input.deviceName ?? 'Android Device').slice(0, 80),
-      appVersion: (input.appVersion ?? '1.0.0').slice(0, 24),
+      deviceName: cleanDeviceName,
+      appVersion: cleanAppVersion,
       sessionId,
       refreshHash,
       expiresAtMs: now + refreshTtl * 1000,
@@ -603,8 +693,17 @@ export class AuthService {
       eventType: 'auth.login_pin_reset_success',
       outcome: 'success',
       ip: input.clientIp,
+      meta: {
+        deviceName: cleanDeviceName.slice(0, 60),
+        sessionId,
+        loginAtMs: now,
+      },
     });
-    await dispatchSecurityAlert(this.env, this.db, user.id, 'login_pin_reset');
+    await dispatchSecurityAlert(this.env, this.db, user.id, 'login_pin_reset', {
+      deviceName: cleanDeviceName.slice(0, 60),
+      sessionId,
+      loginAtMs: now,
+    });
 
     return {
       accessToken,

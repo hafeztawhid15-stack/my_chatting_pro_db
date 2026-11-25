@@ -77,5 +77,8 @@ sealed interface AppRoute {
     data object RecoveryCode : AppRoute
 
     @Serializable
+    data object Notifications : AppRoute
+
+    @Serializable
     data object ForgotLoginPin : AppRoute
 }

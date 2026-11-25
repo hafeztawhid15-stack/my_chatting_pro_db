@@ -55,7 +55,7 @@ fun MainTabsScreen(
     onOpenActiveDevices: () -> Unit,
     onOpenOwnerMonitor: () -> Unit,
     onOpenPrivateChat: () -> Unit = {},
-    onOpenCallHistory: () -> Unit = {},
+    onOpenNotifications: () -> Unit = {},
     onOpenNotificationSettings: () -> Unit = {},
     onOpenChangeLoginPin: () -> Unit = {},
     onOpenRecoveryCode: () -> Unit = {},
@@ -150,7 +150,7 @@ fun MainTabsScreen(
                         onOpenConversation = onOpenConversation,
                         onOpenPrivateChat = onOpenPrivateChat,
                         onOpenOwnerMonitor = onOpenOwnerMonitor,
-                        onOpenCallHistory = onOpenCallHistory
+                        onOpenNotifications = onOpenNotifications
                     )
                     1 -> AddChatScreen(
                         viewModel = chatsViewModel,
