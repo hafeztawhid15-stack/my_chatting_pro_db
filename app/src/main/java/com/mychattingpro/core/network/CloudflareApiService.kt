@@ -98,6 +98,9 @@ interface CloudflareApiService {
     @DELETE("v1/messages/{messageId}")
     suspend fun deleteMessage(@Path("messageId") messageId: String)
 
+    @POST("v1/messages/{messageId}/delete-for-me")
+    suspend fun deleteMessageForMe(@Path("messageId") messageId: String)
+
     @Multipart
     @POST("v1/media/upload")
     suspend fun uploadMedia(
@@ -144,6 +147,15 @@ interface CloudflareApiService {
         @Query("filter") filter: String? = null,
         @Query("limit") limit: Int = 60
     ): CallHistoryResponseDto
+
+    @DELETE("v1/calls/history/{callId}")
+    suspend fun deleteCallHistoryItem(@Path("callId") callId: String)
+
+    @POST("v1/calls/history/delete-batch")
+    suspend fun deleteCallHistoryBatch(@Body body: DeleteCallHistoryBatchRequestDto)
+
+    @DELETE("v1/calls/history")
+    suspend fun clearAllCallHistory()
 
     @POST("v1/notifications/endpoints")
     suspend fun registerNotificationEndpoint(@Body body: NotificationEndpointRequestDto)
@@ -241,4 +253,7 @@ interface CloudflareApiService {
 
     @DELETE("v1/private-chat/messages/{messageId}")
     suspend fun deletePrivateMessage(@Path("messageId") messageId: String)
+
+    @POST("v1/private-chat/messages/{messageId}/delete-for-me")
+    suspend fun deletePrivateMessageForMe(@Path("messageId") messageId: String)
 }

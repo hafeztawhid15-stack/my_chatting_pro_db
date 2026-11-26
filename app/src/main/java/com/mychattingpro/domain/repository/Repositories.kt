@@ -112,6 +112,7 @@ interface MessageRepository {
     suspend fun retryAllPendingMessages(): Int
     suspend fun markReceipts(conversationId: String, messageIds: List<String>, read: Boolean): Result<Unit>
     suspend fun deleteOwnMessage(messageId: String): Result<Unit>
+    suspend fun deleteMessageForMe(messageId: String): Result<Unit> = Result.success(Unit)
     suspend fun getSignedMediaUrl(mediaId: String): Result<String>
 }
 
@@ -165,6 +166,7 @@ interface PrivateChatRepository {
     suspend fun retryFailedPrivateMessage(message: Message, onProgress: (Float) -> Unit): Result<Message>
     suspend fun markPrivateReceipts(conversationId: String, messageIds: List<String>, read: Boolean): Result<Unit>
     suspend fun deleteOwnPrivateMessage(messageId: String): Result<Unit>
+    suspend fun deletePrivateMessageForMe(messageId: String): Result<Unit> = Result.success(Unit)
 }
 
 interface SafetyRepository {
@@ -179,6 +181,9 @@ interface CallRepository {
     fun observeCallsForPeer(conversationId: String, peerUserId: String): Flow<List<CallHistoryItem>> =
         kotlinx.coroutines.flow.flowOf(emptyList())
     suspend fun refreshCallHistory(filter: CallHistoryFilter = CallHistoryFilter.ALL): Result<List<CallHistoryItem>>
+    suspend fun deleteCallRecord(callId: String): Result<Unit> = Result.success(Unit)
+    suspend fun deleteCallRecords(callIds: List<String>): Result<Unit> = Result.success(Unit)
+    suspend fun clearAllCallHistory(): Result<Unit> = Result.success(Unit)
     suspend fun fetchIceServers(): Result<Pair<List<IceServerConfig>, Boolean>>
     suspend fun initiateCall(conversationId: String, calleeId: String, isVideo: Boolean): Result<String>
     suspend fun updateCallState(callId: String, action: String): Result<Unit>

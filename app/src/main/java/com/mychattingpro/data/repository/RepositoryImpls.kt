@@ -10,6 +10,8 @@ import com.mychattingpro.core.database.CallHistoryDao
 import com.mychattingpro.core.database.CallHistoryEntity
 import com.mychattingpro.core.database.ConversationDao
 import com.mychattingpro.core.database.ConversationEntity
+import com.mychattingpro.core.database.HiddenCallEntity
+import com.mychattingpro.core.database.HiddenMessageEntity
 import com.mychattingpro.core.database.MessageDao
 import com.mychattingpro.core.database.MessageEntity
 import com.mychattingpro.core.database.SecurityAlertDao
@@ -22,6 +24,7 @@ import com.mychattingpro.core.network.CloudflareApiService
 import com.mychattingpro.core.network.ConversationDto
 import com.mychattingpro.core.network.CreateCallRequestDto
 import com.mychattingpro.core.network.DeleteAccountRequestDto
+import com.mychattingpro.core.network.DeleteCallHistoryBatchRequestDto
 import com.mychattingpro.core.network.DirectConversationRequestDto
 import com.mychattingpro.core.network.GenerateRecoveryCodeRequestDto
 import com.mychattingpro.core.network.LoginRequestDto
@@ -214,7 +217,9 @@ class AuthRepositoryImpl(
         tokenStore.clearSession()
         conversationDao.clearAll()
         messageDao.clearAll()
+        messageDao.clearHiddenMessages()
         callHistoryDao.clearAll()
+        callHistoryDao.clearHiddenCalls()
         securityAlertDao?.clearAll()
         AppNotificationManager(context).cancelAllSecurityNotifications()
     }
@@ -232,7 +237,9 @@ class AuthRepositoryImpl(
             tokenStore.clearSession()
             conversationDao.clearAll()
             messageDao.clearAll()
+            messageDao.clearHiddenMessages()
             callHistoryDao.clearAll()
+            callHistoryDao.clearHiddenCalls()
         }
         Unit
     }.recoverCatching { throw AppException(errorMapper.map(it)) }
@@ -338,7 +345,9 @@ class AuthRepositoryImpl(
         tokenStore.clearSession()
         conversationDao.clearAll()
         messageDao.clearAll()
+        messageDao.clearHiddenMessages()
         callHistoryDao.clearAll()
+        callHistoryDao.clearHiddenCalls()
         securityAlertDao?.clearAll()
         AppNotificationManager(context).cancelAllSecurityNotifications()
         prefsStore.setRecoveryCodeConfigured(false)
@@ -1061,8 +1070,40 @@ class MessageRepositoryImpl(
         }
 
     override suspend fun deleteOwnMessage(messageId: String): Result<Unit> = runCatching {
+        val existing = messageDao.getById(messageId)
+        val now = System.currentTimeMillis()
+        if (messageId.startsWith("pending_")) {
+            messageDao.deleteById(messageId)
+            syncConversationPreviewAfterLocalDelete(conversationDao, messageDao, existing?.conversationId, isPrivate = false)
+            return@runCatching
+        }
         api.deleteMessage(messageId)
-        messageDao.markDeletedForAll(messageId, System.currentTimeMillis())
+        messageDao.markDeletedForAll(messageId, now)
+        cleanupCachedMediaFiles(context, existing?.mediaId)
+        if (existing != null) {
+            val conv = conversationDao.getById(existing.conversationId)
+            if (conv?.lastMessageId == messageId) {
+                conversationDao.updateLastMessageSummary(
+                    conversationId = existing.conversationId,
+                    lastMessageId = messageId,
+                    lastMessagePreview = "Message deleted",
+                    lastMessageType = existing.messageType,
+                    lastMessageSenderId = existing.senderId,
+                    lastMessageAtMs = existing.createdAtMs
+                )
+            }
+        }
+    }.recoverCatching { throw AppException(errorMapper.map(it)) }
+
+    override suspend fun deleteMessageForMe(messageId: String): Result<Unit> = runCatching {
+        val existing = messageDao.getById(messageId)
+        val now = System.currentTimeMillis()
+        if (!messageId.startsWith("pending_")) {
+            api.deleteMessageForMe(messageId)
+            messageDao.hideMessage(HiddenMessageEntity(messageId = messageId, hiddenAtMs = now))
+        }
+        messageDao.deleteById(messageId)
+        syncConversationPreviewAfterLocalDelete(conversationDao, messageDao, existing?.conversationId, isPrivate = false)
     }.recoverCatching { throw AppException(errorMapper.map(it)) }
 
     override suspend fun getSignedMediaUrl(mediaId: String): Result<String> = runCatching {
@@ -1117,9 +1158,31 @@ class CallRepositoryImpl(
         val res = api.getCallHistory(filter = filter.apiValue, limit = 80)
         val entities = res.calls.map { it.toEntity() }
         if (filter == CallHistoryFilter.ALL) {
-            callHistoryDao.upsertAll(entities)
+            callHistoryDao.replaceAll(entities)
         }
         entities.map { it.toDomain() }
+    }.recoverCatching { throw AppException(errorMapper.map(it)) }
+
+    override suspend fun deleteCallRecord(callId: String): Result<Unit> = runCatching {
+        val cleanId = callId.trim()
+        require(cleanId.isNotEmpty())
+        api.deleteCallHistoryItem(cleanId)
+        callHistoryDao.hideCall(HiddenCallEntity(callId = cleanId, hiddenAtMs = System.currentTimeMillis()))
+        callHistoryDao.deleteById(cleanId)
+    }.recoverCatching { throw AppException(errorMapper.map(it)) }
+
+    override suspend fun deleteCallRecords(callIds: List<String>): Result<Unit> = runCatching {
+        val cleanIds = callIds.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+        if (cleanIds.isEmpty()) return@runCatching
+        api.deleteCallHistoryBatch(DeleteCallHistoryBatchRequestDto(callIds = cleanIds))
+        val now = System.currentTimeMillis()
+        callHistoryDao.hideCalls(cleanIds.map { HiddenCallEntity(callId = it, hiddenAtMs = now) })
+        callHistoryDao.deleteByIds(cleanIds)
+    }.recoverCatching { throw AppException(errorMapper.map(it)) }
+
+    override suspend fun clearAllCallHistory(): Result<Unit> = runCatching {
+        api.clearAllCallHistory()
+        callHistoryDao.clearAll()
     }.recoverCatching { throw AppException(errorMapper.map(it)) }
 
     override suspend fun fetchIceServers(): Result<Pair<List<IceServerConfig>, Boolean>> = runCatching {
@@ -1741,14 +1804,95 @@ class PrivateChatRepositoryImpl(
     override suspend fun deleteOwnPrivateMessage(messageId: String): Result<Unit> = runCatching {
         requireUnlocked()
         lockManager.touchActivity()
+        val existing = messageDao.getById(messageId)
+        val now = System.currentTimeMillis()
+        if (messageId.startsWith("pending_")) {
+            messageDao.deleteById(messageId)
+            syncConversationPreviewAfterLocalDelete(conversationDao, messageDao, existing?.conversationId, isPrivate = true)
+            return@runCatching
+        }
         api.deletePrivateMessage(messageId)
-        messageDao.markDeletedForAll(messageId, System.currentTimeMillis())
+        messageDao.markDeletedForAll(messageId, now)
+        cleanupCachedMediaFiles(context, existing?.mediaId)
+        if (existing != null) {
+            val conv = conversationDao.getById(existing.conversationId)
+            if (conv?.lastMessageId == messageId) {
+                conversationDao.updateLastMessageSummary(
+                    conversationId = existing.conversationId,
+                    lastMessageId = messageId,
+                    lastMessagePreview = "Message deleted",
+                    lastMessageType = existing.messageType,
+                    lastMessageSenderId = existing.senderId,
+                    lastMessageAtMs = existing.createdAtMs
+                )
+            }
+        }
+    }.recoverCatching { throw AppException(errorMapper.map(it)) }
+
+    override suspend fun deletePrivateMessageForMe(messageId: String): Result<Unit> = runCatching {
+        requireUnlocked()
+        lockManager.touchActivity()
+        val existing = messageDao.getById(messageId)
+        val now = System.currentTimeMillis()
+        if (!messageId.startsWith("pending_")) {
+            api.deletePrivateMessageForMe(messageId)
+            messageDao.hideMessage(HiddenMessageEntity(messageId = messageId, hiddenAtMs = now))
+        }
+        messageDao.deleteById(messageId)
+        syncConversationPreviewAfterLocalDelete(conversationDao, messageDao, existing?.conversationId, isPrivate = true)
     }.recoverCatching { throw AppException(errorMapper.map(it)) }
 
     private fun requireUnlocked() {
         if (lockManager.currentTokenOrNull() == null) {
             throw AppException(AppError.PrivateChatLocked)
         }
+    }
+}
+
+private fun cleanupCachedMediaFiles(context: Context, mediaId: String?) {
+    if (mediaId.isNullOrBlank()) return
+    runCatching { File(context.cacheDir, "video_cache/$mediaId.mp4").delete() }
+    runCatching { File(context.cacheDir, "voice_cache/$mediaId.audio").delete() }
+}
+
+private suspend fun syncConversationPreviewAfterLocalDelete(
+    conversationDao: ConversationDao,
+    messageDao: MessageDao,
+    conversationId: String?,
+    isPrivate: Boolean
+) {
+    if (conversationId.isNullOrBlank()) return
+    val latest = messageDao.getLatestVisibleMessage(conversationId, isPrivate = isPrivate)
+    if (latest == null) {
+        conversationDao.updateLastMessageSummary(
+            conversationId = conversationId,
+            lastMessageId = null,
+            lastMessagePreview = null,
+            lastMessageType = null,
+            lastMessageSenderId = null,
+            lastMessageAtMs = null
+        )
+    } else {
+        val preview = if (latest.deletedForAllAtMs != null) {
+            "Message deleted"
+        } else {
+            when (latest.messageType) {
+                "image" -> "Photo"
+                "video" -> "Video"
+                "voice" -> "Voice message"
+                "audio" -> "Audio file"
+                "file" -> "Document / File"
+                else -> (latest.bodyText ?: "").take(80)
+            }
+        }
+        conversationDao.updateLastMessageSummary(
+            conversationId = conversationId,
+            lastMessageId = latest.id,
+            lastMessagePreview = preview,
+            lastMessageType = latest.messageType,
+            lastMessageSenderId = latest.senderId,
+            lastMessageAtMs = latest.createdAtMs
+        )
     }
 }
 

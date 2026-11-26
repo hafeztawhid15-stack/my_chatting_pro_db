@@ -457,4 +457,26 @@
     <string name="call_timeline_declined">প্রত্যাখ্যাত</string>
     <string name="call_timeline_no_answer">উত্তর নেই</string>
     <string name="call_timeline_callback">কল করতে ট্যাপ করুন</string>
+
+    <string name="action_delete_for_me">আমার জন্য মুছুন</string>
+    <string name="delete_msg_confirm_title">এটি মুছে ফেলবেন?</string>
+    <string name="delete_for_me_confirm_body">এটি শুধু আপনার চ্যাট থেকে সরানো হবে। অন্য ব্যবহারকারী এটি দেখতে পারবেন।</string>
+    <string name="delete_for_everyone_confirm_body">এটি দুই পক্ষের চ্যাট এবং মিডিয়া স্টোরেজ থেকে স্থায়ীভাবে মুছে যাবে।</string>
+    <string name="msg_deleted_for_me_notice">আপনার চ্যাট থেকে সরানো হয়েছে</string>
+    <string name="msg_deleted_for_everyone_notice">সবার জন্য মুছে ফেলা হয়েছে</string>
+
+    <string name="call_delete_one">কল রেকর্ড মুছুন</string>
+    <string name="call_delete_selected">নির্বাচিতগুলো মুছুন</string>
+    <string name="call_clear_all">সব মুছুন</string>
+    <string name="call_select_multiple">একাধিক নির্বাচন করুন</string>
+    <string name="call_select_all">সব নির্বাচন করুন</string>
+    <string name="call_selected_count">%1$dটি নির্বাচিত</string>
+    <string name="call_delete_one_confirm_title">কল হিস্টোরি মুছবেন?</string>
+    <string name="call_delete_one_confirm_body">এই কল রেকর্ডটি শুধু আপনার হিস্টোরি থেকে মুছে ফেলা হবে। অন্য ব্যবহারকারীর হিস্টোরি অপরিবর্তিত থাকবে।</string>
+    <string name="call_delete_batch_confirm_title">নির্বাচিত কলগুলো মুছবেন?</string>
+    <string name="call_delete_batch_confirm_body">আপনার হিস্টোরি থেকে %1$dটি কল রেকর্ড মুছে ফেলা হবে। অন্য ব্যবহারকারীর হিস্টোরি থাকবে।</string>
+    <string name="call_clear_all_confirm_title">সব কল হিস্টোরি মুছবেন?</string>
+    <string name="call_clear_all_confirm_body">আপনার সকল কল হিস্টোরি স্থায়ীভাবে মুছে ফেলা হবে।</string>
+    <string name="call_history_deleted_notice">কল হিস্টোরি মুছে ফেলা হয়েছে</string>
+    <string name="call_history_cleared_notice">সকল কল হিস্টোরি পরিষ্কার করা হয়েছে</string>
 </resources>

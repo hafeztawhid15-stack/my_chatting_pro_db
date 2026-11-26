@@ -8,8 +8,15 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
-    entities = [ConversationEntity::class, MessageEntity::class, CallHistoryEntity::class, SecurityAlertEntity::class],
-    version = 6,
+    entities = [
+        ConversationEntity::class,
+        MessageEntity::class,
+        CallHistoryEntity::class,
+        SecurityAlertEntity::class,
+        HiddenMessageEntity::class,
+        HiddenCallEntity::class
+    ],
+    version = 7,
     exportSchema = false
 )
 abstract class MyChattingProDatabase : RoomDatabase() {
@@ -96,6 +103,27 @@ abstract class MyChattingProDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS hidden_messages (
+                        messageId TEXT NOT NULL PRIMARY KEY,
+                        hiddenAtMs INTEGER NOT NULL
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS hidden_calls (
+                        callId TEXT NOT NULL PRIMARY KEY,
+                        hiddenAtMs INTEGER NOT NULL
+                    )
+                    """.trimIndent()
+                )
+            }
+        }
+
         @Volatile
         private var INSTANCE: MyChattingProDatabase? = null
 
@@ -106,7 +134,14 @@ abstract class MyChattingProDatabase : RoomDatabase() {
                     MyChattingProDatabase::class.java,
                     "my_chatting_pro_cache.db"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
+                    .addMigrations(
+                        MIGRATION_1_2,
+                        MIGRATION_2_3,
+                        MIGRATION_3_4,
+                        MIGRATION_4_5,
+                        MIGRATION_5_6,
+                        MIGRATION_6_7
+                    )
                     .fallbackToDestructiveMigration(dropAllTables = true)
                     .build()
                     .also { INSTANCE = it }

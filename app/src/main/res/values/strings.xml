@@ -457,4 +457,26 @@
     <string name="call_timeline_declined">Declined</string>
     <string name="call_timeline_no_answer">No answer</string>
     <string name="call_timeline_callback">Tap to call back</string>
+
+    <string name="action_delete_for_me">Delete for me</string>
+    <string name="delete_msg_confirm_title">Delete this item?</string>
+    <string name="delete_for_me_confirm_body">This will remove it from your chat only. The other person will still be able to see it.</string>
+    <string name="delete_for_everyone_confirm_body">This will permanently remove the message and its media from both sides.</string>
+    <string name="msg_deleted_for_me_notice">Removed from your chat</string>
+    <string name="msg_deleted_for_everyone_notice">Deleted for everyone</string>
+
+    <string name="call_delete_one">Delete call log</string>
+    <string name="call_delete_selected">Delete selected</string>
+    <string name="call_clear_all">Clear all</string>
+    <string name="call_select_multiple">Select calls</string>
+    <string name="call_select_all">Select all</string>
+    <string name="call_selected_count">%1$d selected</string>
+    <string name="call_delete_one_confirm_title">Delete call history?</string>
+    <string name="call_delete_one_confirm_body">Remove this call record from your call history? This will only delete it for you.</string>
+    <string name="call_delete_batch_confirm_title">Delete selected calls?</string>
+    <string name="call_delete_batch_confirm_body">Remove %1$d selected call records from your history? Other users keep their own copy.</string>
+    <string name="call_clear_all_confirm_title">Clear all call history?</string>
+    <string name="call_clear_all_confirm_body">All call records will be permanently removed from your call history only.</string>
+    <string name="call_history_deleted_notice">Call history deleted</string>
+    <string name="call_history_cleared_notice">All call history cleared</string>
 </resources>

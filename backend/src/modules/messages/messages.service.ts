@@ -247,7 +247,7 @@ export class MessagesService {
 
     if (media && this.storage) {
       const bucket = media.storage_bucket || resolveStorageBucket(this.env);
-      await this.storage.deleteObjects(bucket, [media.storage_path]);
+      await this.storage.deleteObjects(bucket, [media.storage_path]).catch(() => undefined);
     }
 
     const memberIsPrivate = await this.db.getMembersPrivateFlags(msg.conversation_id, memberIds);
@@ -270,6 +270,18 @@ export class MessagesService {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ memberIds, envelope, memberIsPrivate }),
     });
+  }
+
+  async deleteMessageForMe(userId: string, messageId: string, isPrivateScope = false): Promise<void> {
+    const msg = await this.db.findMessageForDelete(messageId);
+    if (!msg) {
+      throw new ApiError(404, 'message_not_found', 'Message not found.');
+    }
+
+    const convService = new ConversationsService(this.db);
+    await convService.assertMember(msg.conversation_id, userId, isPrivateScope);
+
+    await this.db.hideMessageForUser(userId, messageId, Date.now());
   }
 
   private async getSingleMessage(messageId: string): Promise<MessageDto | null> {

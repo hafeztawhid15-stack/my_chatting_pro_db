@@ -79,6 +79,7 @@ data class ChatDetailUiState(
     val downloadingMessageId: String? = null,
     val isSharingMessage: Boolean = false,
     val peerProfileModal: PeerProfileModalState? = null,
+    val selectedCallIds: Set<String> = emptySet(),
     val conversationDeleted: Boolean = false,
     val error: AppError? = null,
     val infoToast: String? = null
@@ -954,17 +955,118 @@ class ChatDetailViewModel(
     }
 
     fun deleteMessage(messageId: String) {
+        deleteMessageForEveryone(messageId)
+    }
+
+    fun deleteMessageForEveryone(messageId: String) {
         touchPrivateActivity()
+        if (_uiState.value.activeAudioMessageId == messageId) {
+            stopAudioPlayback()
+        }
         viewModelScope.launch {
             val res = if (isPrivate && privateChatRepository != null) {
                 privateChatRepository.deleteOwnPrivateMessage(messageId)
             } else {
                 messageRepository.deleteOwnMessage(messageId)
             }
-            res.onFailure { err ->
+            res.onSuccess {
+                _uiState.value = _uiState.value.copy(
+                    infoToast = context.getString(R.string.msg_deleted_for_everyone_notice)
+                )
+            }.onFailure { err ->
                 val appErr = (err as? AppException)?.appError ?: AppError.ServerError()
                 _uiState.value = _uiState.value.copy(error = appErr)
             }
+        }
+    }
+
+    fun deleteMessageForMe(messageId: String) {
+        touchPrivateActivity()
+        if (_uiState.value.activeAudioMessageId == messageId) {
+            stopAudioPlayback()
+        }
+        viewModelScope.launch {
+            val res = if (isPrivate && privateChatRepository != null) {
+                privateChatRepository.deletePrivateMessageForMe(messageId)
+            } else {
+                messageRepository.deleteMessageForMe(messageId)
+            }
+            res.onSuccess {
+                _uiState.value = _uiState.value.copy(
+                    infoToast = context.getString(R.string.msg_deleted_for_me_notice)
+                )
+            }.onFailure { err ->
+                val appErr = (err as? AppException)?.appError ?: AppError.ServerError()
+                _uiState.value = _uiState.value.copy(error = appErr)
+            }
+        }
+    }
+
+    fun toggleCallSelection(callId: String) {
+        val current = _uiState.value.selectedCallIds
+        val next = if (callId in current) current - callId else current + callId
+        _uiState.value = _uiState.value.copy(selectedCallIds = next)
+    }
+
+    fun selectAllPeerCalls() {
+        val allIds = peerCalls.value.map { it.callId }.toSet()
+        _uiState.value = _uiState.value.copy(selectedCallIds = allIds)
+    }
+
+    fun exitCallSelectionMode() {
+        _uiState.value = _uiState.value.copy(selectedCallIds = emptySet())
+    }
+
+    fun deleteCallRecord(callId: String) {
+        val repo = callRepository ?: return
+        viewModelScope.launch {
+            repo.deleteCallRecord(callId)
+                .onSuccess {
+                    _uiState.value = _uiState.value.copy(
+                        selectedCallIds = _uiState.value.selectedCallIds - callId,
+                        infoToast = context.getString(R.string.call_history_deleted_notice)
+                    )
+                }
+                .onFailure { err ->
+                    val appErr = (err as? AppException)?.appError ?: AppError.ServerError()
+                    _uiState.value = _uiState.value.copy(error = appErr)
+                }
+        }
+    }
+
+    fun deleteSelectedCallRecords() {
+        val repo = callRepository ?: return
+        val ids = _uiState.value.selectedCallIds.toList()
+        if (ids.isEmpty()) return
+        viewModelScope.launch {
+            repo.deleteCallRecords(ids)
+                .onSuccess {
+                    _uiState.value = _uiState.value.copy(
+                        selectedCallIds = emptySet(),
+                        infoToast = context.getString(R.string.call_history_deleted_notice)
+                    )
+                }
+                .onFailure { err ->
+                    val appErr = (err as? AppException)?.appError ?: AppError.ServerError()
+                    _uiState.value = _uiState.value.copy(error = appErr)
+                }
+        }
+    }
+
+    fun clearAllCallHistory() {
+        val repo = callRepository ?: return
+        viewModelScope.launch {
+            repo.clearAllCallHistory()
+                .onSuccess {
+                    _uiState.value = _uiState.value.copy(
+                        selectedCallIds = emptySet(),
+                        infoToast = context.getString(R.string.call_history_cleared_notice)
+                    )
+                }
+                .onFailure { err ->
+                    val appErr = (err as? AppException)?.appError ?: AppError.ServerError()
+                    _uiState.value = _uiState.value.copy(error = appErr)
+                }
         }
     }
 

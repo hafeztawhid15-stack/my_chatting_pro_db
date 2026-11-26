@@ -71,10 +71,23 @@ messagesRoutes.post('/receipts', authMiddleware, async (c) => {
   return c.json({ ok: true });
 });
 
-messagesRoutes.delete('/:messageId', authMiddleware, async (c) => {
+messagesRoutes.post('/:messageId/delete-for-me', authMiddleware, async (c) => {
   const auth = c.get('auth');
   const messageId = c.req.param('messageId') ?? '';
   const service = new MessagesService(c.env, c.get('db'), createSupabaseStorage(c.env));
+  await service.deleteMessageForMe(auth.userId, messageId);
+  return c.json({ ok: true, scope: 'me' });
+});
+
+messagesRoutes.delete('/:messageId', authMiddleware, async (c) => {
+  const auth = c.get('auth');
+  const messageId = c.req.param('messageId') ?? '';
+  const scope = c.req.query('scope');
+  const service = new MessagesService(c.env, c.get('db'), createSupabaseStorage(c.env));
+  if (scope === 'me') {
+    await service.deleteMessageForMe(auth.userId, messageId);
+    return c.json({ ok: true, scope: 'me' });
+  }
   await service.deleteOwnMessage(auth.userId, messageId);
-  return c.json({ ok: true });
+  return c.json({ ok: true, scope: 'everyone' });
 });

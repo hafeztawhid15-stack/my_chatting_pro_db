@@ -41,10 +41,14 @@ import androidx.compose.material.icons.automirrored.rounded.CallMissed
 import androidx.compose.material.icons.automirrored.rounded.CallReceived
 import androidx.compose.material.icons.automirrored.rounded.Reply
 import androidx.compose.material.icons.automirrored.rounded.Send
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.material.icons.rounded.AttachFile
 import androidx.compose.material.icons.rounded.Call
 import androidx.compose.material.icons.rounded.CallEnd
+import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.DeleteOutline
+import androidx.compose.material.icons.rounded.DeleteSweep
 import androidx.compose.material.icons.rounded.Done
 import androidx.compose.material.icons.rounded.DoneAll
 import androidx.compose.material.icons.rounded.Download
@@ -56,16 +60,20 @@ import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.RadioButtonUnchecked
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Schedule
+import androidx.compose.material.icons.rounded.SelectAll
 import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material.icons.rounded.Videocam
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -139,7 +147,7 @@ fun ChatDetailScreen(
     onBack: () -> Unit,
     onStartAudioCall: () -> Unit,
     onStartVideoCall: () -> Unit,
-    onOpenMediaViewer: (mediaId: String, mimeType: String, filename: String, isVideo: Boolean) -> Unit,
+    onOpenMediaViewer: (messageId: String?, mediaId: String, mimeType: String, filename: String, isVideo: Boolean, isMine: Boolean) -> Unit,
     onPrivateLockedOut: () -> Unit = {}
 ) {
     val conversation by viewModel.conversation.collectAsStateWithLifecycle()
@@ -153,6 +161,9 @@ fun ChatDetailScreen(
     val isPrivateUnlocked by viewModel.isPrivateUnlocked.collectAsStateWithLifecycle()
 
     BackHandler(onBack = onBack)
+    if (uiState.selectedCallIds.isNotEmpty()) {
+        BackHandler { viewModel.exitCallSelectionMode() }
+    }
 
     LaunchedEffect(uiState.conversationDeleted) {
         if (uiState.conversationDeleted) {
@@ -187,6 +198,10 @@ fun ChatDetailScreen(
     var selectedMessageForDetails by remember { mutableStateOf<Message?>(null) }
     var messagePendingReport by remember { mutableStateOf<Message?>(null) }
     var dangerousFileConfirmMessage by remember { mutableStateOf<Message?>(null) }
+    var selectedCallForActions by remember { mutableStateOf<CallHistoryItem?>(null) }
+    var callConfirmDeleteOne by remember { mutableStateOf<CallHistoryItem?>(null) }
+    var showConfirmDeleteSelectedCalls by remember { mutableStateOf(false) }
+    var showConfirmClearAllCalls by remember { mutableStateOf(false) }
     var showAttachmentMenu by remember { mutableStateOf(false) }
     var showConversationMenu by remember { mutableStateOf(false) }
     var showMicRationale by remember { mutableStateOf(false) }
@@ -417,7 +432,8 @@ fun ChatDetailScreen(
             onShare = { viewModel.shareMessage(msg) },
             onSaveMedia = saveHandler,
             onRetry = { viewModel.retryMessage(msg) },
-            onDelete = { viewModel.deleteMessage(msg.id) },
+            onDeleteForMe = { viewModel.deleteMessageForMe(msg.id) },
+            onDeleteForEveryone = { viewModel.deleteMessageForEveryone(msg.id) },
             onReportClick = { messagePendingReport = msg },
             onDismiss = { selectedMessageForDetails = null }
         )
@@ -430,6 +446,167 @@ fun ChatDetailScreen(
             onSubmit = { reason, details ->
                 messagePendingReport = null
                 viewModel.report(msg.id, reason, details)
+            }
+        )
+    }
+
+    selectedCallForActions?.let { call ->
+        val blocked = conversation?.isBlockedByMe == true || conversation?.hasBlockedMe == true
+        AlertDialog(
+            onDismissRequest = { selectedCallForActions = null },
+            title = { Text(stringResource(R.string.call_history_title)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    if (!blocked) {
+                        TextButton(
+                            onClick = {
+                                selectedCallForActions = null
+                                if (call.isVideo) onStartVideoCall() else onStartAudioCall()
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("call_option_callback")
+                        ) {
+                            Text(
+                                text = stringResource(R.string.call_timeline_callback),
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                    }
+                    TextButton(
+                        onClick = {
+                            selectedCallForActions = null
+                            viewModel.toggleCallSelection(call.callId)
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("call_option_select_multiple")
+                    ) {
+                        Text(
+                            text = stringResource(R.string.call_select_multiple),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                    HorizontalDivider()
+                    TextButton(
+                        colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                        onClick = {
+                            selectedCallForActions = null
+                            callConfirmDeleteOne = call
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("call_option_delete_one")
+                    ) {
+                        Text(
+                            text = stringResource(R.string.call_delete_one),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                    TextButton(
+                        colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                        onClick = {
+                            selectedCallForActions = null
+                            showConfirmClearAllCalls = true
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("call_option_clear_all")
+                    ) {
+                        Text(
+                            text = stringResource(R.string.call_clear_all),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { selectedCallForActions = null }) {
+                    Text(stringResource(R.string.action_cancel))
+                }
+            }
+        )
+    }
+
+    callConfirmDeleteOne?.let { targetCall ->
+        AlertDialog(
+            onDismissRequest = { callConfirmDeleteOne = null },
+            title = { Text(stringResource(R.string.call_delete_one_confirm_title)) },
+            text = { Text(stringResource(R.string.call_delete_one_confirm_body)) },
+            confirmButton = {
+                TextButton(
+                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                    onClick = {
+                        callConfirmDeleteOne = null
+                        viewModel.deleteCallRecord(targetCall.callId)
+                    },
+                    modifier = Modifier.testTag("confirm_delete_call_one_button")
+                ) {
+                    Text(stringResource(R.string.action_delete))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { callConfirmDeleteOne = null }) {
+                    Text(stringResource(R.string.action_cancel))
+                }
+            }
+        )
+    }
+
+    if (showConfirmDeleteSelectedCalls) {
+        AlertDialog(
+            onDismissRequest = { showConfirmDeleteSelectedCalls = false },
+            title = { Text(stringResource(R.string.call_delete_batch_confirm_title)) },
+            text = {
+                Text(
+                    stringResource(
+                        R.string.call_delete_batch_confirm_body,
+                        uiState.selectedCallIds.size
+                    )
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                    onClick = {
+                        showConfirmDeleteSelectedCalls = false
+                        viewModel.deleteSelectedCallRecords()
+                    },
+                    modifier = Modifier.testTag("confirm_delete_call_batch_button")
+                ) {
+                    Text(stringResource(R.string.action_delete))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showConfirmDeleteSelectedCalls = false }) {
+                    Text(stringResource(R.string.action_cancel))
+                }
+            }
+        )
+    }
+
+    if (showConfirmClearAllCalls) {
+        AlertDialog(
+            onDismissRequest = { showConfirmClearAllCalls = false },
+            title = { Text(stringResource(R.string.call_clear_all_confirm_title)) },
+            text = { Text(stringResource(R.string.call_clear_all_confirm_body)) },
+            confirmButton = {
+                TextButton(
+                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                    onClick = {
+                        showConfirmClearAllCalls = false
+                        viewModel.clearAllCallHistory()
+                    },
+                    modifier = Modifier.testTag("confirm_clear_all_calls_button")
+                ) {
+                    Text(stringResource(R.string.call_clear_all))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showConfirmClearAllCalls = false }) {
+                    Text(stringResource(R.string.action_cancel))
+                }
             }
         )
     }
@@ -450,6 +627,62 @@ fun ChatDetailScreen(
             }
         },
         topBar = {
+            if (uiState.selectedCallIds.isNotEmpty()) {
+                TopAppBar(
+                    navigationIcon = {
+                        IconButton(
+                            onClick = { viewModel.exitCallSelectionMode() },
+                            modifier = Modifier.testTag("chat_call_selection_close")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Close,
+                                contentDescription = stringResource(R.string.action_cancel)
+                            )
+                        }
+                    },
+                    title = {
+                        Text(
+                            text = stringResource(
+                                R.string.call_selected_count,
+                                uiState.selectedCallIds.size
+                            ),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    },
+                    actions = {
+                        IconButton(
+                            onClick = { viewModel.selectAllPeerCalls() },
+                            modifier = Modifier.testTag("chat_call_select_all")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.SelectAll,
+                                contentDescription = stringResource(R.string.call_select_all)
+                            )
+                        }
+                        IconButton(
+                            onClick = { showConfirmDeleteSelectedCalls = true },
+                            modifier = Modifier.testTag("chat_call_delete_selected")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.DeleteOutline,
+                                contentDescription = stringResource(R.string.call_delete_selected),
+                                tint = MaterialTheme.colorScheme.error
+                            )
+                        }
+                        IconButton(
+                            onClick = { showConfirmClearAllCalls = true },
+                            modifier = Modifier.testTag("chat_call_clear_all")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.DeleteSweep,
+                                contentDescription = stringResource(R.string.call_clear_all),
+                                tint = MaterialTheme.colorScheme.error
+                            )
+                        }
+                    }
+                )
+            } else {
             TopAppBar(
                 navigationIcon = {
                     IconButton(onClick = onBack, modifier = Modifier.testTag("chat_detail_back")) {
@@ -598,6 +831,7 @@ fun ChatDetailScreen(
                     }
                 }
             )
+            }
         },
         bottomBar = {
             Column(
@@ -813,9 +1047,17 @@ fun ChatDetailScreen(
                                 ChatCallTimelineCard(
                                     call = item.call,
                                     isBlocked = isBlockedByMe || hasBlockedMe,
+                                    isSelectionMode = uiState.selectedCallIds.isNotEmpty(),
+                                    isSelected = item.call.callId in uiState.selectedCallIds,
                                     language = language,
                                     onCallback = {
                                         if (item.call.isVideo) onStartVideoCall() else onStartAudioCall()
+                                    },
+                                    onToggleSelect = {
+                                        viewModel.toggleCallSelection(item.call.callId)
+                                    },
+                                    onLongPress = {
+                                        selectedCallForActions = item.call
                                     }
                                 )
                             }
@@ -868,10 +1110,12 @@ fun ChatDetailScreen(
                                         val media = msg.media ?: return@MessageBubble
                                         if (msg.type == MessageType.IMAGE || msg.type == MessageType.VIDEO) {
                                             onOpenMediaViewer(
+                                                msg.id,
                                                 media.id,
                                                 media.mimeType,
                                                 media.originalFilename,
-                                                msg.type == MessageType.VIDEO
+                                                msg.type == MessageType.VIDEO,
+                                                isMine
                                             )
                                         } else {
                                             if (MediaUploadHelper.isDangerousFile(media.originalFilename)) {
@@ -891,12 +1135,17 @@ fun ChatDetailScreen(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ChatCallTimelineCard(
     call: CallHistoryItem,
     isBlocked: Boolean,
+    isSelectionMode: Boolean,
+    isSelected: Boolean,
     language: AppLanguage,
-    onCallback: () -> Unit
+    onCallback: () -> Unit,
+    onToggleSelect: () -> Unit,
+    onLongPress: () -> Unit
 ) {
     val isMissedOrRejected = call.status == "missed" || call.status == "rejected" || call.status == "ringing"
     val isIncoming = call.direction == "incoming"
@@ -931,10 +1180,10 @@ private fun ChatCallTimelineCard(
         MaterialTheme.colorScheme.primary
     }
 
-    val containerColor = if (isMissedOrRejected) {
-        MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.52f)
-    } else {
-        MaterialTheme.colorScheme.surfaceContainerHigh
+    val containerColor = when {
+        isSelected -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.72f)
+        isMissedOrRejected -> MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.52f)
+        else -> MaterialTheme.colorScheme.surfaceContainerHigh
     }
 
     Column(
@@ -944,11 +1193,20 @@ private fun ChatCallTimelineCard(
         Surface(
             color = containerColor,
             shape = RoundedCornerShape(18.dp),
+            border = if (isSelected) BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary) else null,
             tonalElevation = 1.dp,
             modifier = Modifier
                 .widthIn(min = 210.dp, max = 300.dp)
                 .clip(RoundedCornerShape(18.dp))
-                .clickable(enabled = !isBlocked, onClick = onCallback)
+                .combinedClickable(
+                    enabled = isSelectionMode || !isBlocked,
+                    onClick = {
+                        if (isSelectionMode) onToggleSelect() else onCallback()
+                    },
+                    onLongClick = {
+                        if (isSelectionMode) onToggleSelect() else onLongPress()
+                    }
+                )
                 .testTag("chat_call_log_${call.callId}")
         ) {
             Row(
@@ -992,18 +1250,33 @@ private fun ChatCallTimelineCard(
                         overflow = TextOverflow.Ellipsis
                     )
                 }
-                IconButton(
-                    onClick = onCallback,
-                    enabled = !isBlocked,
-                    modifier = Modifier
-                        .size(48.dp)
-                        .testTag("chat_call_log_callback_${call.callId}")
-                ) {
-                    Icon(
-                        imageVector = if (call.isVideo) Icons.Rounded.Videocam else Icons.Rounded.Call,
-                        contentDescription = stringResource(R.string.call_timeline_callback),
-                        tint = accentColor
-                    )
+                if (isSelectionMode) {
+                    IconButton(
+                        onClick = onToggleSelect,
+                        modifier = Modifier
+                            .size(48.dp)
+                            .testTag("chat_call_log_select_${call.callId}")
+                    ) {
+                        Icon(
+                            imageVector = if (isSelected) Icons.Rounded.CheckCircle else Icons.Rounded.RadioButtonUnchecked,
+                            contentDescription = stringResource(R.string.call_select_multiple),
+                            tint = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                } else {
+                    IconButton(
+                        onClick = onCallback,
+                        enabled = !isBlocked,
+                        modifier = Modifier
+                            .size(48.dp)
+                            .testTag("chat_call_log_callback_${call.callId}")
+                    ) {
+                        Icon(
+                            imageVector = if (call.isVideo) Icons.Rounded.Videocam else Icons.Rounded.Call,
+                            contentDescription = stringResource(R.string.call_timeline_callback),
+                            tint = accentColor
+                        )
+                    }
                 }
             }
         }
@@ -1129,7 +1402,10 @@ private fun MessageBubble(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(bottom = 6.dp)
-                                .clickable(enabled = repliedMessage != null, onClick = onClickQuotedReply)
+                                .combinedClickable(
+                                    onClick = { if (repliedMessage != null) onClickQuotedReply() },
+                                    onLongClick = onLongPress
+                                )
                                 .testTag("quoted_reply_${message.id}")
                         ) {
                             Row(modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)) {

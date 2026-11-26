@@ -61,7 +61,10 @@ sealed interface AppRoute {
         val mediaId: String,
         val mimeType: String,
         val filename: String,
-        val isVideo: Boolean
+        val isVideo: Boolean,
+        val messageId: String? = null,
+        val isMine: Boolean = false,
+        val isPrivate: Boolean = false
     ) : AppRoute
 
     @Serializable

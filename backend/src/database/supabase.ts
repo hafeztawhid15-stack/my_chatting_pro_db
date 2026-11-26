@@ -394,6 +394,7 @@ export interface DatabaseClient {
     mediaId: string | null,
     nowMs: number
   ): Promise<void>;
+  hideMessageForUser(userId: string, messageId: string, nowMs: number): Promise<void>;
 
   insertMediaObject(input: {
     id: string;
@@ -442,6 +443,10 @@ export interface DatabaseClient {
     nowMs: number
   ): Promise<Array<{ callId: string; conversationId: string; participantIds: string[] }>>;
   listUserCalls(userId: string, filter: string, limit: number): Promise<CallHistoryQueryRow[]>;
+  filterParticipantCallIds(userId: string, callIds: string[]): Promise<string[]>;
+  deleteCallForUser(userId: string, callId: string, nowMs: number): Promise<void>;
+  deleteCallsBatchForUser(userId: string, callIds: string[], nowMs: number): Promise<void>;
+  clearAllCallsForUser(userId: string, nowMs: number): Promise<void>;
 
   listBlockedUsers(userId: string): Promise<BlockedUserRow[]>;
   blockUser(blockerId: string, targetUserId: string, nowMs: number): Promise<void>;
@@ -1339,6 +1344,18 @@ export class SupabaseDatabase implements DatabaseClient {
     });
   }
 
+  async hideMessageForUser(userId: string, messageId: string, nowMs: number): Promise<void> {
+    await this.requestJson<unknown>('/message_hidden_for_users?on_conflict=user_id,message_id', {
+      method: 'POST',
+      headers: this.headers({ Prefer: 'resolution=ignore-duplicates,return=minimal' }),
+      body: JSON.stringify({
+        user_id: userId,
+        message_id: messageId,
+        hidden_at_ms: nowMs,
+      }),
+    });
+  }
+
   async insertMediaObject(input: {
     id: string;
     ownerUserId: string;
@@ -1568,6 +1585,51 @@ export class SupabaseDatabase implements DatabaseClient {
       p_filter: filter,
       p_limit: limit,
     });
+  }
+
+  async filterParticipantCallIds(userId: string, callIds: string[]): Promise<string[]> {
+    if (callIds.length === 0) return [];
+    const inList = callIds.map((id) => this.enc(id)).join(',');
+    const rows = await this.requestJson<Array<{ call_id: string }>>(
+      `/call_participants?select=call_id&user_id=eq.${this.enc(userId)}&call_id=in.(${inList})`,
+      { method: 'GET', headers: this.headers() }
+    );
+    return rows.map((r) => r.call_id);
+  }
+
+  async deleteCallForUser(userId: string, callId: string, nowMs: number): Promise<void> {
+    await this.requestJson<unknown>(
+      `/call_participants?call_id=eq.${this.enc(callId)}&user_id=eq.${this.enc(userId)}`,
+      {
+        method: 'PATCH',
+        headers: this.headers({ Prefer: 'return=minimal' }),
+        body: JSON.stringify({ deleted_at_ms: nowMs }),
+      }
+    );
+  }
+
+  async deleteCallsBatchForUser(userId: string, callIds: string[], nowMs: number): Promise<void> {
+    if (callIds.length === 0) return;
+    const inList = callIds.map((id) => this.enc(id)).join(',');
+    await this.requestJson<unknown>(
+      `/call_participants?user_id=eq.${this.enc(userId)}&call_id=in.(${inList})`,
+      {
+        method: 'PATCH',
+        headers: this.headers({ Prefer: 'return=minimal' }),
+        body: JSON.stringify({ deleted_at_ms: nowMs }),
+      }
+    );
+  }
+
+  async clearAllCallsForUser(userId: string, nowMs: number): Promise<void> {
+    await this.requestJson<unknown>(
+      `/call_participants?user_id=eq.${this.enc(userId)}&deleted_at_ms=is.null`,
+      {
+        method: 'PATCH',
+        headers: this.headers({ Prefer: 'return=minimal' }),
+        body: JSON.stringify({ deleted_at_ms: nowMs }),
+      }
+    );
   }
 
   async listBlockedUsers(userId: string): Promise<BlockedUserRow[]> {

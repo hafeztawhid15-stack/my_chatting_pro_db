@@ -25,6 +25,29 @@ callsRoutes.get('/history', authMiddleware, async (c) => {
   return c.json({ calls });
 });
 
+callsRoutes.delete('/history', authMiddleware, async (c) => {
+  const auth = c.get('auth');
+  const service = new CallsService(c.env, c.get('db'));
+  await service.clearAllCallHistory(auth.userId);
+  return c.json({ ok: true });
+});
+
+callsRoutes.post('/history/delete-batch', authMiddleware, async (c) => {
+  const auth = c.get('auth');
+  const body = await c.req.json<{ callIds?: unknown }>().catch(() => ({ callIds: [] }));
+  const service = new CallsService(c.env, c.get('db'));
+  const result = await service.deleteCallHistoryBatch(auth.userId, body.callIds);
+  return c.json({ ok: true, deletedCount: result.deletedCount });
+});
+
+callsRoutes.delete('/history/:callId', authMiddleware, async (c) => {
+  const auth = c.get('auth');
+  const callId = c.req.param('callId') ?? '';
+  const service = new CallsService(c.env, c.get('db'));
+  await service.deleteCallHistoryItem(auth.userId, callId);
+  return c.json({ ok: true });
+});
+
 callsRoutes.post('/', authMiddleware, async (c) => {
   const auth = c.get('auth');
   const body = await c.req.json<{

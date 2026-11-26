@@ -15,14 +15,18 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -65,8 +69,11 @@ import androidx.media3.ui.PlayerView
 import coil.compose.SubcomposeAsyncImage
 import coil.request.ImageRequest
 import com.example.R
+import com.mychattingpro.core.common.AppError
 import com.mychattingpro.core.network.NetworkModule
+import com.mychattingpro.data.repository.AppException
 import com.mychattingpro.domain.repository.MessageRepository
+import com.mychattingpro.domain.repository.PrivateChatRepository
 import com.mychattingpro.features.media.MediaUploadHelper
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -75,14 +82,25 @@ import okhttp3.Request
 import java.io.File
 import java.io.FileOutputStream
 
+private enum class ViewerDeleteStep {
+    NONE,
+    CHOOSE_SCOPE,
+    CONFIRM_FOR_ME,
+    CONFIRM_FOR_EVERYONE
+}
+
 @kotlin.OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MediaViewerScreen(
     mediaId: String,
     filename: String,
     isVideo: Boolean,
+    messageId: String? = null,
+    isMine: Boolean = false,
+    isPrivate: Boolean = false,
     networkModule: NetworkModule,
     messageRepository: MessageRepository,
+    privateChatRepository: PrivateChatRepository? = null,
     onBack: () -> Unit
 ) {
     val context = LocalContext.current
@@ -92,6 +110,114 @@ fun MediaViewerScreen(
     var errorMessage by remember(mediaId) { mutableStateOf<String?>(null) }
     var retryTrigger by remember(mediaId) { mutableIntStateOf(0) }
     var isSavingImage by remember { mutableStateOf(false) }
+    var isDeleting by remember { mutableStateOf(false) }
+    var deleteStep by remember { mutableStateOf(ViewerDeleteStep.NONE) }
+
+    fun executeDelete(forEveryone: Boolean) {
+        val targetMsgId = messageId?.takeIf { it.isNotBlank() } ?: return
+        isDeleting = true
+        scope.launch {
+            val result = when {
+                forEveryone && isPrivate && privateChatRepository != null ->
+                    privateChatRepository.deleteOwnPrivateMessage(targetMsgId)
+                forEveryone ->
+                    messageRepository.deleteOwnMessage(targetMsgId)
+                isPrivate && privateChatRepository != null ->
+                    privateChatRepository.deletePrivateMessageForMe(targetMsgId)
+                else ->
+                    messageRepository.deleteMessageForMe(targetMsgId)
+            }
+            isDeleting = false
+            result.onSuccess {
+                Toast.makeText(
+                    context,
+                    context.getString(
+                        if (forEveryone) R.string.msg_deleted_for_everyone_notice
+                        else R.string.msg_deleted_for_me_notice
+                    ),
+                    Toast.LENGTH_SHORT
+                ).show()
+                onBack()
+            }.onFailure { err ->
+                val appErr = (err as? AppException)?.appError ?: AppError.ServerError()
+                Toast.makeText(context, appErr.toLocalizedMessage(context), Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    when (deleteStep) {
+        ViewerDeleteStep.CHOOSE_SCOPE -> {
+            AlertDialog(
+                onDismissRequest = { if (!isDeleting) deleteStep = ViewerDeleteStep.NONE },
+                title = { Text(stringResource(R.string.delete_msg_confirm_title)) },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        TextButton(
+                            onClick = { deleteStep = ViewerDeleteStep.CONFIRM_FOR_ME },
+                            colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                            modifier = Modifier.testTag("viewer_delete_for_me")
+                        ) {
+                            Text(stringResource(R.string.action_delete_for_me))
+                        }
+                        if (isMine && messageId?.startsWith("pending_") != true) {
+                            TextButton(
+                                onClick = { deleteStep = ViewerDeleteStep.CONFIRM_FOR_EVERYONE },
+                                colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                                modifier = Modifier.testTag("viewer_delete_for_everyone")
+                            ) {
+                                Text(stringResource(R.string.action_delete_message))
+                            }
+                        }
+                    }
+                },
+                confirmButton = {},
+                dismissButton = {
+                    TextButton(onClick = { deleteStep = ViewerDeleteStep.NONE }) {
+                        Text(stringResource(R.string.action_cancel))
+                    }
+                }
+            )
+        }
+        ViewerDeleteStep.CONFIRM_FOR_ME,
+        ViewerDeleteStep.CONFIRM_FOR_EVERYONE -> {
+            val isEveryone = deleteStep == ViewerDeleteStep.CONFIRM_FOR_EVERYONE
+            AlertDialog(
+                onDismissRequest = { if (!isDeleting) deleteStep = ViewerDeleteStep.NONE },
+                title = { Text(stringResource(R.string.delete_msg_confirm_title)) },
+                text = {
+                    Text(
+                        if (isEveryone) {
+                            stringResource(R.string.delete_for_everyone_confirm_body)
+                        } else {
+                            stringResource(R.string.delete_for_me_confirm_body)
+                        }
+                    )
+                },
+                confirmButton = {
+                    TextButton(
+                        enabled = !isDeleting,
+                        colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                        onClick = {
+                            deleteStep = ViewerDeleteStep.NONE
+                            executeDelete(forEveryone = isEveryone)
+                        },
+                        modifier = Modifier.testTag("viewer_confirm_delete_button")
+                    ) {
+                        Text(stringResource(R.string.action_delete))
+                    }
+                },
+                dismissButton = {
+                    TextButton(
+                        enabled = !isDeleting,
+                        onClick = { deleteStep = ViewerDeleteStep.NONE }
+                    ) {
+                        Text(stringResource(R.string.action_cancel))
+                    }
+                }
+            )
+        }
+        ViewerDeleteStep.NONE -> Unit
+    }
 
     LaunchedEffect(mediaId, retryTrigger) {
         if (!isVideo) return@LaunchedEffect
@@ -167,9 +293,35 @@ fun MediaViewerScreen(
                     }
                 },
                 actions = {
+                    if (!messageId.isNullOrBlank()) {
+                        IconButton(
+                            enabled = !isDeleting,
+                            onClick = {
+                                deleteStep = if (isMine && !messageId.startsWith("pending_")) {
+                                    ViewerDeleteStep.CHOOSE_SCOPE
+                                } else {
+                                    ViewerDeleteStep.CONFIRM_FOR_ME
+                                }
+                            },
+                            modifier = Modifier.testTag("media_viewer_delete_button")
+                        ) {
+                            if (isDeleting) {
+                                CircularProgressIndicator(
+                                    color = Color.White,
+                                    strokeWidth = 2.dp,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            } else {
+                                Icon(
+                                    imageVector = Icons.Rounded.DeleteOutline,
+                                    contentDescription = stringResource(R.string.action_delete)
+                                )
+                            }
+                        }
+                    }
                     if (!isVideo) {
                         IconButton(
-                            enabled = !isSavingImage,
+                            enabled = !isSavingImage && !isDeleting,
                             onClick = {
                                 isSavingImage = true
                                 scope.launch {

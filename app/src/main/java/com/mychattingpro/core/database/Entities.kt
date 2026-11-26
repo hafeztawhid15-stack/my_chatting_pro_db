@@ -111,3 +111,16 @@ data class SecurityAlertEntity(
     val isSessionActive: Boolean = false,
     val isRead: Boolean = false
 )
+
+@Entity(tableName = "hidden_messages")
+data class HiddenMessageEntity(
+    @PrimaryKey val messageId: String,
+    val hiddenAtMs: Long
+)
+
+@Entity(tableName = "hidden_calls")
+data class HiddenCallEntity(
+    @PrimaryKey val callId: String,
+    val hiddenAtMs: Long
+)
+

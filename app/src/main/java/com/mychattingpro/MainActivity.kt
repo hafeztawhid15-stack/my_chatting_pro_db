@@ -437,6 +437,7 @@ private fun MyChattingProNavRoot(
                 onOpenOwnerMonitor = { navController.navigate(AppRoute.OwnerActivity) },
                 onOpenPrivateChat = { navController.navigate(AppRoute.PrivatePin) },
                 onOpenNotifications = { navController.navigate(AppRoute.Notifications) },
+                onOpenCallHistory = { navController.navigate(AppRoute.CallHistory) },
                 onOpenNotificationSettings = { navController.navigate(AppRoute.NotificationSettings) },
                 onOpenChangeLoginPin = { navController.navigate(AppRoute.ChangeLoginPin) },
                 onOpenRecoveryCode = { navController.navigate(AppRoute.RecoveryCode) },
@@ -516,13 +517,16 @@ private fun MyChattingProNavRoot(
                         )
                     )
                 },
-                onOpenMediaViewer = { mediaId, mimeType, filename, isVideo ->
+                onOpenMediaViewer = { messageId, mediaId, mimeType, filename, isVideo, isMine ->
                     navController.navigate(
                         AppRoute.MediaViewer(
                             mediaId = mediaId,
                             mimeType = mimeType,
                             filename = filename,
-                            isVideo = isVideo
+                            isVideo = isVideo,
+                            messageId = messageId,
+                            isMine = isMine,
+                            isPrivate = route.isPrivate
                         )
                     )
                 },
@@ -800,8 +804,12 @@ private fun MyChattingProNavRoot(
                 mediaId = route.mediaId,
                 filename = route.filename,
                 isVideo = route.isVideo,
+                messageId = route.messageId,
+                isMine = route.isMine,
+                isPrivate = route.isPrivate,
                 networkModule = container.networkModule,
                 messageRepository = container.messageRepository,
+                privateChatRepository = container.privateChatRepository,
                 onBack = { navController.popBackStack() }
             )
         }

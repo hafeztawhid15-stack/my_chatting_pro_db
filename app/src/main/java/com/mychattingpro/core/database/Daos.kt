@@ -4,6 +4,7 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Transaction
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -50,6 +51,16 @@ interface ConversationDao {
     @Query("UPDATE cached_conversations SET lastMessageId = NULL, lastMessagePreview = NULL, lastMessageType = NULL, lastMessageSenderId = NULL, clearedAtMs = :clearedAtMs, unreadCount = 0, markedUnread = 0 WHERE id = :conversationId")
     suspend fun clearLastMessageSummary(conversationId: String, clearedAtMs: Long)
 
+    @Query("UPDATE cached_conversations SET lastMessageId = :lastMessageId, lastMessagePreview = :lastMessagePreview, lastMessageType = :lastMessageType, lastMessageSenderId = :lastMessageSenderId, lastMessageAtMs = :lastMessageAtMs WHERE id = :conversationId")
+    suspend fun updateLastMessageSummary(
+        conversationId: String,
+        lastMessageId: String?,
+        lastMessagePreview: String?,
+        lastMessageType: String?,
+        lastMessageSenderId: String?,
+        lastMessageAtMs: Long?
+    )
+
     @Query("UPDATE cached_conversations SET isBlockedByMe = :blocked WHERE peerUserId = :peerUserId")
     suspend fun updateBlockedByMe(peerUserId: String, blocked: Boolean)
 
@@ -80,11 +91,14 @@ interface ConversationDao {
 
 @Dao
 interface MessageDao {
-    @Query("SELECT * FROM cached_messages WHERE conversationId = :conversationId AND isPrivate = 0 ORDER BY createdAtMs ASC, id ASC")
+    @Query("SELECT * FROM cached_messages WHERE conversationId = :conversationId AND isPrivate = 0 AND id NOT IN (SELECT messageId FROM hidden_messages) ORDER BY createdAtMs ASC, id ASC")
     fun observeMessages(conversationId: String): Flow<List<MessageEntity>>
 
-    @Query("SELECT * FROM cached_messages WHERE conversationId = :conversationId AND isPrivate = 1 ORDER BY createdAtMs ASC, id ASC")
+    @Query("SELECT * FROM cached_messages WHERE conversationId = :conversationId AND isPrivate = 1 AND id NOT IN (SELECT messageId FROM hidden_messages) ORDER BY createdAtMs ASC, id ASC")
     fun observePrivateMessages(conversationId: String): Flow<List<MessageEntity>>
+
+    @Query("SELECT * FROM cached_messages WHERE conversationId = :conversationId AND isPrivate = :isPrivate AND id NOT IN (SELECT messageId FROM hidden_messages) ORDER BY createdAtMs DESC, id DESC LIMIT 1")
+    suspend fun getLatestVisibleMessage(conversationId: String, isPrivate: Boolean): MessageEntity?
 
     @Query("SELECT * FROM cached_messages WHERE id = :id LIMIT 1")
     suspend fun getById(id: String): MessageEntity?
@@ -119,6 +133,12 @@ interface MessageDao {
     @Query("UPDATE cached_messages SET isPrivate = :isPrivate WHERE conversationId = :conversationId")
     suspend fun updateConversationMessagesPrivateState(conversationId: String, isPrivate: Boolean)
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun hideMessage(item: HiddenMessageEntity)
+
+    @Query("DELETE FROM hidden_messages")
+    suspend fun clearHiddenMessages()
+
     @Query("DELETE FROM cached_messages WHERE isPrivate = 1")
     suspend fun clearPrivate()
 
@@ -128,17 +148,40 @@ interface MessageDao {
 
 @Dao
 interface CallHistoryDao {
-    @Query("SELECT * FROM cached_call_history ORDER BY startedAtMs DESC")
+    @Query("SELECT * FROM cached_call_history WHERE callId NOT IN (SELECT callId FROM hidden_calls) ORDER BY startedAtMs DESC")
     fun observeAll(): Flow<List<CallHistoryEntity>>
 
-    @Query("SELECT * FROM cached_call_history WHERE conversationId = :conversationId OR peerUserId = :peerUserId ORDER BY startedAtMs ASC")
+    @Query("SELECT * FROM cached_call_history WHERE (conversationId = :conversationId OR peerUserId = :peerUserId) AND callId NOT IN (SELECT callId FROM hidden_calls) ORDER BY startedAtMs ASC")
     fun observeCallsForPeer(conversationId: String, peerUserId: String): Flow<List<CallHistoryEntity>>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertAll(items: List<CallHistoryEntity>)
 
+    @Query("DELETE FROM cached_call_history WHERE callId = :callId")
+    suspend fun deleteById(callId: String)
+
+    @Query("DELETE FROM cached_call_history WHERE callId IN (:callIds)")
+    suspend fun deleteByIds(callIds: List<String>)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun hideCall(item: HiddenCallEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun hideCalls(items: List<HiddenCallEntity>)
+
+    @Query("DELETE FROM hidden_calls")
+    suspend fun clearHiddenCalls()
+
     @Query("DELETE FROM cached_call_history")
     suspend fun clearAll()
+
+    @Transaction
+    suspend fun replaceAll(items: List<CallHistoryEntity>) {
+        clearAll()
+        if (items.isNotEmpty()) {
+            upsertAll(items)
+        }
+    }
 }
 
 @Dao

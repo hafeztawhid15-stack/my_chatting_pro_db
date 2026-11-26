@@ -450,4 +450,26 @@
     <string name="call_timeline_declined">مرفوضة</string>
     <string name="call_timeline_no_answer">لم يتم الرد</string>
     <string name="call_timeline_callback">اضغط لإعادة الاتصال</string>
+
+    <string name="action_delete_for_me">الحذف لدي فقط</string>
+    <string name="delete_msg_confirm_title">حذف هذا العنصر؟</string>
+    <string name="delete_for_me_confirm_body">سيتم حذفه من محادثتك فقط وسيبقى ظاهراً للطرف الآخر.</string>
+    <string name="delete_for_everyone_confirm_body">سيتم حذف الرسالة والوسائط نهائياً من لدى الطرفين.</string>
+    <string name="msg_deleted_for_me_notice">تمت الإزالة من محادثتك</string>
+    <string name="msg_deleted_for_everyone_notice">تم الحذف لدى الجميع</string>
+
+    <string name="call_delete_one">حذف سجل المكالمة</string>
+    <string name="call_delete_selected">حذف المحدد</string>
+    <string name="call_clear_all">مسح الكل</string>
+    <string name="call_select_multiple">تحديد المكالمات</string>
+    <string name="call_select_all">تحديد الكل</string>
+    <string name="call_selected_count">تم تحديد %1$d</string>
+    <string name="call_delete_one_confirm_title">حذف سجل المكالمة؟</string>
+    <string name="call_delete_one_confirm_body">هل تريد حذف سجل هذه المكالمة من سجلك فقط؟ سيبقى لدى الطرف الآخر.</string>
+    <string name="call_delete_batch_confirm_title">حذف المكالمات المحددة؟</string>
+    <string name="call_delete_batch_confirm_body">هل تريد حذف %1$d سجلات مكالمات من سجلك فقط؟</string>
+    <string name="call_clear_all_confirm_title">مسح كل سجل المكالمات؟</string>
+    <string name="call_clear_all_confirm_body">سيتم حذف جميع سجلات المكالمات من سجلك نهائياً.</string>
+    <string name="call_history_deleted_notice">تم حذف سجل المكالمات</string>
+    <string name="call_history_cleared_notice">تم مسح جميع سجلات المكالمات</string>
 </resources>

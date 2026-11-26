@@ -365,6 +365,11 @@ data class CallHistoryResponseDto(
 )
 
 @JsonClass(generateAdapter = true)
+data class DeleteCallHistoryBatchRequestDto(
+    val callIds: List<String>
+)
+
+@JsonClass(generateAdapter = true)
 data class CallStatusResponseDto(
     val callId: String,
     val status: String,

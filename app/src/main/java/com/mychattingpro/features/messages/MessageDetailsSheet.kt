@@ -16,6 +16,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Reply
 import androidx.compose.material.icons.rounded.ContentCopy
+import androidx.compose.material.icons.rounded.DeleteForever
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Flag
@@ -56,6 +57,11 @@ import com.mychattingpro.domain.models.Message
 import com.mychattingpro.domain.models.MessageStatus
 import com.mychattingpro.domain.models.MessageType
 
+private enum class MessageDeleteScope {
+    FOR_ME,
+    FOR_EVERYONE
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MessageDetailsSheet(
@@ -67,7 +73,8 @@ fun MessageDetailsSheet(
     onShare: () -> Unit,
     onSaveMedia: (() -> Unit)?,
     onRetry: () -> Unit,
-    onDelete: () -> Unit,
+    onDeleteForMe: () -> Unit,
+    onDeleteForEveryone: () -> Unit,
     onReportClick: () -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -75,10 +82,53 @@ fun MessageDetailsSheet(
     val notAvailable = stringResource(R.string.msg_details_not_available)
     val isDeleted = message.deletedForAllAtMs != null
     val isPending = message.id.startsWith("pending_")
+    val isFailed = message.status == MessageStatus.FAILED
     val canCopy = !isDeleted && !message.bodyText.isNullOrBlank()
     val canReply = !isDeleted && !isPending
     val canShare = !isDeleted && !isPending &&
         (!message.bodyText.isNullOrBlank() || message.media != null || !message.localUri.isNullOrBlank())
+    val canDeleteForMe = !isPending || isFailed
+    val canDeleteForEveryone = isMine && !isDeleted && !isPending
+
+    var pendingConfirmScope by remember(message.id) { mutableStateOf<MessageDeleteScope?>(null) }
+
+    pendingConfirmScope?.let { scope ->
+        AlertDialog(
+            onDismissRequest = { pendingConfirmScope = null },
+            title = { Text(stringResource(R.string.delete_msg_confirm_title)) },
+            text = {
+                Text(
+                    if (scope == MessageDeleteScope.FOR_EVERYONE) {
+                        stringResource(R.string.delete_for_everyone_confirm_body)
+                    } else {
+                        stringResource(R.string.delete_for_me_confirm_body)
+                    }
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                    onClick = {
+                        pendingConfirmScope = null
+                        if (scope == MessageDeleteScope.FOR_EVERYONE) {
+                            onDeleteForEveryone()
+                        } else {
+                            onDeleteForMe()
+                        }
+                        onDismiss()
+                    },
+                    modifier = Modifier.testTag("confirm_delete_message_button")
+                ) {
+                    Text(stringResource(R.string.action_delete))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingConfirmScope = null }) {
+                    Text(stringResource(R.string.action_cancel))
+                }
+            }
+        )
+    }
 
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(
@@ -150,6 +200,31 @@ fun MessageDetailsSheet(
                 )
             }
 
+            if (canDeleteForMe || canDeleteForEveryone) {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    if (canDeleteForMe) {
+                        SheetActionRow(
+                            icon = Icons.Rounded.DeleteOutline,
+                            label = stringResource(R.string.action_delete_for_me),
+                            onClick = { pendingConfirmScope = MessageDeleteScope.FOR_ME },
+                            tint = MaterialTheme.colorScheme.error,
+                            iconTint = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.testTag("sheet_delete_for_me")
+                        )
+                    }
+                    if (canDeleteForEveryone) {
+                        SheetActionRow(
+                            icon = Icons.Rounded.DeleteForever,
+                            label = stringResource(R.string.action_delete_message),
+                            onClick = { pendingConfirmScope = MessageDeleteScope.FOR_EVERYONE },
+                            tint = MaterialTheme.colorScheme.error,
+                            iconTint = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.testTag("sheet_delete_for_everyone")
+                        )
+                    }
+                }
+            }
+
             HorizontalDivider()
 
             DetailRow(
@@ -169,17 +244,14 @@ fun MessageDetailsSheet(
                 } ?: notAvailable
             )
 
-            if ((message.status == MessageStatus.FAILED && isMine) ||
-                (isMine && !isDeleted && !isPending) ||
-                !isMine
-            ) {
+            if ((isFailed && isMine) || !isMine) {
                 HorizontalDivider()
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    if (message.status == MessageStatus.FAILED && isMine) {
+                    if (isFailed && isMine) {
                         OutlinedButton(
                             onClick = {
                                 onRetry()
@@ -190,27 +262,6 @@ fun MessageDetailsSheet(
                             Icon(Icons.Rounded.Refresh, contentDescription = null)
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(stringResource(R.string.action_retry))
-                        }
-                    }
-
-                    if (isMine && !isDeleted && !isPending) {
-                        TextButton(
-                            onClick = {
-                                onDelete()
-                                onDismiss()
-                            },
-                            modifier = Modifier.testTag("sheet_delete_message")
-                        ) {
-                            Icon(
-                                Icons.Rounded.DeleteOutline,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.error
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = stringResource(R.string.action_delete_message),
-                                color = MaterialTheme.colorScheme.error
-                            )
                         }
                     }
 
@@ -295,7 +346,8 @@ private fun SheetActionRow(
     label: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    tint: Color = MaterialTheme.colorScheme.onSurface
+    tint: Color = MaterialTheme.colorScheme.onSurface,
+    iconTint: Color = MaterialTheme.colorScheme.primary
 ) {
     Surface(
         color = MaterialTheme.colorScheme.surfaceContainerLow,
@@ -313,7 +365,7 @@ private fun SheetActionRow(
             Icon(
                 imageVector = icon,
                 contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
+                tint = iconTint,
                 modifier = Modifier.size(22.dp)
             )
             Spacer(modifier = Modifier.width(12.dp))

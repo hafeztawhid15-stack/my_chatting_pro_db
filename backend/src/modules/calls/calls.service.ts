@@ -442,4 +442,51 @@ export class CallsService {
       durationSeconds: r.duration_seconds,
     }));
   }
+
+  async deleteCallHistoryItem(userId: string, callIdRaw: string): Promise<void> {
+    const callId = callIdRaw.trim();
+    if (!callId) {
+      throw new ApiError(400, 'invalid_call_id', 'Valid callId is required.');
+    }
+
+    const call = await this.db.findCallById(callId);
+    if (!call) {
+      throw new ApiError(404, 'call_not_found', 'Call record not found.');
+    }
+
+    const isParticipant = await this.db.isCallParticipant(callId, userId);
+    if (!isParticipant) {
+      throw new ApiError(403, 'forbidden_call', 'You can only delete your own call history.');
+    }
+
+    await this.db.deleteCallForUser(userId, callId, Date.now());
+  }
+
+  async deleteCallHistoryBatch(userId: string, callIdsRaw: unknown): Promise<{ deletedCount: number }> {
+    const rawList = Array.isArray(callIdsRaw) ? callIdsRaw : [];
+    const callIds = Array.from(
+      new Set(
+        rawList
+          .filter((item): item is string => typeof item === 'string')
+          .map((item) => item.trim())
+          .filter((item) => item.length > 0 && item.length <= 128)
+      )
+    ).slice(0, 200);
+
+    if (callIds.length === 0) {
+      throw new ApiError(400, 'invalid_call_ids', 'At least one valid callId is required.');
+    }
+
+    const ownedCallIds = await this.db.filterParticipantCallIds(userId, callIds);
+    if (ownedCallIds.length !== callIds.length) {
+      throw new ApiError(403, 'forbidden_call', 'You can only delete your own call history.');
+    }
+
+    await this.db.deleteCallsBatchForUser(userId, ownedCallIds, Date.now());
+    return { deletedCount: ownedCallIds.length };
+  }
+
+  async clearAllCallHistory(userId: string): Promise<void> {
+    await this.db.clearAllCallsForUser(userId, Date.now());
+  }
 }

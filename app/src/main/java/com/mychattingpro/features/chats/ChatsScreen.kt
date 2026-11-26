@@ -28,6 +28,7 @@ import androidx.compose.material.icons.outlined.PushPin
 import androidx.compose.material.icons.rounded.DoneAll
 import androidx.compose.material.icons.rounded.ExpandLess
 import androidx.compose.material.icons.rounded.ExpandMore
+import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.InsertDriveFile
 import androidx.compose.material.icons.rounded.Lock
@@ -103,7 +104,8 @@ fun ChatsScreen(
     onOpenConversation: (Conversation) -> Unit,
     onOpenPrivateChat: () -> Unit = {},
     onOpenOwnerMonitor: () -> Unit = {},
-    onOpenNotifications: () -> Unit = {}
+    onOpenNotifications: () -> Unit = {},
+    onOpenCallHistory: () -> Unit = {}
 ) {
     val conversations by viewModel.conversations.collectAsStateWithLifecycle()
     val unreadAlertsCount by viewModel.unreadSecurityAlertsCount.collectAsStateWithLifecycle()
@@ -304,6 +306,21 @@ fun ChatsScreen(
                                 }
                             },
                             modifier = Modifier.testTag("menu_website")
+                        )
+                        DropdownMenuItem(
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Rounded.History,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                            },
+                            text = { Text(stringResource(R.string.call_history_title)) },
+                            onClick = {
+                                menuExpanded = false
+                                onOpenCallHistory()
+                            },
+                            modifier = Modifier.testTag("menu_call_history")
                         )
                         DropdownMenuItem(
                             leadingIcon = {

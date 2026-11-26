@@ -258,10 +258,23 @@ privateChatRoutes.post('/messages/receipts', privateChatAuthMiddleware, async (c
   return c.json({ ok: true });
 });
 
-privateChatRoutes.delete('/messages/:messageId', privateChatAuthMiddleware, async (c) => {
+privateChatRoutes.post('/messages/:messageId/delete-for-me', privateChatAuthMiddleware, async (c) => {
   const auth = c.get('auth');
   const messageId = c.req.param('messageId') ?? '';
   const service = new MessagesService(c.env, c.get('db'), createSupabaseStorage(c.env));
+  await service.deleteMessageForMe(auth.userId, messageId, true);
+  return c.json({ ok: true, scope: 'me' });
+});
+
+privateChatRoutes.delete('/messages/:messageId', privateChatAuthMiddleware, async (c) => {
+  const auth = c.get('auth');
+  const messageId = c.req.param('messageId') ?? '';
+  const scope = c.req.query('scope');
+  const service = new MessagesService(c.env, c.get('db'), createSupabaseStorage(c.env));
+  if (scope === 'me') {
+    await service.deleteMessageForMe(auth.userId, messageId, true);
+    return c.json({ ok: true, scope: 'me' });
+  }
   await service.deleteOwnMessage(auth.userId, messageId, true);
-  return c.json({ ok: true });
+  return c.json({ ok: true, scope: 'everyone' });
 });
