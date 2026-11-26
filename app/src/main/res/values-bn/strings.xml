@@ -479,4 +479,11 @@
     <string name="call_clear_all_confirm_body">আপনার সকল কল হিস্টোরি স্থায়ীভাবে মুছে ফেলা হবে।</string>
     <string name="call_history_deleted_notice">কল হিস্টোরি মুছে ফেলা হয়েছে</string>
     <string name="call_history_cleared_notice">সকল কল হিস্টোরি পরিষ্কার করা হয়েছে</string>
+
+    <string name="settings_auto_delete_title">২০ দিন পর অটো-ডিলিট</string>
+    <string name="settings_auto_delete_subtitle">চ্যাট, ছবি, ভিডিও ও কল হিস্টোরি ২০ দিন পর নিজে নিজে মুছে যাবে</string>
+    <string name="settings_auto_delete_info_body">গোপনীয়তা রক্ষা ও স্টোরেজ পরিষ্কার রাখতে ২০ দিনের পুরনো সকল চ্যাট মেসেজ, ছবি, ভিডিও, ভয়েস নোট, ডকুমেন্ট এবং কল হিস্টোরি ফোন ও সার্ভার থেকে স্বয়ংক্রিয়ভাবে মুছে যায়। আপনার অ্যাকাউন্ট ও প্রোফাইল ছবি নিরাপদ থাকবে।</string>
+
+    <string name="profile_photo_preview_cd">%1$s-এর প্রোফাইল ছবি দেখুন</string>
+    <string name="profile_no_photo_preview">কোনো প্রোফাইল ছবি দেওয়া নেই</string>
 </resources>

@@ -172,6 +172,7 @@ export interface MediaObjectRow {
   mime_type: string;
   size_bytes: number;
   upload_status: string;
+  created_at_ms?: number;
 }
 
 export interface BlockedUserRow {
@@ -413,6 +414,14 @@ export interface DatabaseClient {
   }): Promise<void>;
   deleteMediaObjectRow(mediaId: string): Promise<void>;
   findMediaObjectById(mediaId: string): Promise<MediaObjectRow | null>;
+  listExpiredNonProfileMediaObjects(
+    cutoffMs: number,
+    limit?: number
+  ): Promise<Array<{ id: string; storage_bucket: string; storage_path: string }>>;
+  purgeExpiredRetentionData(
+    cutoffMs: number,
+    purgedMediaIds: string[]
+  ): Promise<{ deletedMessages: number; deletedCalls: number; deletedMediaRows: number }>;
   isUserBlockedBy(blockerId: string, blockedId: string): Promise<boolean>;
 
   initiateCallTx(input: {
@@ -1402,10 +1411,40 @@ export class SupabaseDatabase implements DatabaseClient {
 
   async findMediaObjectById(mediaId: string): Promise<MediaObjectRow | null> {
     const rows = await this.requestJson<MediaObjectRow[]>(
-      `/media_objects?select=id,owner_user_id,conversation_id,category,storage_bucket,storage_path,original_filename,mime_type,size_bytes,upload_status&id=eq.${this.enc(mediaId)}&limit=1`,
+      `/media_objects?select=id,owner_user_id,conversation_id,category,storage_bucket,storage_path,original_filename,mime_type,size_bytes,upload_status,created_at_ms&id=eq.${this.enc(mediaId)}&limit=1`,
       { method: 'GET', headers: this.headers() }
     );
     return rows[0] ?? null;
+  }
+
+  async listExpiredNonProfileMediaObjects(
+    cutoffMs: number,
+    limit = 100
+  ): Promise<Array<{ id: string; storage_bucket: string; storage_path: string }>> {
+    const safeLimit = Math.max(1, Math.min(limit, 200));
+    return this.requestJson<Array<{ id: string; storage_bucket: string; storage_path: string }>>(
+      `/media_objects?select=id,storage_bucket,storage_path&category=neq.profile&created_at_ms=lt.${Math.trunc(cutoffMs)}&order=created_at_ms.asc&limit=${safeLimit}`,
+      { method: 'GET', headers: this.headers() }
+    );
+  }
+
+  async purgeExpiredRetentionData(
+    cutoffMs: number,
+    purgedMediaIds: string[]
+  ): Promise<{ deletedMessages: number; deletedCalls: number; deletedMediaRows: number }> {
+    const result = await this.rpc<{
+      deletedMessages?: number;
+      deletedCalls?: number;
+      deletedMediaRows?: number;
+    }>('purge_expired_retention_data', {
+      p_cutoff_ms: Math.trunc(cutoffMs),
+      p_purged_media_ids: purgedMediaIds,
+    });
+    return {
+      deletedMessages: Number(result?.deletedMessages ?? 0),
+      deletedCalls: Number(result?.deletedCalls ?? 0),
+      deletedMediaRows: Number(result?.deletedMediaRows ?? 0),
+    };
   }
 
   async isUserBlockedBy(blockerId: string, blockedId: string): Promise<boolean> {

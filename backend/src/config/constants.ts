@@ -41,3 +41,5 @@ export const MAX_PIN_ATTEMPTS_BEFORE_LOCK = 5;
 export const LOCKOUT_DURATION_MS = 15 * 60 * 1000; // 15 minutes
 export const DEFAULT_PAGE_LIMIT = 40;
 export const MAX_PAGE_LIMIT = 80;
+export const AUTO_DELETE_RETENTION_DAYS = 20;
+export const AUTO_DELETE_RETENTION_MS = AUTO_DELETE_RETENTION_DAYS * 24 * 60 * 60 * 1000; // 20 days in ms

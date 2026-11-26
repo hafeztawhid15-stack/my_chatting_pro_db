@@ -318,7 +318,8 @@ fun CallScreen(
                     networkModule = networkModule,
                     size = 96.dp,
                     isOnline = state.peerIsOnline == true,
-                    showOfflineDot = state.peerIsOnline != null
+                    showOfflineDot = state.peerIsOnline != null,
+                    enablePreviewOnTap = false
                 )
                 Spacer(modifier = Modifier.height(18.dp))
             }

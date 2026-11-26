@@ -6,6 +6,7 @@ import android.os.Build
 import com.example.BuildConfig
 import com.mychattingpro.core.common.AppError
 import com.mychattingpro.core.common.Country
+import com.mychattingpro.core.common.RetentionPolicy
 import com.mychattingpro.core.database.CallHistoryDao
 import com.mychattingpro.core.database.CallHistoryEntity
 import com.mychattingpro.core.database.ConversationDao
@@ -769,6 +770,18 @@ class ChatRepositoryImpl(
             hasBlockedMe = res.hasBlockedMe
         )
     }.recoverCatching { throw AppException(errorMapper.map(it)) }
+
+    override suspend fun purgeExpiredLocalData(nowMs: Long) {
+        val cutoff = RetentionPolicy.cutoffMs(nowMs)
+        val affectedConvIds = conversationDao.findConversationsWithExpiredPreview(cutoff)
+        messageDao.purgeExpiredMessages(cutoff)
+        messageDao.purgeExpiredHiddenMessages(cutoff)
+        for (convId in affectedConvIds) {
+            val isPrivate = conversationDao.getById(convId)?.isPrivate ?: false
+            syncConversationPreviewAfterLocalDelete(conversationDao, messageDao, convId, isPrivate)
+        }
+        conversationDao.clearExpiredLastMessageSummaries(cutoff)
+    }
 }
 
 class MessageRepositoryImpl(
@@ -787,7 +800,10 @@ class MessageRepositoryImpl(
     override suspend fun loadLatestMessages(conversationId: String): Result<Boolean> = runCatching {
         val page = api.listMessages(conversationId, limit = 40)
         val myId = tokenStore.getSession()?.userId
-        messageDao.upsertAll(page.messages.map { it.toEntity(myId) })
+        val activeMessages = page.messages.filter { !RetentionPolicy.isExpired(it.createdAtMs) }
+        if (activeMessages.isNotEmpty()) {
+            messageDao.upsertAll(activeMessages.map { it.toEntity(myId) })
+        }
         page.hasMore
     }.recoverCatching { throw AppException(errorMapper.map(it)) }
 
@@ -798,7 +814,10 @@ class MessageRepositoryImpl(
     ): Result<Boolean> = runCatching {
         val page = api.listMessages(conversationId, beforeTs = beforeTs, beforeId = beforeId, limit = 40)
         val myId = tokenStore.getSession()?.userId
-        messageDao.upsertAll(page.messages.map { it.toEntity(myId) })
+        val activeMessages = page.messages.filter { !RetentionPolicy.isExpired(it.createdAtMs) }
+        if (activeMessages.isNotEmpty()) {
+            messageDao.upsertAll(activeMessages.map { it.toEntity(myId) })
+        }
         page.hasMore
     }.recoverCatching { throw AppException(errorMapper.map(it)) }
 
@@ -1156,7 +1175,9 @@ class CallRepositoryImpl(
 
     override suspend fun refreshCallHistory(filter: CallHistoryFilter): Result<List<CallHistoryItem>> = runCatching {
         val res = api.getCallHistory(filter = filter.apiValue, limit = 80)
-        val entities = res.calls.map { it.toEntity() }
+        val entities = res.calls
+            .filter { !RetentionPolicy.isExpired(it.startedAtMs) }
+            .map { it.toEntity() }
         if (filter == CallHistoryFilter.ALL) {
             callHistoryDao.replaceAll(entities)
         }
@@ -1184,6 +1205,12 @@ class CallRepositoryImpl(
         api.clearAllCallHistory()
         callHistoryDao.clearAll()
     }.recoverCatching { throw AppException(errorMapper.map(it)) }
+
+    override suspend fun purgeExpiredLocalCalls(nowMs: Long) {
+        val cutoff = RetentionPolicy.cutoffMs(nowMs)
+        callHistoryDao.purgeExpiredCalls(cutoff)
+        callHistoryDao.purgeExpiredHiddenCalls(cutoff)
+    }
 
     override suspend fun fetchIceServers(): Result<Pair<List<IceServerConfig>, Boolean>> = runCatching {
         val resp = api.getIceServers()
@@ -1541,7 +1568,10 @@ class PrivateChatRepositoryImpl(
         lockManager.touchActivity()
         val page = api.listPrivateMessages(conversationId, limit = 40)
         val myId = tokenStore.getSession()?.userId
-        messageDao.upsertAll(page.messages.map { it.toEntity(myId, forcePrivate = true) })
+        val activeMessages = page.messages.filter { !RetentionPolicy.isExpired(it.createdAtMs) }
+        if (activeMessages.isNotEmpty()) {
+            messageDao.upsertAll(activeMessages.map { it.toEntity(myId, forcePrivate = true) })
+        }
         page.hasMore
     }.recoverCatching { throw AppException(errorMapper.map(it)) }
 
@@ -1554,7 +1584,10 @@ class PrivateChatRepositoryImpl(
         lockManager.touchActivity()
         val page = api.listPrivateMessages(conversationId, beforeTs = beforeTs, beforeId = beforeId, limit = 40)
         val myId = tokenStore.getSession()?.userId
-        messageDao.upsertAll(page.messages.map { it.toEntity(myId, forcePrivate = true) })
+        val activeMessages = page.messages.filter { !RetentionPolicy.isExpired(it.createdAtMs) }
+        if (activeMessages.isNotEmpty()) {
+            messageDao.upsertAll(activeMessages.map { it.toEntity(myId, forcePrivate = true) })
+        }
         page.hasMore
     }.recoverCatching { throw AppException(errorMapper.map(it)) }
 
@@ -1896,34 +1929,37 @@ private suspend fun syncConversationPreviewAfterLocalDelete(
     }
 }
 
-private fun ConversationDto.toEntity(forcePrivate: Boolean = isPrivate) = ConversationEntity(
-    id = id,
-    type = type,
-    peerUserId = peerUserId,
-    peerDisplayName = peerDisplayName,
-    peerAvatarMediaId = peerAvatarMediaId,
-    peerAbout = peerAbout,
-    peerIsOnline = peerIsOnline,
-    peerLastSeenMs = peerLastSeenMs,
-    isBlockedByMe = isBlockedByMe,
-    hasBlockedMe = hasBlockedMe,
-    lastMessageId = lastMessageId,
-    lastMessagePreview = lastMessagePreview,
-    lastMessageType = lastMessageType,
-    lastMessageSenderId = lastMessageSenderId,
-    lastMessageAtMs = lastMessageAtMs,
-    unreadCount = unreadCount,
-    updatedAtMs = updatedAtMs,
-    isPrivate = forcePrivate || isPrivate,
-    isPinned = isPinned,
-    pinnedAtMs = pinnedAtMs,
-    isArchived = isArchived,
-    archivedAtMs = archivedAtMs,
-    mutedUntilMs = mutedUntilMs?.takeIf { it > 0L },
-    customSoundUri = customSoundUri?.takeIf { it.isNotBlank() },
-    customSoundLabel = customSoundLabel?.takeIf { it.isNotBlank() },
-    markedUnread = markedUnread
-)
+private fun ConversationDto.toEntity(forcePrivate: Boolean = isPrivate): ConversationEntity {
+    val previewExpired = lastMessageAtMs != null && RetentionPolicy.isExpired(lastMessageAtMs)
+    return ConversationEntity(
+        id = id,
+        type = type,
+        peerUserId = peerUserId,
+        peerDisplayName = peerDisplayName,
+        peerAvatarMediaId = peerAvatarMediaId,
+        peerAbout = peerAbout,
+        peerIsOnline = peerIsOnline,
+        peerLastSeenMs = peerLastSeenMs,
+        isBlockedByMe = isBlockedByMe,
+        hasBlockedMe = hasBlockedMe,
+        lastMessageId = if (previewExpired) null else lastMessageId,
+        lastMessagePreview = if (previewExpired) null else lastMessagePreview,
+        lastMessageType = if (previewExpired) null else lastMessageType,
+        lastMessageSenderId = if (previewExpired) null else lastMessageSenderId,
+        lastMessageAtMs = if (previewExpired) null else lastMessageAtMs,
+        unreadCount = unreadCount,
+        updatedAtMs = updatedAtMs,
+        isPrivate = forcePrivate || isPrivate,
+        isPinned = isPinned,
+        pinnedAtMs = pinnedAtMs,
+        isArchived = isArchived,
+        archivedAtMs = archivedAtMs,
+        mutedUntilMs = mutedUntilMs?.takeIf { it > 0L },
+        customSoundUri = customSoundUri?.takeIf { it.isNotBlank() },
+        customSoundLabel = customSoundLabel?.takeIf { it.isNotBlank() },
+        markedUnread = markedUnread
+    )
+}
 
 private fun ConversationEntity.toDomain() = Conversation(
     id = id,

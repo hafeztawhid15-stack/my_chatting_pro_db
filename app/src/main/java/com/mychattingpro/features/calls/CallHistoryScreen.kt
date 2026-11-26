@@ -634,7 +634,8 @@ private fun CallHistoryRow(
                 networkModule = networkModule,
                 size = 48.dp,
                 isOnline = peerIsOnline == true,
-                showOfflineDot = peerIsOnline != null
+                showOfflineDot = peerIsOnline != null,
+                enablePreviewOnTap = !inSelectionMode
             )
             Spacer(modifier = Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {

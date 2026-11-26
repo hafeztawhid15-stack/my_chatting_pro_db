@@ -85,6 +85,7 @@ interface ChatRepository {
     suspend fun deleteConversation(conversationId: String): Result<Unit>
     suspend fun moveToPrivateChat(conversationId: String): Result<Unit>
     suspend fun getPeerProfile(conversationId: String): Result<ConversationPeerProfile>
+    suspend fun purgeExpiredLocalData(nowMs: Long = System.currentTimeMillis()) {}
 }
 
 interface MessageRepository {
@@ -184,6 +185,7 @@ interface CallRepository {
     suspend fun deleteCallRecord(callId: String): Result<Unit> = Result.success(Unit)
     suspend fun deleteCallRecords(callIds: List<String>): Result<Unit> = Result.success(Unit)
     suspend fun clearAllCallHistory(): Result<Unit> = Result.success(Unit)
+    suspend fun purgeExpiredLocalCalls(nowMs: Long = System.currentTimeMillis()) {}
     suspend fun fetchIceServers(): Result<Pair<List<IceServerConfig>, Boolean>>
     suspend fun initiateCall(conversationId: String, calleeId: String, isVideo: Boolean): Result<String>
     suspend fun updateCallState(callId: String, action: String): Result<Unit>

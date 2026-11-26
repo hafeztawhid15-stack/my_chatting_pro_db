@@ -479,4 +479,11 @@
     <string name="call_clear_all_confirm_body">All call records will be permanently removed from your call history only.</string>
     <string name="call_history_deleted_notice">Call history deleted</string>
     <string name="call_history_cleared_notice">All call history cleared</string>
+
+    <string name="settings_auto_delete_title">20-Day Auto-Delete</string>
+    <string name="settings_auto_delete_subtitle">Chats, photos, videos &amp; calls auto-delete after 20 days</string>
+    <string name="settings_auto_delete_info_body">To protect your privacy and keep server storage fast, all chat messages, photos, videos, voice notes, documents, and call history older than 20 days are automatically deleted from both your device and the server. Your account, profile info, and profile photo remain safe.</string>
+
+    <string name="profile_photo_preview_cd">View %1$s profile photo</string>
+    <string name="profile_no_photo_preview">No profile photo set</string>
 </resources>

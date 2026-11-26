@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -25,6 +26,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.rounded.Logout
+import androidx.compose.material.icons.outlined.AutoDelete
 import androidx.compose.material.icons.outlined.Block
 import androidx.compose.material.icons.outlined.DarkMode
 import androidx.compose.material.icons.outlined.DeleteForever
@@ -124,6 +126,7 @@ fun SettingsScreen(
     var deletePin by remember { mutableStateOf("") }
     var deleteConfirmText by remember { mutableStateOf("") }
     var showPrivatePinDialog by remember { mutableStateOf(false) }
+    var showAutoDeleteInfoDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         interstitialAdManager.preload(resetRetry = true)
@@ -398,6 +401,14 @@ fun SettingsScreen(
                             onClick = { withSettingsAd(onOpenBlockedUsers) },
                             testTag = "settings_blocked_users"
                         )
+                        HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+                        SettingsRowItem(
+                            icon = Icons.Outlined.AutoDelete,
+                            title = stringResource(R.string.settings_auto_delete_title),
+                            subtitle = stringResource(R.string.settings_auto_delete_subtitle),
+                            onClick = { showAutoDeleteInfoDialog = true },
+                            testTag = "settings_auto_delete"
+                        )
                     }
                 }
             }
@@ -644,6 +655,34 @@ fun SettingsScreen(
             },
             confirmButton = {
                 TextButton(onClick = { showVersionDialog = false }) {
+                    Text(stringResource(R.string.action_confirm))
+                }
+            }
+        )
+    }
+
+    if (showAutoDeleteInfoDialog) {
+        AlertDialog(
+            onDismissRequest = { showAutoDeleteInfoDialog = false },
+            icon = {
+                Icon(
+                    imageVector = Icons.Outlined.AutoDelete,
+                    contentDescription = stringResource(R.string.settings_auto_delete_title),
+                    tint = MaterialTheme.colorScheme.primary
+                )
+            },
+            title = { Text(stringResource(R.string.settings_auto_delete_title)) },
+            text = {
+                Text(
+                    text = stringResource(R.string.settings_auto_delete_info_body),
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = { showAutoDeleteInfoDialog = false },
+                    modifier = Modifier.testTag("settings_auto_delete_dialog_confirm")
+                ) {
                     Text(stringResource(R.string.action_confirm))
                 }
             }
@@ -1096,6 +1135,7 @@ private fun SettingsRowItem(
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .heightIn(min = 48.dp)
             .clickable(onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 14.dp)
             .testTag(testTag),

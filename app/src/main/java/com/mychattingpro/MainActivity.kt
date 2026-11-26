@@ -179,6 +179,7 @@ class MainActivity : ComponentActivity() {
     override fun onStart() {
         super.onStart()
         val container = (application as? MyChattingProApp)?.container ?: return
+        container.scheduleLocalRetentionPurge()
         container.interstitialAdManager.preload(resetRetry = true)
         if (cachedHasSession) {
             container.networkModule.realtimeSocketManager.sendPresencePing()

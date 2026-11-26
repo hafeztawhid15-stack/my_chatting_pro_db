@@ -1,3 +1,4 @@
+import { AUTO_DELETE_RETENTION_MS } from '../../config/constants';
 import { Env, getIntEnv } from '../../config/env';
 import { DatabaseClient } from '../../database/supabase';
 import { verifyPrivateUnlockToken } from '../../middleware/auth';
@@ -204,6 +205,14 @@ export class MediaService {
         }
       }
       return media;
+    }
+
+    if (
+      typeof media.created_at_ms === 'number' &&
+      media.created_at_ms > 0 &&
+      Date.now() - media.created_at_ms >= AUTO_DELETE_RETENTION_MS
+    ) {
+      throw new ApiError(404, 'media_not_found', 'Media expired and was removed after 20 days.');
     }
 
     if (!media.conversation_id) {

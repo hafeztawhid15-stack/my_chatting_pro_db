@@ -43,6 +43,9 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -53,6 +56,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.R
 import com.mychattingpro.core.network.NetworkModule
+import com.mychattingpro.features.common.ProfileAvatarPreviewDialog
 import com.mychattingpro.features.common.UserAvatar
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -192,6 +196,7 @@ fun ProfileScreen(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
+                var showOwnAvatarPreview by remember { mutableStateOf(false) }
                 val launchAvatarPicker = {
                     if (!state.isUploadingPhoto) {
                         avatarPicker.launch(
@@ -205,8 +210,22 @@ fun ProfileScreen(
                         avatarMediaId = state.avatarMediaId,
                         networkModule = networkModule,
                         size = 112.dp,
-                        onClick = launchAvatarPicker
+                        onClick = {
+                            if (!state.avatarMediaId.isNullOrBlank()) {
+                                showOwnAvatarPreview = true
+                            } else {
+                                launchAvatarPicker()
+                            }
+                        }
                     )
+                    if (showOwnAvatarPreview) {
+                        ProfileAvatarPreviewDialog(
+                            displayName = state.displayName.ifBlank { stringResource(R.string.app_name) },
+                            avatarMediaId = state.avatarMediaId,
+                            networkModule = networkModule,
+                            onDismiss = { showOwnAvatarPreview = false }
+                        )
+                    }
                     if (state.isUploadingPhoto) {
                         CircularProgressIndicator(modifier = Modifier.size(36.dp))
                     } else {

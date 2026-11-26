@@ -61,6 +61,12 @@ interface ConversationDao {
         lastMessageAtMs: Long?
     )
 
+    @Query("SELECT id FROM cached_conversations WHERE lastMessageAtMs IS NOT NULL AND lastMessageAtMs < :cutoffMs")
+    suspend fun findConversationsWithExpiredPreview(cutoffMs: Long): List<String>
+
+    @Query("UPDATE cached_conversations SET lastMessageId = NULL, lastMessagePreview = NULL, lastMessageType = NULL, lastMessageSenderId = NULL, lastMessageAtMs = NULL WHERE lastMessageAtMs IS NOT NULL AND lastMessageAtMs < :cutoffMs")
+    suspend fun clearExpiredLastMessageSummaries(cutoffMs: Long): Int
+
     @Query("UPDATE cached_conversations SET isBlockedByMe = :blocked WHERE peerUserId = :peerUserId")
     suspend fun updateBlockedByMe(peerUserId: String, blocked: Boolean)
 
@@ -139,6 +145,12 @@ interface MessageDao {
     @Query("DELETE FROM hidden_messages")
     suspend fun clearHiddenMessages()
 
+    @Query("DELETE FROM cached_messages WHERE createdAtMs < :cutoffMs")
+    suspend fun purgeExpiredMessages(cutoffMs: Long): Int
+
+    @Query("DELETE FROM hidden_messages WHERE hiddenAtMs < :cutoffMs")
+    suspend fun purgeExpiredHiddenMessages(cutoffMs: Long): Int
+
     @Query("DELETE FROM cached_messages WHERE isPrivate = 1")
     suspend fun clearPrivate()
 
@@ -171,6 +183,12 @@ interface CallHistoryDao {
 
     @Query("DELETE FROM hidden_calls")
     suspend fun clearHiddenCalls()
+
+    @Query("DELETE FROM cached_call_history WHERE startedAtMs < :cutoffMs")
+    suspend fun purgeExpiredCalls(cutoffMs: Long): Int
+
+    @Query("DELETE FROM hidden_calls WHERE hiddenAtMs < :cutoffMs")
+    suspend fun purgeExpiredHiddenCalls(cutoffMs: Long): Int
 
     @Query("DELETE FROM cached_call_history")
     suspend fun clearAll()

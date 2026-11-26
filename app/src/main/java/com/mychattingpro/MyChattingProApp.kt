@@ -5,6 +5,7 @@ import android.app.Application
 import android.content.Context
 import android.os.Bundle
 import com.example.R
+import com.mychattingpro.core.common.RetentionPolicy
 import com.mychattingpro.core.database.MyChattingProDatabase
 import com.mychattingpro.core.database.SecurityAlertEntity
 import com.mychattingpro.core.datastore.AppPreferencesDataStore
@@ -157,7 +158,24 @@ class AppContainer(context: Context) {
     @Volatile
     var isAppInForeground: Boolean = false
 
+    @Volatile
+    private var lastLocalRetentionPurgeMs: Long = 0L
+
+    fun scheduleLocalRetentionPurge(force: Boolean = false) {
+        val now = System.currentTimeMillis()
+        if (!force && lastLocalRetentionPurgeMs > 0L && (now - lastLocalRetentionPurgeMs) < 30L * 60L * 1000L) {
+            return
+        }
+        lastLocalRetentionPurgeMs = now
+        appScope.launch {
+            runCatching { chatRepository.purgeExpiredLocalData(now) }
+            runCatching { callRepository.purgeExpiredLocalCalls(now) }
+            runCatching { RetentionPolicy.purgeExpiredLocalMediaCaches(appContext, now) }
+        }
+    }
+
     init {
+        scheduleLocalRetentionPurge(force = true)
         appScope.launch {
             if (tokenStore.getSession() != null) {
                 refreshSecurityAlertsAndNotify()

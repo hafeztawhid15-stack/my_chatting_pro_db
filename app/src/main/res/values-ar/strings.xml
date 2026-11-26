@@ -472,4 +472,11 @@
     <string name="call_clear_all_confirm_body">سيتم حذف جميع سجلات المكالمات من سجلك نهائياً.</string>
     <string name="call_history_deleted_notice">تم حذف سجل المكالمات</string>
     <string name="call_history_cleared_notice">تم مسح جميع سجلات المكالمات</string>
+
+    <string name="settings_auto_delete_title">الحذف التلقائي بعد ٢٠ يوماً</string>
+    <string name="settings_auto_delete_subtitle">تُحذف الرسائل والصور والفيديو والمكالمات تلقائياً بعد ٢٠ يوماً</string>
+    <string name="settings_auto_delete_info_body">لحماية خصوصيتك والحفاظ على سرعة التخزين، يتم حذف جميع الرسائل والصور ومقاطع الفيديو والرسائل الصوتية والملفات وسجل المكالمات الأقدم من ٢٠ يوماً تلقائياً من جهازك والخادم. تبقى حساباتك وصورة ملفك الشخصي محفوظة.</string>
+
+    <string name="profile_photo_preview_cd">عرض صورة الملف الشخصي لـ %1$s</string>
+    <string name="profile_no_photo_preview">لا توجد صورة ملف شخصي</string>
 </resources>

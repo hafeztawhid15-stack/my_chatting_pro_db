@@ -29,6 +29,9 @@ class_name = "ConversationCoordinator"
 tag = "v1"
 new_sqlite_classes = ["UserRealtimeCoordinator", "ConversationCoordinator"]
 
+[triggers]
+crons = ["0 */6 * * *"]
+
 # Explicit Production environment alias (kept in sync with top-level defaults)
 [env.production]
 name = "my-chatting-pro-api"
@@ -57,3 +60,6 @@ class_name = "ConversationCoordinator"
 [[env.production.migrations]]
 tag = "v1"
 new_sqlite_classes = ["UserRealtimeCoordinator", "ConversationCoordinator"]
+
+[env.production.triggers]
+crons = ["0 */6 * * *"]

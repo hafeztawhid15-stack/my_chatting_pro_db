@@ -15,6 +15,10 @@ import { privacyRoutes } from './modules/privacy/privacy.routes';
 import { privateChatRoutes } from './modules/private-chat/privateChat.routes';
 import { profilesRoutes } from './modules/profiles/profiles.routes';
 import { reportsRoutes } from './modules/reports/reports.routes';
+import {
+  maybeRunThrottledRetentionCleanup,
+  runScheduledRetentionCleanup,
+} from './modules/retention/retention.service';
 import { usersRoutes } from './modules/users/users.routes';
 import { verifyJwt } from './security/jwt';
 
@@ -33,6 +37,23 @@ app.use('*', async (c, next) => {
     c.req.path.startsWith('/v1/private-chat')
   ) {
     c.header('Cache-Control', 'no-store');
+  }
+});
+
+app.use('*', async (c, next) => {
+  await next();
+  if (
+    c.req.method === 'GET' &&
+    (c.req.path.startsWith('/v1/conversations') ||
+      c.req.path.startsWith('/v1/messages') ||
+      c.req.path.startsWith('/v1/calls/history') ||
+      c.req.path.startsWith('/v1/private-chat/conversations'))
+  ) {
+    try {
+      c.executionCtx.waitUntil(maybeRunThrottledRetentionCleanup(c.env));
+    } catch {
+      // ExecutionContext is omitted in isolated Hono app.fetch() tests
+    }
   }
 });
 
@@ -103,4 +124,9 @@ app.get('/v1/ws', async (c) => {
   return stub.fetch(forwarded);
 });
 
-export default app;
+export default {
+  fetch: app.fetch,
+  async scheduled(_controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
+    ctx.waitUntil(runScheduledRetentionCleanup(env));
+  },
+};
